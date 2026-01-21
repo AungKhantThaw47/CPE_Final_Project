@@ -1,0 +1,118 @@
+# ============================================
+# Terraform
+# ============================================
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform.tfstate.lock.info
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+crash.log
+crash.*.log
+.terraformrc
+terraform.rc
+
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+env/
+venv/
+.venv/
+ENV/
+.nix-python/
+.nix-python-envs/
+.pip-tmp/
+.pip-cache/
+.pytest_cache/
+.coverage
+*.cover
+*.log
+.ipynb_checkpoints
+*.ipynb_checkpoints
+.mypy_cache/
+
+# ============================================
+# Go
+# ============================================
+*.exe
+*.exe~
+*.dll
+*.dylib
+*.test
+*.out
+go.work
+.gopath/
+vendor/
+Godeps/
+
+# ============================================
+# IDEs
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================================
+# OS
+# ============================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE_BIN/
+
+# ============================================
+# Nix Shell Generated
+# ============================================
+.zsh/
+.gopath/
+.nix-python-envs/
+result
+result-*
+.cache/
+
+# ============================================
+# Node.js (from nix shell)
+# ============================================
+node_modules/
+.npm/
+.yarn/
+.pnpm-store/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ============================================
+# Project Specific
+# ============================================
+*.backup
+.cache/
+

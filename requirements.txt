@@ -1,0 +1,23 @@
+# Core dependencies (existing)
+cohere==5.18.0
+requests
+sentence-transformers
+huggingface_hub[cli]
+huggingface_hub
+hf_xet
+pydantic
+httpx
+tqdm
+log_utils
+asyncio
+openpyxl
+python-docx
+pandas
+google-cloud-storage
+pytest
+SimpleCV
+python-Levenshtein
+
+# Dependencies for Cloud Run Job triggering
+google-auth==2.27.0
+google-auth-httplib2==0.2.0
