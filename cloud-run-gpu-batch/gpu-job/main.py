@@ -64,7 +64,7 @@ def run_gpu_computation():
     print(f"Using device: {device}")
     
     # Create large tensors for matrix multiplication
-    size = 5000
+    size = 1000
     print(f"Creating {size}x{size} matrices...")
     
     start_time = datetime.now()

@@ -45,9 +45,9 @@ resource "null_resource" "docker_image_build" {
 
   provisioner "local-exec" {
     command = local.is_windows ? (
-      "powershell -ExecutionPolicy Bypass -File build_image.ps1 -Region ${var.region} -ProjectId ${var.project_id} -RepositoryId ${var.docker_repository_id} -ImageName ${var.image_name} -ImageTag ${var.image_tag}"
+      "powershell -ExecutionPolicy Bypass -File scripts/build_image.ps1 -Region ${var.region} -ProjectId ${var.project_id} -RepositoryId ${var.docker_repository_id} -ImageName ${var.image_name} -ImageTag ${var.image_tag}"
     ) : (
-      "bash build_image.sh --region ${var.region} --project-id ${var.project_id} --repository-id ${var.docker_repository_id} --image-name ${var.image_name} --image-tag ${var.image_tag}"
+      "bash scripts/build_image.sh --region ${var.region} --project-id ${var.project_id} --repository-id ${var.docker_repository_id} --image-name ${var.image_name} --image-tag ${var.image_tag}"
     )
     working_dir = path.module
   }
@@ -134,7 +134,7 @@ resource "google_cloud_run_v2_job" "gpu_batch_job" {
 
         resources {
           limits = {
-            cpu    = "8"
+            cpu    = "4"
             memory = "16Gi"
           }
         }
