@@ -1,7 +1,7 @@
 # OS detection for cross-platform build scripts
 locals {
-  is_windows = substr(pathexpand("~"), 0, 1) != "/"
-  image_path = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
+  is_windows  = substr(pathexpand("~"), 0, 1) != "/"
+  image_path  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
   bucket_name = "${var.project_id}-gpu-job-outputs"
 }
 
@@ -13,7 +13,9 @@ resource "google_project_service" "apis" {
     "run.googleapis.com",
     "artifactregistry.googleapis.com",
     "iam.googleapis.com",
-    "cloudbuild.googleapis.com"
+    "cloudbuild.googleapis.com",
+    "sqladmin.googleapis.com",
+    "vpcaccess.googleapis.com"
   ])
   
   service            = each.value
@@ -174,4 +176,39 @@ resource "google_cloud_run_v2_job_iam_member" "invoker_can_run" {
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
+}
+
+# ============================================
+# MLflow Docker Image Build
+# ============================================
+resource "null_resource" "mlflow_image_build" {
+  triggers = {
+    dockerfile = filemd5("${path.module}/modules/mlflow/Dockerfile")
+  }
+
+  provisioner "local-exec" {
+    command = local.is_windows ? (
+      "powershell -ExecutionPolicy Bypass -File scripts/build_mlflow.ps1 -Region ${var.region} -ProjectId ${var.project_id}"
+    ) : (
+      "bash scripts/build_mlflow.sh ${var.region} ${var.project_id}"
+    )
+    working_dir = path.module
+  }
+
+  depends_on = [google_artifact_registry_repository.docker_repo]
+}
+
+# ============================================
+# MLflow Module
+# ============================================
+module "mlflow" {
+  source = "./modules/mlflow"
+
+  project_id          = var.project_id
+  region              = var.region
+  mlflow_image        = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/mlflow-server:latest"
+  db_password         = var.mlflow_db_password
+  allow_public_access = var.mlflow_public_access
+
+  depends_on = [google_project_service.apis, null_resource.mlflow_image_build]
 }

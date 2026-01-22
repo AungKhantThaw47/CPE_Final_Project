@@ -51,3 +51,27 @@ output "invoker_service_account_email" {
   description = "Service account email for job invocation"
   value       = google_service_account.job_invoker_sa.email
 }
+
+# ============================================
+# MLflow Outputs
+# ============================================
+
+output "mlflow_url" {
+  description = "MLflow tracking server URL"
+  value       = module.mlflow.mlflow_url
+}
+
+output "mlflow_artifacts_bucket" {
+  description = "GCS bucket for MLflow artifacts"
+  value       = module.mlflow.artifacts_bucket
+}
+
+output "mlflow_db_host" {
+  description = "MLflow database public IP"
+  value       = module.mlflow.db_host
+}
+
+output "mlflow_service_account" {
+  description = "MLflow service account email"
+  value       = module.mlflow.service_account_email
+}
