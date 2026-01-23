@@ -5,6 +5,22 @@
 locals {
   mlflow_bucket = "${var.project_id}-mlflow-artifacts"
   mlflow_db_name = "mlflow"
+  is_windows  = substr(pathexpand("~"), 0, 1) != "/"
+}
+
+# Build MLflow Docker image
+resource "null_resource" "mlflow_image_build" {
+  triggers = {
+    dockerfile = filemd5("${path.module}/Dockerfile")
+  }
+
+  provisioner "local-exec" {
+    command = local.is_windows ? (
+      "cd ${path.module} && gcloud builds submit --tag ${var.mlflow_image}"
+    ) : (
+      "cd ${path.module} && gcloud builds submit --tag ${var.mlflow_image}"
+    )
+  }
 }
 
 # GCS bucket for MLflow artifacts
@@ -122,6 +138,7 @@ resource "google_cloud_run_v2_service" "mlflow" {
   }
 
   depends_on = [
+    null_resource.mlflow_image_build,
     google_sql_database.mlflow,
     google_sql_user.mlflow,
     google_storage_bucket.mlflow_artifacts

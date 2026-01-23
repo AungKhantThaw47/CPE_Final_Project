@@ -15,7 +15,8 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "cloudbuild.googleapis.com",
     "sqladmin.googleapis.com",
-    "vpcaccess.googleapis.com"
+    "vpcaccess.googleapis.com",
+    "cloudscheduler.googleapis.com"
   ])
   
   service            = each.value
@@ -179,26 +180,6 @@ resource "google_cloud_run_v2_job_iam_member" "invoker_can_run" {
 }
 
 # ============================================
-# MLflow Docker Image Build
-# ============================================
-resource "null_resource" "mlflow_image_build" {
-  triggers = {
-    dockerfile = filemd5("${path.module}/modules/mlflow/Dockerfile")
-  }
-
-  provisioner "local-exec" {
-    command = local.is_windows ? (
-      "powershell -ExecutionPolicy Bypass -File scripts/build_mlflow.ps1 -Region ${var.region} -ProjectId ${var.project_id}"
-    ) : (
-      "bash scripts/build_mlflow.sh ${var.region} ${var.project_id}"
-    )
-    working_dir = path.module
-  }
-
-  depends_on = [google_artifact_registry_repository.docker_repo]
-}
-
-# ============================================
 # MLflow Module
 # ============================================
 module "mlflow" {
@@ -210,5 +191,35 @@ module "mlflow" {
   db_password         = var.mlflow_db_password
   allow_public_access = var.mlflow_public_access
 
-  depends_on = [google_project_service.apis, null_resource.mlflow_image_build]
+  depends_on = [google_project_service.apis, google_artifact_registry_repository.docker_repo]
+}
+
+# ============================================
+# Cloud Scheduler - Example Scheduled Job
+# ============================================
+module "daily_job" {
+  source = "./modules/cloud-scheduler"
+
+  project_id      = var.project_id
+  region          = var.region
+  job_name        = "daily-data-processor"
+  job_description = "Daily data processing job"
+  
+  # Run every 1 hour
+  schedule  = "0 * * * *"
+  time_zone = "Asia/Bangkok"
+  
+  container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/scheduler-job:latest"
+  
+  cpu_limit    = "1"
+  memory_limit = "512Mi"
+  timeout      = "600s"
+  
+  environment_variables = {
+    ENV = "production"
+  }
+  
+  job_service_account_roles = []
+
+  depends_on = [google_project_service.apis, google_artifact_registry_repository.docker_repo]
 }
