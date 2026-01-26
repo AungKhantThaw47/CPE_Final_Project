@@ -1,10 +1,15 @@
 output "scheduler_job_name" {
   description = "Name of the Cloud Scheduler job"
-  value       = google_cloud_scheduler_job.job.name
+  value       = var.enable_scheduler ? google_cloud_scheduler_job.job[0].name : null
 }
 
 output "cloud_run_job_name" {
   description = "Name of the Cloud Run job"
+  value       = google_cloud_run_v2_job.scheduled_job.name
+}
+
+output "job_name" {
+  description = "Alias for cloud_run_job_name"
   value       = google_cloud_run_v2_job.scheduled_job.name
 }
 
@@ -15,5 +20,5 @@ output "service_account_email" {
 
 output "schedule" {
   description = "Cron schedule of the job"
-  value       = google_cloud_scheduler_job.job.schedule
+  value       = var.enable_scheduler ? google_cloud_scheduler_job.job[0].schedule : null
 }

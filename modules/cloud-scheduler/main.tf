@@ -11,29 +11,76 @@ terraform {
   }
 }
 
-# Build scheduler job image
+locals {
+  # Use provided codebase_path or fallback to default location
+  codebase_directory = var.codebase_path != "" ? var.codebase_path : "${path.module}/function"
+  
+  # Generate hash of all files in the codebase directory
+  # Any change triggers rebuild, but Docker cache makes it fast
+  codebase_files = fileset(local.codebase_directory, "**")
+  codebase_hash  = md5(jsonencode({
+    for file in local.codebase_files :
+    file => filemd5("${local.codebase_directory}/${file}")
+  }))
+  
+  # Sanitize job name for service account IDs (replace underscores with hyphens)
+  sa_safe_job_name = replace(var.job_name, "_", "-")
+}
+
+# Build scheduler job image (only if build_image is true)
 resource "null_resource" "scheduler_job_image_build" {
+  count = var.build_image ? 1 : 0
+  
   triggers = {
-    dockerfile   = filemd5("${path.module}/function/Dockerfile")
-    main_py      = filemd5("${path.module}/function/main.py")
-    requirements = filemd5("${path.module}/function/requirements.txt")
+    codebase_hash = local.codebase_hash
   }
 
+  # Copy utils to build context, build image, then cleanup
   provisioner "local-exec" {
-    command = "cd ${path.module}/function && gcloud builds submit --tag ${var.container_image}"
+    when       = create
+    on_failure = fail
+    
+    # PowerShell (Windows)
+    command = <<-EOT
+      if (Test-Path '${replace(path.root, "/", "\\")}\\utils') {
+        Copy-Item -Recurse -Force '${replace(path.root, "/", "\\")}\\utils' '${replace(local.codebase_directory, "/", "\\")}\'
+      }
+      
+      cd '${replace(local.codebase_directory, "/", "\\")}'
+      gcloud builds submit `
+        --config cloudbuild.yaml `
+        --substitutions=_IMAGE_TAG=${var.container_image}
+      
+      if (Test-Path '${replace(local.codebase_directory, "/", "\\")}\\utils') {
+        Remove-Item -Recurse -Force '${replace(local.codebase_directory, "/", "\\")}\\utils'
+      }
+    EOT
+    
+    interpreter = ["PowerShell", "-Command"]
   }
 }
 
 # Cloud Run Job for the scheduled task
 resource "google_cloud_run_v2_job" "scheduled_job" {
-  name     = var.job_name
-  location = var.region
-  project  = var.project_id
+  name                = local.sa_safe_job_name
+  location            = var.region
+  project             = var.project_id
+  deletion_protection = false
 
   depends_on = [null_resource.scheduler_job_image_build]
 
   template {
     template {
+      execution_environment         = var.execution_environment
+      gpu_zonal_redundancy_disabled = var.enable_gpu ? true : null
+
+      dynamic "node_selector" {
+        for_each = var.enable_gpu ? [1] : []
+        content {
+          accelerator = var.gpu_type
+        }
+      }
+
       containers {
         image = var.container_image
 
@@ -49,6 +96,14 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
           content {
             name  = env.key
             value = env.value
+          }
+        }
+
+        dynamic "env" {
+          for_each = var.enable_gpu ? [1] : []
+          content {
+            name  = "NVIDIA_VISIBLE_DEVICES"
+            value = "all"
           }
         }
       }
@@ -68,29 +123,32 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
 
 # Service Account for the job
 resource "google_service_account" "scheduler_sa" {
-  account_id   = "${var.job_name}-job"
+  account_id   = "${local.sa_safe_job_name}-job"
   display_name = "Service Account for ${var.job_name}"
   project      = var.project_id
 }
 
 # IAM binding to allow Cloud Scheduler to invoke the job
 resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker" {
+  count    = var.enable_scheduler ? 1 : 0
   project  = google_cloud_run_v2_job.scheduled_job.project
   location = google_cloud_run_v2_job.scheduled_job.location
   name     = google_cloud_run_v2_job.scheduled_job.name
   role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.scheduler_invoker_sa.email}"
+  member   = "serviceAccount:${google_service_account.scheduler_invoker_sa[0].email}"
 }
 
 # Service Account for Cloud Scheduler
 resource "google_service_account" "scheduler_invoker_sa" {
-  account_id   = "${var.job_name}-sched"
+  count        = var.enable_scheduler ? 1 : 0
+  account_id   = "${local.sa_safe_job_name}-sched"
   display_name = "Cloud Scheduler SA for ${var.job_name}"
   project      = var.project_id
 }
 
 # Cloud Scheduler Job
 resource "google_cloud_scheduler_job" "job" {
+  count            = var.enable_scheduler ? 1 : 0
   name             = var.job_name
   description      = var.job_description
   schedule         = var.schedule
@@ -108,7 +166,7 @@ resource "google_cloud_scheduler_job" "job" {
     uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/${google_cloud_run_v2_job.scheduled_job.name}:run"
 
     oauth_token {
-      service_account_email = google_service_account.scheduler_invoker_sa.email
+      service_account_email = google_service_account.scheduler_invoker_sa[0].email
     }
   }
 

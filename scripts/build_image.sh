@@ -43,7 +43,7 @@ IMAGE_PATH="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY_ID}/${IMAGE_NAME
 
 echo "Building and pushing image: ${IMAGE_PATH}"
 
-gcloud builds submit cloud-run-gpu-batch/gpu-job \
+gcloud builds submit . \
     --tag="${IMAGE_PATH}" \
     --project="${PROJECT_ID}" \
     --timeout=20m

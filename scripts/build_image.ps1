@@ -11,7 +11,7 @@ $imagePath = "$Region-docker.pkg.dev/$ProjectId/$RepositoryId/$ImageName`:$Image
 
 Write-Host "Building and pushing image: $imagePath"
 
-gcloud builds submit cloud-run-gpu-batch/gpu-job `
+gcloud builds submit . `
     --tag=$imagePath `
     --project=$ProjectId `
     --timeout=20m

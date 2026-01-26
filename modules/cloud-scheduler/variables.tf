@@ -83,3 +83,39 @@ variable "job_service_account_roles" {
   type        = list(string)
   default     = []
 }
+
+variable "codebase_path" {
+  description = "Path to the codebase folder containing Dockerfile, main.py, and requirements.txt"
+  type        = string
+  default     = ""
+}
+
+variable "build_image" {
+  description = "Whether to build the container image (true) or use pre-built image (false)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_gpu" {
+  description = "Enable GPU support for the Cloud Run job"
+  type        = bool
+  default     = false
+}
+
+variable "gpu_type" {
+  description = "GPU type for the Cloud Run job (e.g., nvidia-l4, nvidia-tesla-t4)"
+  type        = string
+  default     = "nvidia-l4"
+}
+
+variable "execution_environment" {
+  description = "Execution environment generation (EXECUTION_ENVIRONMENT_GEN1 or EXECUTION_ENVIRONMENT_GEN2). Gen2 required for GPU."
+  type        = string
+  default     = "EXECUTION_ENVIRONMENT_GEN2"
+}
+
+variable "enable_scheduler" {
+  description = "Enable Cloud Scheduler to automatically trigger the job on a schedule"
+  type        = bool
+  default     = true
+}

@@ -22,14 +22,21 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
 # Upgrade pip
 RUN python -m pip install --no-cache-dir --upgrade pip
 
-# Copy requirements file
+# Copy requirements file FIRST (before code changes)
+# This allows Docker to cache pip install if requirements haven't changed
 COPY requirements.txt .
 
 # Install Python dependencies
 # Uses --extra-index-url to support both PyPI and PyTorch repos
+# This layer will only rebuild if requirements.txt changes
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy job script
+# Copy shared utils (expected to be in build context)
+# Placed AFTER pip install so code changes don't invalidate cache
+COPY utils /workspace/utils
+
+# Copy job script LAST
+# This ensures code changes don't trigger pip reinstall
 COPY main.py .
 
 # Set environment variables for CUDA

@@ -1,77 +1,69 @@
-output "project_id" {
-  description = "GCP Project ID"
-  value       = var.project_id
-}
+# ============================================
+# Cloud Run Jobs Outputs
+# ============================================
 
-output "region" {
-  description = "GCP Region"
-  value       = var.region
-}
-
-output "zone" {
-  description = "GCP Zone"
-  value       = var.zone
+output "jobs" {
+  description = "Cloud Run Jobs with trigger commands and URLs"
+  value = {
+    for job_key, job_config in local.jobs : job_key => {
+      # Trigger command
+      trigger_command = "gcloud run jobs execute ${module.jobs[job_key].job_name} --region ${var.region}"
+      
+      # Console URLs
+      console_url = "https://console.cloud.google.com/run/jobs/details/${var.region}/${module.jobs[job_key].job_name}?project=${var.project_id}"
+      
+      # Docker info
+      docker_image_url = job_config.container_image
+      docker_registry  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}"
+      
+      # Connected resources
+      gcs_buckets = [for k, v in job_config.environment_variables : v if k == "GCS_BUCKET"]
+      cloud_sql   = []  # Add if needed in future
+      
+      # Schedule info
+      schedule = lookup(job_config, "schedule", null)
+    }
+  }
 }
 
 # ============================================
-# Cloud Run Job Outputs
+# Cloud Run Services Outputs
 # ============================================
 
-output "job_name" {
-  description = "Cloud Run Job name"
-  value       = google_cloud_run_v2_job.gpu_batch_job.name
+output "services" {
+  description = "Cloud Run Services with URLs and connected resources"
+  value = {
+    for svc_key, svc_config in local.services : svc_key => {
+      # Public URL (if service exists)
+      public_url = lookup(module.services, svc_key, null) != null ? module.services[svc_key].service_url : null
+      
+      # Console URL
+      console_url = "https://console.cloud.google.com/run/detail/${var.region}/${svc_key}?project=${var.project_id}"
+      
+      # Docker info
+      docker_image_url = svc_config.container_image
+      docker_registry  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}"
+      
+      # Connected resources
+      cloud_sql_instances = lookup(svc_config, "cloud_sql_instances", [])
+      gcs_buckets        = []  # Extract from env vars if needed
+      
+      # Access info
+      allow_public = lookup(svc_config, "allow_public", false)
+    }
+  }
 }
 
-output "job_url" {
-  description = "Cloud Run Job execution URL"
-  value       = "https://${var.region}-run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.gpu_batch_job.name}:run"
-}
+# ============================================
+# Shared Resources
+# ============================================
 
 output "docker_repository" {
-  description = "Artifact Registry Docker repository"
+  description = "Artifact Registry repository URL"
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}"
 }
 
-output "docker_image_full_path" {
-  description = "Full Docker image path"
-  value       = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
-}
-
-output "gcs_bucket_name" {
+output "gcs_output_bucket" {
   description = "GCS bucket for job outputs"
   value       = google_storage_bucket.job_outputs.name
-}
-
-output "service_account_email" {
-  description = "Service account email for job execution"
-  value       = google_service_account.cloud_run_job_sa.email
-}
-
-output "invoker_service_account_email" {
-  description = "Service account email for job invocation"
-  value       = google_service_account.job_invoker_sa.email
-}
-
-# ============================================
-# MLflow Outputs
-# ============================================
-
-output "mlflow_url" {
-  description = "MLflow tracking server URL"
-  value       = module.mlflow.mlflow_url
-}
-
-output "mlflow_artifacts_bucket" {
-  description = "GCS bucket for MLflow artifacts"
-  value       = module.mlflow.artifacts_bucket
-}
-
-output "mlflow_db_host" {
-  description = "MLflow database public IP"
-  value       = module.mlflow.db_host
-}
-
-output "mlflow_service_account" {
-  description = "MLflow service account email"
-  value       = module.mlflow.service_account_email
 }
