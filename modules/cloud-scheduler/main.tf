@@ -15,11 +15,15 @@ locals {
   # Use provided codebase_path or fallback to default location
   codebase_directory = var.codebase_path != "" ? var.codebase_path : "${path.module}/function"
   
-  # Generate hash of all files in the codebase directory
+  # Generate hash of all files in the codebase directory, excluding utils folder
   # Any change triggers rebuild, but Docker cache makes it fast
   codebase_files = fileset(local.codebase_directory, "**")
-  codebase_hash  = md5(jsonencode({
+  codebase_files_filtered = [
     for file in local.codebase_files :
+    file if !startswith(file, "utils/") && fileexists("${local.codebase_directory}/${file}")
+  ]
+  codebase_hash  = md5(jsonencode({
+    for file in local.codebase_files_filtered :
     file => filemd5("${local.codebase_directory}/${file}")
   }))
   
@@ -87,6 +91,13 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
 
   depends_on = [null_resource.scheduler_job_image_build]
 
+  lifecycle {
+    ignore_changes = [
+      launch_stage,
+      template[0].template[0].containers[0].resources[0].limits["nvidia.com/gpu"],
+    ]
+  }
+
   template {
     template {
       execution_environment         = var.execution_environment
@@ -130,12 +141,6 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
       max_retries     = var.max_retries
       service_account = google_service_account.scheduler_sa.email
     }
-  }
-
-  lifecycle {
-    ignore_changes = [
-      launch_stage,
-    ]
   }
 }
 

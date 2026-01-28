@@ -1,5 +1,5 @@
 """
-Utility functions for GPU batch job
+Shared GCS (Google Cloud Storage) utility functions for all components
 """
 
 import os

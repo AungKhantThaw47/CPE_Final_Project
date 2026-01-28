@@ -1,0 +1,14 @@
+{
+  "name": "dvb-crawler",
+  "version": "1.0.0",
+  "description": "DVB Burmese news crawler with GCS upload",
+  "main": "DVB_Burmese.crawler.js",
+  "scripts": {
+    "start": "node DVB_Burmese.crawler.js"
+  },
+  "dependencies": {
+    "axios": "^1.13.4",
+    "cheerio": "^1.2.0",
+    "@google-cloud/storage": "^7.7.0"
+  }
+}

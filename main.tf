@@ -43,6 +43,26 @@ locals {
       }
       service_account_roles = []
     }
+    
+    dvb-crawler-job = {
+      codebase_path   = "${path.root}/Codebase_Container/crawler_job"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
+      description     = "DVB Burmese news crawler job"
+      build_image     = true  # Build from local Dockerfile
+      enable_scheduler = true
+      schedule        = "0 0 * * *"  # Run every day at midnight
+      enable_gpu      = false
+      cpu_limit       = "1"
+      memory_limit    = "512Mi"
+      timeout         = "600s"
+      environment_variables = {
+        GCS_BUCKET = google_storage_bucket.crawler_data.name
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter"
+      ]
+    }
   }
   
   # Define Cloud Run Services (always-on HTTP services)
@@ -55,7 +75,7 @@ locals {
       cpu_limit       = "2"
       memory_limit    = "4Gi"
       min_instances   = 0
-      max_instances   = 5
+      max_instances   = 2
       port            = 8080
       allow_public    = var.mlflow_public_access
       environment_variables = {
@@ -142,6 +162,25 @@ resource "google_storage_bucket" "mlflow_artifacts" {
 }
 
 # ============================================
+# GCS Bucket for Crawler Data
+# ============================================
+resource "google_storage_bucket" "crawler_data" {
+  name                        = "${var.project_id}-crawler-data"
+  location                    = var.region
+  force_destroy               = true
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 90  # Keep crawler data for 90 days
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+# ============================================
 # Service Accounts
 # ============================================
 resource "google_service_account" "job_invoker_sa" {
@@ -189,7 +228,8 @@ module "jobs" {
   depends_on = [
     google_project_service.apis,
     google_artifact_registry_repository.docker_repo,
-    google_storage_bucket.job_outputs
+    google_storage_bucket.job_outputs,
+    google_storage_bucket.crawler_data
   ]
 }
 
