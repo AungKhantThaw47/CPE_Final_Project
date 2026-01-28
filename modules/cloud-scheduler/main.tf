@@ -25,6 +25,40 @@ locals {
   
   # Sanitize job name for service account IDs (replace underscores with hyphens)
   sa_safe_job_name = replace(var.job_name, "_", "-")
+  
+  # OS detection
+  is_windows = substr(pathexpand("~"), 0, 1) != "/"
+  
+  # Build commands for each OS
+  windows_build_command = <<-EOT
+    if (Test-Path '${replace(path.root, "/", "\\")}\\utils') {
+      Copy-Item -Recurse -Force '${replace(path.root, "/", "\\")}\\utils' '${replace(local.codebase_directory, "/", "\\")}\'
+    }
+    
+    cd '${replace(local.codebase_directory, "/", "\\")}'
+    gcloud builds submit `
+      --config cloudbuild.yaml `
+      --substitutions=_IMAGE_TAG=${var.container_image}
+    
+    if (Test-Path '${replace(local.codebase_directory, "/", "\\")}\\utils') {
+      Remove-Item -Recurse -Force '${replace(local.codebase_directory, "/", "\\")}\\utils'
+    }
+  EOT
+  
+  unix_build_command = <<-EOT
+    if [ -d '${path.root}/utils' ]; then
+      cp -r '${path.root}/utils' '${local.codebase_directory}/'
+    fi
+    
+    cd '${local.codebase_directory}'
+    gcloud builds submit \
+      --config cloudbuild.yaml \
+      --substitutions=_IMAGE_TAG=${var.container_image}
+    
+    if [ -d '${local.codebase_directory}/utils' ]; then
+      rm -rf '${local.codebase_directory}/utils'
+    fi
+  EOT
 }
 
 # Build scheduler job image (only if build_image is true)
@@ -39,24 +73,8 @@ resource "null_resource" "scheduler_job_image_build" {
   provisioner "local-exec" {
     when       = create
     on_failure = fail
-    
-    # PowerShell (Windows)
-    command = <<-EOT
-      if (Test-Path '${replace(path.root, "/", "\\")}\\utils') {
-        Copy-Item -Recurse -Force '${replace(path.root, "/", "\\")}\\utils' '${replace(local.codebase_directory, "/", "\\")}\'
-      }
-      
-      cd '${replace(local.codebase_directory, "/", "\\")}'
-      gcloud builds submit `
-        --config cloudbuild.yaml `
-        --substitutions=_IMAGE_TAG=${var.container_image}
-      
-      if (Test-Path '${replace(local.codebase_directory, "/", "\\")}\\utils') {
-        Remove-Item -Recurse -Force '${replace(local.codebase_directory, "/", "\\")}\\utils'
-      }
-    EOT
-    
-    interpreter = ["PowerShell", "-Command"]
+    command    = local.is_windows ? local.windows_build_command : local.unix_build_command
+    interpreter = local.is_windows ? ["PowerShell", "-Command"] : ["bash", "-c"]
   }
 }
 

@@ -29,7 +29,7 @@ def check_gpu():
     Returns True if GPU is available, False otherwise.
     """
     print("=" * 60)
-    print("GPU DETECTION AKT")
+    print("GPU DETECTION MAC-2")
     print("=" * 60)
     
     if torch.cuda.is_available():

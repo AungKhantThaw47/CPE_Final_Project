@@ -53,7 +53,7 @@ locals {
       description     = "MLflow Tracking Server"
       build_image     = true  # Build from Dockerfile
       cpu_limit       = "2"
-      memory_limit    = "2Gi"
+      memory_limit    = "4Gi"
       min_instances   = 0
       max_instances   = 5
       port            = 8080
@@ -61,6 +61,9 @@ locals {
       environment_variables = {
         BACKEND_STORE_URI = "sqlite:///mlflow.db"  # Use SQLite for simplicity, change to PostgreSQL if needed
         ARTIFACT_ROOT     = "gs://${var.project_id}-mlflow-artifacts"
+        GCS_BUCKET        = "${var.project_id}-mlflow-artifacts"
+        MLFLOW_TRACKING_SERVER_NAME = "mlflow"
+        MLFLOW_SERVER_ENABLE_HOST_CHECK = "false"
       }
       service_account_roles = [
         "roles/storage.objectAdmin"
@@ -112,6 +115,25 @@ resource "google_storage_bucket" "job_outputs" {
   lifecycle_rule {
     condition {
       age = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+# ============================================
+# GCS Bucket for MLflow Artifacts
+# ============================================
+resource "google_storage_bucket" "mlflow_artifacts" {
+  name                        = "${var.project_id}-mlflow-artifacts"
+  location                    = var.region
+  force_destroy               = true
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 90  # Keep MLflow artifacts longer than job outputs
     }
     action {
       type = "Delete"
@@ -220,6 +242,7 @@ module "services" {
 
   depends_on = [
     google_project_service.apis,
-    google_artifact_registry_repository.docker_repo
+    google_artifact_registry_repository.docker_repo,
+    google_storage_bucket.mlflow_artifacts
   ]
 }

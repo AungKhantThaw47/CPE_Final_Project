@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install MLflow and dependencies
 RUN pip install --no-cache-dir \
-    mlflow==2.10.0 \
+    mlflow==3.8.1 \
     psycopg2-binary \
     google-cloud-storage \
     boto3
@@ -17,9 +17,10 @@ RUN pip install --no-cache-dir \
 # Cloud Run sets PORT environment variable
 ENV PORT=8080
 
-# Start MLflow server
+# Start MLflow server with disabled security middleware for Cloud Run
 CMD mlflow server \
     --host 0.0.0.0 \
     --port ${PORT} \
     --backend-store-uri ${BACKEND_STORE_URI} \
-    --default-artifact-root ${ARTIFACT_ROOT}
+    --default-artifact-root ${ARTIFACT_ROOT} \
+    --disable-security-middleware

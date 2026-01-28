@@ -67,3 +67,8 @@ output "gcs_output_bucket" {
   description = "GCS bucket for job outputs"
   value       = google_storage_bucket.job_outputs.name
 }
+
+output "mlflow_artifacts_bucket" {
+  description = "GCS bucket for MLflow artifacts"
+  value       = google_storage_bucket.mlflow_artifacts.name
+}

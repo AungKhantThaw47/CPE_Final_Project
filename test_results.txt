@@ -1,0 +1,6 @@
+Test Results
+============
+Accuracy: 0.8800
+F1 Score: 0.8737
+Training samples: 800
+Test samples: 200
