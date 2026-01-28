@@ -15,14 +15,20 @@ CPE_Final_Project/
 │   ├── shell.nix                  # Nix development environment
 │   └── requirements.txt           # Local dev tools
 │
+├── utils/                         # Shared utilities for all codebases
+│   ├── __init__.py                # Package initialization
+│   ├── gcs_utils.py               # GCS storage utilities
+│   └── README.md                  # Utils documentation
+│
+├── Codebase_Container/            # Application logic container
+│   ├── crawler_codebase/          # Web crawler application
+│   ├── text_clean_codebase/       # Text cleaning application
+│   ├── cloud_scheduler_function/  # Cloud Scheduler function
+│   ├── gpu_batch_job/             # GPU batch processing job
+│   └── README.md                  # Codebase documentation
+│
 └── Cloud Run GPU Batch System
     └── cloud-run-gpu-batch/
-        ├── gpu-job/               # GPU workload container
-        │   ├── Dockerfile         # CUDA container
-        │   ├── requirements.txt   # PyTorch + dependencies
-        │   ├── main.py           # GPU job script
-        │   └── README.md         # Customization guide
-        │
         ├── trigger_job.py        # Job execution (REST API)
         ├── build.py              # Docker build & push
         ├── deploy.sh             # Full deployment

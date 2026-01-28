@@ -14,10 +14,13 @@ NO long-running processes, NO servers, NO infinite loops.
 
 import os
 import sys
-import json
 from datetime import datetime
 import torch
-from google.cloud import storage
+
+# Add project root to path to import shared utils
+sys.path.insert(0, '/workspace')  # In container, project root is mounted at /workspace
+
+from utils.gcs_utils import save_results_to_gcs
 
 
 def check_gpu():
@@ -26,7 +29,7 @@ def check_gpu():
     Returns True if GPU is available, False otherwise.
     """
     print("=" * 60)
-    print("GPU DETECTION")
+    print("GPU DETECTION MAC-2")
     print("=" * 60)
     
     if torch.cuda.is_available():
@@ -98,55 +101,6 @@ def run_gpu_computation():
     }
 
 
-def save_results_to_gcs(results_data):
-    """
-    Save computation results to Google Cloud Storage.
-    Bucket name is provided via GCS_BUCKET environment variable.
-    """
-    print("\n" + "=" * 60)
-    print("SAVING RESULTS TO GCS")
-    print("=" * 60)
-    
-    bucket_name = os.environ.get("GCS_BUCKET")
-    if not bucket_name:
-        print("⚠️  GCS_BUCKET environment variable not set")
-        print("⚠️  Skipping GCS upload")
-        return
-    
-    try:
-        # Initialize GCS client (uses service account from Cloud Run)
-        client = storage.Client()
-        bucket = client.bucket(bucket_name)
-        
-        # Create unique filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        job_name = os.environ.get("JOB_NAME", "unknown-job")
-        filename = f"{job_name}/results_{timestamp}.json"
-        
-        # Add metadata
-        results_data["timestamp"] = datetime.now().isoformat()
-        results_data["job_name"] = job_name
-        results_data["cuda_available"] = torch.cuda.is_available()
-        
-        if torch.cuda.is_available():
-            results_data["gpu_name"] = torch.cuda.get_device_name(0)
-            results_data["gpu_count"] = torch.cuda.device_count()
-        
-        # Upload to GCS
-        blob = bucket.blob(filename)
-        blob.upload_from_string(
-            json.dumps(results_data, indent=2),
-            content_type="application/json"
-        )
-        
-        print(f"✅ Results saved to gs://{bucket_name}/{filename}")
-        
-    except Exception as e:
-        print(f"❌ Error saving to GCS: {e}")
-        print(f"   Bucket: {bucket_name}")
-        raise
-
-
 def main():
     """
     Main execution flow.
@@ -155,6 +109,9 @@ def main():
     print("🚀 Starting GPU Batch Job")
     print(f"Timestamp: {datetime.now().isoformat()}")
     print(f"Job Name: {os.environ.get('JOB_NAME', 'unknown')}")
+    
+    # Check if we should actually save to GCS (default: True)
+    confirm_save = os.environ.get("CONFIRM_SAVE", "true").lower() == "true"
     
     try:
         # Step 1: Check GPU availability
@@ -167,8 +124,9 @@ def main():
         # Step 2: Run GPU computation
         results = run_gpu_computation()
         
-        # Step 3: Save results to GCS
-        save_results_to_gcs(results)
+        # Step 3: Save results to GCS with confirmation parameter
+        save_status = save_results_to_gcs(results, confirm_save=confirm_save)
+        print(f"Save status: {save_status}")
         
         # Step 4: Exit successfully
         print("\n" + "=" * 60)

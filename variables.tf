@@ -61,3 +61,20 @@ variable "gpu_type" {
   type        = string
   default     = "nvidia-l4"
 }
+
+# ============================================
+# MLflow Configuration
+# ============================================
+
+variable "mlflow_db_password" {
+  description = "Password for MLflow PostgreSQL database"
+  type        = string
+  sensitive   = true
+  default     = "changeme123"
+}
+
+variable "mlflow_public_access" {
+  description = "Allow public access to MLflow tracking server"
+  type        = bool
+  default     = true
+}
