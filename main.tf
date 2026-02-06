@@ -50,7 +50,27 @@ locals {
       description     = "DVB Burmese news crawler job"
       build_image     = true  # Build from local Dockerfile
       enable_scheduler = true
-      schedule        = "0 0 * * *"  # Run every day at midnight
+      schedule        = "0 1 * * *"  # Run every day at midnight
+      enable_gpu      = false
+      cpu_limit       = "1"
+      memory_limit    = "512Mi"
+      timeout         = "600s"
+      environment_variables = {
+        GCS_BUCKET = google_storage_bucket.crawler_data.name
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter"
+      ]
+    }
+    
+    dvb-text-cleaner-job = {
+      codebase_path   = "${path.root}/Codebase_Container/text_clean_codebase"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-text-cleaner:latest"
+      description     = "DVB text cleaning job - removes author names and source citations"
+      build_image     = true  # Build from local Dockerfile
+      enable_scheduler = true
+      schedule        = "0 1 * * *"  # Run at midnight (same time as crawler, but processes 2-day-old data)
       enable_gpu      = false
       cpu_limit       = "1"
       memory_limit    = "512Mi"
@@ -173,6 +193,25 @@ resource "google_storage_bucket" "crawler_data" {
   lifecycle_rule {
     condition {
       age = 90  # Keep crawler data for 90 days
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+# ============================================
+# GCS Bucket for Cleaned Crawler Data
+# ============================================
+resource "google_storage_bucket" "cleaned_crawler_data" {
+  name                        = "${var.project_id}-cleaned-crawler-data"
+  location                    = var.region
+  force_destroy               = true
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 90  # Keep cleaned data for 90 days
     }
     action {
       type = "Delete"

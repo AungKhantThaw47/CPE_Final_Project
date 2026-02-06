@@ -10,14 +10,24 @@ const yesterday = new Date();
 yesterday.setDate(yesterday.getDate() - 1); // Set to yesterday
 yesterday.setHours(0, 0, 0, 0); // Set to start of yesterday
 
+console.log("============================================================");
+console.log("DVB Burmese News Crawler");
+console.log("============================================================");
+console.log(`📅 Target Date: ${yesterday.toISOString().split('T')[0]}`);
+console.log(`🌐 Source URL: ${url}`);
+console.log(`⏰ Started at: ${new Date().toISOString()}`);
+console.log("============================================================\n");
+
 const postdata = [];
 let foundOldPosts = false; // Flag to stop when we find posts older than yesterday
 
 async function scrapePage(baseUrl , url, page) {
     try {
+        console.log(`\n📄 Scraping page ${page}: ${url}`);
         const { data } = await axios.get(url);
         const $ = cheerio.load(data);
 
+        let pagePostCount = 0;
         $("a.block.hover\\:text-blue-600").each((i, el) => {
             const title = $(el).find("div.text-sm").first().text().trim();
             const dateStr = $(el).find("div.text-gray-500 div").first().text().trim();
@@ -35,12 +45,16 @@ async function scrapePage(baseUrl , url, page) {
                         date: new Date(dateFormat).toISOString(), 
                         link: link.startsWith('http') ? link : `https://www.dvb.no${link}`
                     });
+                    pagePostCount++;
                 } else if (postDate < yesterday) {
                     // Found a post older than yesterday, set flag to stop pagination
                     foundOldPosts = true;
                 }
             }
         });
+
+        console.log(`   ✅ Found ${pagePostCount} articles from ${yesterday.toISOString().split('T')[0]} on page ${page}`);
+        console.log(`   📊 Total collected so far: ${postdata.length} articles`);
 
 
 
@@ -54,8 +68,10 @@ async function scrapePage(baseUrl , url, page) {
             nextUrl = `${baseUrl.split('?')[0]}?page=${page + 1}`;
         }
         
-        if (nextUrl) {
-            await scrapePage(baseUrl, nextUrl, page + 1);
+        if (nextUrl) {\n============================================================`);
+            console.log(`✅ Scraping completed! (${reason})`);
+            console.log(`📊 Total posts from yesterday: ${postdata.length}`);
+            console.log(`============================================================\n
         } else {
             const reason = foundOldPosts ? "Found posts older than yesterday" : "No more pages";
             console.log(`Scraping completed! (${reason})`);
@@ -74,18 +90,29 @@ async function scrapePage(baseUrl , url, page) {
                 }
             };
             
-            // Save locally
-            fs.writeFileSync(filePath, JSON.stringify(resultsData, null, 2), "utf8");
+            console.log(`💾 Saved JSON locally: ${filePath}`);
             
             // Upload to GCS
             const dateStr = yesterday.toISOString().split('T')[0];
             const gcsPath = `dvb/${dateStr}/DVB_Burmese_${dateStr}.json`;
             await uploadJSONToGCS(resultsData, gcsPath);
+            console.log(`☁️  Uploaded metadata to GCS: ${gcsPath}\n`);
+            console.log(`============================================================`);
+            console.log(`🎉 Crawling completed successfully!`);
+            console.log(`⏰ Finished at: ${new Date().toISOString()}`);
+            console.log(`============================================================`lit('T')[0];
+            const gcsPath = `dvb/${dateStr}/DVB_Burmese_${dateStr}.json`;
+            await uploadJSONToGCS(resultsData, gcsPath);
         }
 
-    } catch (error) {
-        console.error("Error fetching the page:", error.message);
-    }
+    console.log(`\n============================================================`);
+    console.log(`📥 Fetching Full Content for ${postdata.length} Articles`);
+    console.log(`============================================================\n`);
+    
+    for (let i = 0; i < postdata.length; i++) {
+        try {
+            const post = postdata[i];
+            console.log(`[${i + 1}/${postdata.length}] Fetching: ${post.title.substring(0, 50)}...`)
 }
 
 async function fetchPostContents() {
@@ -102,8 +129,10 @@ async function fetchPostContents() {
                 if (paragraph.length > 0){
                     full_content += paragraph + "\n";
                 }
-            });
-
+                console.log(`   ✅ Uploaded to: ${gcsPath}`);
+            } else {
+                post.content_file = "Upload skipped - no GCS bucket configured";
+                console.log(`   ⚠️  Upload skipped`)
             const contentHash = createHash("md5").update(full_content).digest("hex");
             const dateStr = post.date.split("T")[0];
             const gcsPath = `dvb/${dateStr}/DVB_${dateStr}_${contentHash}.txt`;
@@ -113,16 +142,16 @@ async function fetchPostContents() {
             
             if (uploadResult.status === 'success') {
                 post.content_file = uploadResult.url;
-            } else {
-                post.content_file = "Upload skipped - no GCS bucket configured";
-            }
-            
+            } else {   ❌ Error fetching content for ${postdata[i].link}:`, error.message);
+            postdata[i].content_file = "Error fetching content";
+        }
+    }
+    console.log(`\n✅ Content fetching completed!\n`);       
             // Small delay to avoid overwhelming the server
             await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error) {
             console.error(`Error fetching content for ${postdata[i].link}:`, error.message);
             postdata[i].content_file = "Error fetching content";
-        }
     }
 }
 
