@@ -48,7 +48,7 @@ locals {
   is_github_ci = var.github_sha != ""
   build_env    = local.is_github_ci ? "GITHUB" : "LOCAL"
   # Use full GitHub commit SHA in CI, shortened MD5 hash for local builds
-  build_hash   = local.is_github_ci ? var.github_sha : "${local.build_env}-${substr(local.codebase_hash, 0, 7)}"
+  build_hash   = local.is_github_ci ? "GITHUB-${var.github_sha}" : "${local.build_env}-${substr(local.codebase_hash, 0, 7)}"
 
   # Sanitize job name for service account IDs (replace underscores with hyphens)
   sa_safe_job_name = replace(var.job_name, "_", "-")
