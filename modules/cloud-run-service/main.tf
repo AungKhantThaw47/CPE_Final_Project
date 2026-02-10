@@ -8,26 +8,49 @@ terraform {
       source  = "hashicorp/null"
       version = "~> 3.0"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
   }
 }
 
 locals {
   # Use provided codebase_path or fallback to default location
   codebase_directory = var.codebase_path != "" ? var.codebase_path : "${path.module}/service"
-  
+
   # Generate hash of all files in the codebase directory
   codebase_files = fileset(local.codebase_directory, "**")
-  codebase_hash  = md5(jsonencode({
-    for file in local.codebase_files :
-    file => filemd5("${local.codebase_directory}/${file}")
-  }))
-  
+
+  # Check if root utils folder exists and include it in hash
+  root_utils_path   = "${path.root}/utils"
+  root_utils_exists = fileexists("${local.root_utils_path}/__init__.py")
+  root_utils_files  = local.root_utils_exists ? fileset(local.root_utils_path, "**") : []
+
+  # Combined hash: codebase files + root utils files
+  codebase_hash = md5(jsonencode(merge(
+    {
+      for file in local.codebase_files :
+      "codebase/${file}" => filemd5("${local.codebase_directory}/${file}")
+    },
+    {
+      for file in local.root_utils_files :
+      "utils/${file}" => filemd5("${local.root_utils_path}/${file}")
+    }
+  )))
+
+  # Environment detection: GITHUB vs LOCAL
+  is_github_ci = var.github_sha != ""
+  build_env    = local.is_github_ci ? "GITHUB" : "LOCAL"
+  short_hash   = substr(local.codebase_hash, 0, 7)
+  build_hash   = "${local.build_env}-${local.short_hash}"
+
   # Sanitize service name for service account IDs (replace underscores with hyphens)
   sa_safe_service_name = replace(var.service_name, "_", "-")
-  
-  # OS detection
-  is_windows = substr(pathexpand("~"), 0, 1) != "/"
-  
+
+  # OS detection (check for Windows drive letter like C:, D:)
+  is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
+
   # Build commands for each OS
   windows_build_command = <<-EOT
     if (Test-Path '${replace(path.root, "/", "\\")}\\utils') {
@@ -43,7 +66,7 @@ locals {
       Remove-Item -Recurse -Force '${replace(local.codebase_directory, "/", "\\")}\\utils'
     }
   EOT
-  
+
   unix_build_command = <<-EOT
     if [ -d '${path.root}/utils' ]; then
       cp -r '${path.root}/utils' '${local.codebase_directory}/'
@@ -60,20 +83,30 @@ locals {
   EOT
 }
 
+# Generate .build-hash file for the service
+resource "local_file" "build_hash" {
+  filename = "${local.codebase_directory}/.build-hash"
+  content  = local.build_hash
+
+  lifecycle {
+    ignore_changes = all
+  }
+}
+
 # Build service image (only if build_image is true)
 resource "null_resource" "service_image_build" {
   count = var.build_image ? 1 : 0
-  
+
   triggers = {
     codebase_hash = local.codebase_hash
   }
 
   # Copy utils to build context, build image, then cleanup
   provisioner "local-exec" {
-    when       = create
-    on_failure = fail
-    command    = local.is_windows ? local.windows_build_command : local.unix_build_command
-    interpreter = local.is_windows ? ["PowerShell", "-Command"] : ["bash", "-c"]
+    when        = create
+    on_failure  = fail
+    command     = local.is_windows ? local.windows_build_command : local.unix_build_command
+    interpreter = local.is_windows ? ["PowerShell", "-Command"] : ["sh", "-c"]
   }
 }
 
@@ -97,33 +130,33 @@ resource "google_cloud_run_v2_service" "service" {
   name     = local.sa_safe_service_name
   location = var.region
   project  = var.project_id
-  
+
   deletion_protection = false
-  
+
   depends_on = [null_resource.service_image_build]
-  
+
   template {
     scaling {
       min_instance_count = var.min_instances
       max_instance_count = var.max_instances
     }
-    
+
     service_account = google_service_account.service_sa.email
-    
+
     containers {
       image = var.container_image
-      
+
       ports {
         container_port = var.port
       }
-      
+
       resources {
         limits = {
           cpu    = var.cpu_limit
           memory = var.memory_limit
         }
       }
-      
+
       dynamic "env" {
         for_each = var.environment_variables
         content {
@@ -131,7 +164,7 @@ resource "google_cloud_run_v2_service" "service" {
           value = env.value
         }
       }
-      
+
       # Cloud SQL volume mount
       dynamic "volume_mounts" {
         for_each = length(var.cloud_sql_instances) > 0 ? [1] : []
@@ -141,7 +174,7 @@ resource "google_cloud_run_v2_service" "service" {
         }
       }
     }
-    
+
     # Cloud SQL volume
     dynamic "volumes" {
       for_each = length(var.cloud_sql_instances) > 0 ? [1] : []
@@ -153,7 +186,7 @@ resource "google_cloud_run_v2_service" "service" {
       }
     }
   }
-  
+
   lifecycle {
     ignore_changes = [
       launch_stage,
@@ -165,7 +198,7 @@ resource "google_cloud_run_v2_service" "service" {
 # Allow public access if enabled
 resource "google_cloud_run_v2_service_iam_member" "public_access" {
   count = var.allow_public ? 1 : 0
-  
+
   name     = google_cloud_run_v2_service.service.name
   location = var.region
   project  = var.project_id

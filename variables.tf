@@ -78,3 +78,9 @@ variable "mlflow_public_access" {
   type        = bool
   default     = true
 }
+
+variable "github_sha" {
+  description = "GitHub commit SHA (provided by CI via TF_VAR_github_sha, empty for local builds)"
+  type        = string
+  default     = ""
+}

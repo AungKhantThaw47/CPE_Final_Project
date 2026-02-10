@@ -1,22 +1,22 @@
 # OS detection for cross-platform build scripts
 locals {
-  is_windows  = substr(pathexpand("~"), 0, 1) != "/"
+  is_windows  = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
   image_path  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
   bucket_name = "${var.project_id}-gpu-job-outputs"
-  
+
   # Define all jobs in one place
   jobs = {
     gpu-batch-job = {
-      codebase_path   = "${path.root}/Codebase_Container/gpu_batch_job"
-      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
-      description     = "GPU-accelerated batch processing job"
-      build_image     = true  # Build from local Dockerfile
+      codebase_path    = "${path.root}/Codebase_Container/gpu_batch_job"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
+      description      = "GPU-accelerated batch processing job"
+      build_image      = true # Build from local Dockerfile
       enable_scheduler = false
-      enable_gpu      = true
-      gpu_type        = var.gpu_type
-      cpu_limit       = "4"
-      memory_limit    = "16Gi"
-      timeout         = "900s"
+      enable_gpu       = true
+      gpu_type         = var.gpu_type
+      cpu_limit        = "4"
+      memory_limit     = "16Gi"
+      timeout          = "900s"
       environment_variables = {
         GCS_BUCKET = google_storage_bucket.job_outputs.name
         JOB_NAME   = var.job_name
@@ -26,35 +26,35 @@ locals {
         "roles/logging.logWriter"
       ]
     }
-    
+
     daily-data-processor = {
-      codebase_path   = "${path.root}/Codebase_Container/cloud_scheduler_function"
-      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/scheduler-job:latest"
-      description     = "Daily data processing job"
-      build_image     = true  # Build from local Dockerfile
+      codebase_path    = "${path.root}/Codebase_Container/cloud_scheduler_function"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/scheduler-job:latest"
+      description      = "Daily data processing job"
+      build_image      = true # Build from local Dockerfile
       enable_scheduler = true
-      schedule        = "0 * * * *"
-      enable_gpu      = false
-      cpu_limit       = "1"
-      memory_limit    = "512Mi"
-      timeout         = "600s"
+      schedule         = "0 * * * *"
+      enable_gpu       = false
+      cpu_limit        = "1"
+      memory_limit     = "512Mi"
+      timeout          = "600s"
       environment_variables = {
         ENV = "production"
       }
       service_account_roles = []
     }
-    
+
     dvb-crawler-job = {
-      codebase_path   = "${path.root}/Codebase_Container/crawler_job"
-      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
-      description     = "DVB Burmese news crawler job"
-      build_image     = true  # Build from local Dockerfile
+      codebase_path    = "${path.root}/Codebase_Container/crawler_job"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
+      description      = "DVB Burmese news crawler job"
+      build_image      = true # Build from local Dockerfile
       enable_scheduler = true
-      schedule        = "0 1 * * *"  # Run every day at midnight
-      enable_gpu      = false
-      cpu_limit       = "1"
-      memory_limit    = "512Mi"
-      timeout         = "600s"
+      schedule         = "0 1 * * *" # Run every day at midnight
+      enable_gpu       = false
+      cpu_limit        = "1"
+      memory_limit     = "512Mi"
+      timeout          = "600s"
       environment_variables = {
         GCS_BUCKET = google_storage_bucket.crawler_data.name
       }
@@ -63,18 +63,18 @@ locals {
         "roles/logging.logWriter"
       ]
     }
-    
+
     dvb-text-cleaner-job = {
-      codebase_path   = "${path.root}/Codebase_Container/text_clean_codebase"
-      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-text-cleaner:latest"
-      description     = "DVB text cleaning job - removes author names and source citations"
-      build_image     = true  # Build from local Dockerfile
+      codebase_path    = "${path.root}/Codebase_Container/text_clean_codebase"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-text-cleaner:latest"
+      description      = "DVB text cleaning job - removes author names and source citations"
+      build_image      = true # Build from local Dockerfile
       enable_scheduler = true
-      schedule        = "0 1 * * *"  # Run at midnight (same time as crawler, but processes 2-day-old data)
-      enable_gpu      = false
-      cpu_limit       = "1"
-      memory_limit    = "512Mi"
-      timeout         = "600s"
+      schedule         = "0 1 * * *" # Run at midnight (same time as crawler, but processes 2-day-old data)
+      enable_gpu       = false
+      cpu_limit        = "1"
+      memory_limit     = "512Mi"
+      timeout          = "600s"
       environment_variables = {
         GCS_BUCKET = google_storage_bucket.crawler_data.name
       }
@@ -84,14 +84,14 @@ locals {
       ]
     }
   }
-  
+
   # Define Cloud Run Services (always-on HTTP services)
   services = {
     mlflow = {
       codebase_path   = "${path.root}/modules/mlflow"
       container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/mlflow-server:latest"
       description     = "MLflow Tracking Server"
-      build_image     = true  # Build from Dockerfile
+      build_image     = true # Build from Dockerfile
       cpu_limit       = "2"
       memory_limit    = "4Gi"
       min_instances   = 0
@@ -99,16 +99,16 @@ locals {
       port            = 8080
       allow_public    = var.mlflow_public_access
       environment_variables = {
-        BACKEND_STORE_URI = "sqlite:///mlflow.db"  # Use SQLite for simplicity, change to PostgreSQL if needed
-        ARTIFACT_ROOT     = "gs://${var.project_id}-mlflow-artifacts"
-        GCS_BUCKET        = "${var.project_id}-mlflow-artifacts"
-        MLFLOW_TRACKING_SERVER_NAME = "mlflow"
+        BACKEND_STORE_URI               = "sqlite:///mlflow.db" # Use SQLite for simplicity, change to PostgreSQL if needed
+        ARTIFACT_ROOT                   = "gs://${var.project_id}-mlflow-artifacts"
+        GCS_BUCKET                      = "${var.project_id}-mlflow-artifacts"
+        MLFLOW_TRACKING_SERVER_NAME     = "mlflow"
         MLFLOW_SERVER_ENABLE_HOST_CHECK = "false"
       }
       service_account_roles = [
         "roles/storage.objectAdmin"
       ]
-      cloud_sql_instances = []  # Add ["${var.project_id}:${var.region}:mlflow-db"] if using Cloud SQL
+      cloud_sql_instances = [] # Add ["${var.project_id}:${var.region}:mlflow-db"] if using Cloud SQL
     }
   }
 }
@@ -126,7 +126,7 @@ resource "google_project_service" "apis" {
     "vpcaccess.googleapis.com",
     "cloudscheduler.googleapis.com"
   ])
-  
+
   service            = each.value
   disable_on_destroy = false
 }
@@ -173,7 +173,7 @@ resource "google_storage_bucket" "mlflow_artifacts" {
 
   lifecycle_rule {
     condition {
-      age = 90  # Keep MLflow artifacts longer than job outputs
+      age = 90 # Keep MLflow artifacts longer than job outputs
     }
     action {
       type = "Delete"
@@ -192,7 +192,7 @@ resource "google_storage_bucket" "crawler_data" {
 
   lifecycle_rule {
     condition {
-      age = 90  # Keep crawler data for 90 days
+      age = 90 # Keep crawler data for 90 days
     }
     action {
       type = "Delete"
@@ -211,7 +211,7 @@ resource "google_storage_bucket" "cleaned_crawler_data" {
 
   lifecycle_rule {
     condition {
-      age = 90  # Keep cleaned data for 90 days
+      age = 90 # Keep cleaned data for 90 days
     }
     action {
       type = "Delete"
@@ -239,28 +239,29 @@ module "jobs" {
   region          = var.region
   job_name        = each.key
   job_description = each.value.description
-  
+
   # Scheduler configuration
   enable_scheduler = each.value.enable_scheduler
   schedule         = lookup(each.value, "schedule", "")
   time_zone        = lookup(each.value, "time_zone", "Asia/Bangkok")
-  
+
   # GPU configuration
   enable_gpu = each.value.enable_gpu
   gpu_type   = lookup(each.value, "gpu_type", "nvidia-l4")
-  
+
   # Container and resources
   container_image = each.value.container_image
   codebase_path   = each.value.codebase_path
   build_image     = lookup(each.value, "build_image", true)
-  
+  github_sha      = var.github_sha
+
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit
   timeout      = each.value.timeout
-  
+
   # Environment variables
   environment_variables = each.value.environment_variables
-  
+
   # IAM roles for the job service account
   job_service_account_roles = each.value.service_account_roles
 
@@ -275,7 +276,7 @@ module "jobs" {
 # Grant invoker permission to all jobs
 resource "google_cloud_run_v2_job_iam_member" "invoker_can_run" {
   for_each = local.jobs
-  
+
   name     = module.jobs[each.key].job_name
   location = var.region
   role     = "roles/run.invoker"
@@ -289,33 +290,34 @@ module "services" {
   source   = "./modules/cloud-run-service"
   for_each = local.services
 
-  project_id      = var.project_id
-  region          = var.region
-  service_name    = each.key
-  description     = each.value.description
-  
+  project_id   = var.project_id
+  region       = var.region
+  service_name = each.key
+  description  = each.value.description
+
   # Container and resources
   container_image = each.value.container_image
   codebase_path   = each.value.codebase_path
   build_image     = lookup(each.value, "build_image", true)
-  
+  github_sha      = var.github_sha
+
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit
-  
+
   # Scaling
   min_instances = lookup(each.value, "min_instances", 0)
   max_instances = lookup(each.value, "max_instances", 10)
-  
+
   # Networking
   port         = lookup(each.value, "port", 8080)
   allow_public = lookup(each.value, "allow_public", false)
-  
+
   # Environment variables
   environment_variables = lookup(each.value, "environment_variables", {})
-  
+
   # Cloud SQL
   cloud_sql_instances = lookup(each.value, "cloud_sql_instances", [])
-  
+
   # IAM roles for the service account
   service_account_roles = lookup(each.value, "service_account_roles", [])
 

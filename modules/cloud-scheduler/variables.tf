@@ -83,7 +83,11 @@ variable "job_service_account_roles" {
   type        = list(string)
   default     = []
 }
-
+variable "github_sha" {
+  description = "GitHub commit SHA (provided by CI, empty for local builds)"
+  type        = string
+  default     = ""
+}
 variable "codebase_path" {
   description = "Path to the codebase folder containing Dockerfile, main.py, and requirements.txt"
   type        = string
