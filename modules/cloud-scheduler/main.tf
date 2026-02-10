@@ -104,7 +104,10 @@ resource "null_resource" "scheduler_job_image_build" {
 
   triggers = {
     codebase_hash = local.codebase_hash
+    build_hash    = local_file.build_hash.content
   }
+
+  depends_on = [local_file.build_hash]
 
   # Copy utils to build context, build image, then cleanup
   provisioner "local-exec" {
