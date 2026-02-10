@@ -64,6 +64,7 @@ locals {
     
     cd '${replace(local.codebase_directory, "/", "\\")}'
     gcloud builds submit `
+      --project=${var.project_id} `
       --config cloudbuild.yaml `
       --substitutions=_IMAGE_TAG=${var.container_image}
     
@@ -79,6 +80,7 @@ locals {
     
     cd '${local.codebase_directory}'
     gcloud builds submit \
+      --project=${var.project_id} \
       --config cloudbuild.yaml \
       --substitutions=_IMAGE_TAG=${var.container_image}
     
