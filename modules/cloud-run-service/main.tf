@@ -76,15 +76,17 @@ data "external" "git_status" {
         
         # Find the last commit that actually changed the codebase directory
         try {
-          # Check if current commit changed the codebase
-          $commitDiff = (git diff-tree --no-commit-id --name-only -r $targetCommit -- $codebasePath 2>$null)
+          # Check if current commit changed the codebase (excluding .build-hash)
+          $commitDiff = (git diff-tree --no-commit-id --name-only -r $targetCommit -- $codebasePath 2>$null | Where-Object { $_ -notlike '*/.build-hash' })
           if ($commitDiff) {
-            # Current commit has changes
+            # Current commit has real changes
             $lastCommit = $targetCommit
           } else {
-            # Walk back from target commit to find last commit that changed the codebase
-            $lastCommit = (git log -1 --format=%h $targetCommit -- $codebasePath 2>$null)
+            # No real changes or only .build-hash changed - search from parent commit
+            $parentCommit = $targetCommit + '^'
+            $lastCommit = (git log -1 --format=%h $parentCommit -- $codebasePath 2>$null)
             if (-not $lastCommit) {
+              # No parent or no history - use current commit
               $lastCommit = $targetCommit
             }
           }
@@ -135,14 +137,17 @@ data "external" "git_status" {
       fi
       
       # Find the last commit that actually changed the codebase directory
-      commit_diff=$(git diff-tree --no-commit-id --name-only -r "$target_commit" -- "$codebase_path" 2>/dev/null || echo "")
+      # Exclude .build-hash from change detection
+      commit_diff=$(git diff-tree --no-commit-id --name-only -r "$target_commit" -- "$codebase_path" 2>/dev/null | grep -v '\.build-hash$' || echo "")
       if [ -n "$commit_diff" ]; then
-        # Current commit has changes
+        # Current commit has real changes
         last_commit="$target_commit"
       else
-        # Walk back from target commit to find last commit that changed the codebase
-        last_commit=$(git log -1 --format=%h "$target_commit" -- "$codebase_path" 2>/dev/null || echo "$target_commit")
+        # No real changes or only .build-hash changed - search from parent commit
+        parent_commit="$target_commit^"
+        last_commit=$(git log -1 --format=%h "$parent_commit" -- "$codebase_path" 2>/dev/null || echo "$target_commit")
         if [ -z "$last_commit" ]; then
+          # No parent or no history - use current commit
           last_commit="$target_commit"
         fi
       fi
