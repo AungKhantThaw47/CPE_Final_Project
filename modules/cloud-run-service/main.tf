@@ -82,8 +82,8 @@ data "external" "git_status" {
             # Current commit has changes
             $lastCommit = $targetCommit
           } else {
-            # Walk back to find last commit that changed the codebase
-            $lastCommit = (git log -1 --format=%h -- $codebasePath 2>$null)
+            # Walk back from target commit to find last commit that changed the codebase
+            $lastCommit = (git log -1 --format=%h $targetCommit -- $codebasePath 2>$null)
             if (-not $lastCommit) {
               $lastCommit = $targetCommit
             }
@@ -140,8 +140,8 @@ data "external" "git_status" {
         # Current commit has changes
         last_commit="$target_commit"
       else
-        # Walk back to find last commit that changed the codebase
-        last_commit=$(git log -1 --format=%h -- "$codebase_path" 2>/dev/null || echo "$target_commit")
+        # Walk back from target commit to find last commit that changed the codebase
+        last_commit=$(git log -1 --format=%h "$target_commit" -- "$codebase_path" 2>/dev/null || echo "$target_commit")
         if [ -z "$last_commit" ]; then
           last_commit="$target_commit"
         fi
