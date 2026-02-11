@@ -173,10 +173,10 @@ locals {
   # OS detection (check for Windows drive letter like C:, D:)
   is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
 
-  # Generate hash of all files in the codebase directory, excluding .build-hash
+  # Generate hash of all files in the codebase directory, excluding .build-hash*
   codebase_files = [
     for file in fileset(local.codebase_directory, "**") :
-    file if file != ".build-hash" && fileexists("${local.codebase_directory}/${file}")
+    file if !startswith(file, ".build-hash") && fileexists("${local.codebase_directory}/${file}")
   ]
 
   # Check if root utils folder exists and include it in hash
