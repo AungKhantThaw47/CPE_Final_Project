@@ -236,10 +236,6 @@ locals {
 resource "local_file" "build_hash" {
   filename = "${local.codebase_directory}/.build-hash"
   content  = local.build_hash
-
-  lifecycle {
-    ignore_changes = all
-  }
 }
 
 # Build scheduler job image (only if build_image is true)
@@ -248,7 +244,7 @@ resource "null_resource" "scheduler_job_image_build" {
 
   triggers = {
     codebase_hash = local.codebase_hash
-    build_hash    = local_file.build_hash.content
+    build_hash    = local.build_hash
   }
 
   depends_on = [local_file.build_hash]
