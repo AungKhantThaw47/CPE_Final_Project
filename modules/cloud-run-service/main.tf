@@ -173,19 +173,21 @@ locals {
   # OS detection (check for Windows drive letter like C:, D:)
   is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
 
-  # Generate hash of all files in the codebase directory, excluding .build-hash*
-  codebase_files = [
+  # For LOCAL builds: Generate hash of all files in the codebase directory
+  # For GITHUB builds: Skip expensive hash calculation, use git commit only
+  # Only calculate hash when there are uncommitted changes
+  codebase_files = data.external.git_status.result.has_changes == "true" ? [
     for file in fileset(local.codebase_directory, "**") :
     file if !startswith(file, ".build-hash") && fileexists("${local.codebase_directory}/${file}")
-  ]
+  ] : []
 
-  # Check if root utils folder exists and include it in hash
+  # Check if root utils folder exists and include it in hash (only for LOCAL builds)
   root_utils_path   = "${path.root}/utils"
-  root_utils_exists = fileexists("${local.root_utils_path}/__init__.py")
+  root_utils_exists = data.external.git_status.result.has_changes == "true" && fileexists("${local.root_utils_path}/__init__.py")
   root_utils_files  = local.root_utils_exists ? fileset(local.root_utils_path, "**") : []
 
-  # Combined hash: codebase files + root utils files
-  codebase_hash = md5(jsonencode(merge(
+  # Combined hash: codebase files + root utils files (only calculated for LOCAL builds)
+  codebase_hash = data.external.git_status.result.has_changes == "true" ? md5(jsonencode(merge(
     {
       for file in local.codebase_files :
       "codebase/${file}" => filemd5("${local.codebase_directory}/${file}")
@@ -194,7 +196,7 @@ locals {
       for file in local.root_utils_files :
       "utils/${file}" => filemd5("${local.root_utils_path}/${file}")
     }
-  )))
+  ))) : ""
 
   # Environment detection: GITHUB vs LOCAL
   is_github_ci = var.github_sha != ""
