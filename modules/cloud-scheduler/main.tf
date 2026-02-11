@@ -12,12 +12,155 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.0"
     }
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.0"
+    }
   }
+}
+
+# Check git status and find the last commit that changed the codebase directory
+data "external" "git_status" {
+  program = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0 ? [
+    "PowerShell", "-Command", <<-EOT
+      Set-Location '${replace(path.root, "/", "\\")}'
+      
+      # Get current git commit (use github_sha if provided, otherwise HEAD)
+      $targetCommit = '${var.github_sha}'
+      if ([string]::IsNullOrEmpty($targetCommit)) {
+        try {
+          $targetCommit = (git rev-parse --short HEAD 2>$null)
+          if (-not $targetCommit) { $targetCommit = "nogit" }
+        } catch {
+          $targetCommit = "nogit"
+        }
+      } else {
+        # Shorten the full GitHub SHA
+        $targetCommit = $targetCommit.Substring(0, [Math]::Min(7, $targetCommit.Length))
+      }
+      
+      # Get relative path to codebase directory
+      $codebasePath = '${replace(var.codebase_path != "" ? var.codebase_path : "${path.module}/function", "/", "\\")}'
+      
+      # Check if we're in a git repo
+      if ($targetCommit -eq "nogit") {
+        $hasChanges = "true"
+        $lastCommit = "nogit"
+      } else {
+        # Check for uncommitted changes (only relevant for local, not CI)
+        $isCI = '${var.github_sha}' -ne ''
+        if (-not $isCI) {
+          try {
+            $gitChanges = (git status --porcelain $codebasePath 2>$null)
+            if ($gitChanges) {
+              $hasChanges = "true"
+              $lastCommit = $targetCommit
+              $result = @{
+                has_changes = $hasChanges
+                git_commit = $lastCommit
+              }
+              $result | ConvertTo-Json -Compress
+              exit 0
+            }
+          } catch {
+            $hasChanges = "true"
+            $lastCommit = $targetCommit
+            $result = @{
+              has_changes = $hasChanges
+              git_commit = $lastCommit
+            }
+            $result | ConvertTo-Json -Compress
+            exit 0
+          }
+        }
+        
+        # Find the last commit that actually changed the codebase directory
+        try {
+          # Check if current commit changed the codebase
+          $commitDiff = (git diff-tree --no-commit-id --name-only -r $targetCommit -- $codebasePath 2>$null)
+          if ($commitDiff) {
+            # Current commit has changes
+            $lastCommit = $targetCommit
+          } else {
+            # Walk back to find last commit that changed the codebase
+            $lastCommit = (git log -1 --format=%h -- $codebasePath 2>$null)
+            if (-not $lastCommit) {
+              $lastCommit = $targetCommit
+            }
+          }
+          $hasChanges = "false"
+        } catch {
+          $hasChanges = "false"
+          $lastCommit = $targetCommit
+        }
+      }
+      
+      # Output JSON for Terraform
+      $result = @{
+        has_changes = $hasChanges
+        git_commit = $lastCommit
+      }
+      $result | ConvertTo-Json -Compress
+    EOT
+  ] : ["sh", "-c", <<-EOT
+    cd '${path.root}'
+    
+    # Get current git commit (use github_sha if provided, otherwise HEAD)
+    target_commit='${var.github_sha}'
+    if [ -z "$target_commit" ]; then
+      target_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
+    else
+      # Shorten the full GitHub SHA
+      target_commit=$(echo "$target_commit" | cut -c1-7)
+    fi
+    
+    # Get relative path to codebase directory
+    codebase_path='${var.codebase_path != "" ? var.codebase_path : "${path.module}/function"}'
+    
+    # Check if we're in a git repo
+    if [ "$target_commit" = "nogit" ]; then
+      has_changes="true"
+      last_commit="nogit"
+    else
+      # Check for uncommitted changes (only relevant for local, not CI)
+      is_ci='${var.github_sha != "" ? "true" : "false"}'
+      if [ "$is_ci" = "false" ]; then
+        git_changes=$(git status --porcelain "$codebase_path" 2>/dev/null || echo "")
+        if [ -n "$git_changes" ]; then
+          has_changes="true"
+          last_commit="$target_commit"
+          echo "{\"has_changes\":\"$has_changes\",\"git_commit\":\"$last_commit\"}"
+          exit 0
+        fi
+      fi
+      
+      # Find the last commit that actually changed the codebase directory
+      commit_diff=$(git diff-tree --no-commit-id --name-only -r "$target_commit" -- "$codebase_path" 2>/dev/null || echo "")
+      if [ -n "$commit_diff" ]; then
+        # Current commit has changes
+        last_commit="$target_commit"
+      else
+        # Walk back to find last commit that changed the codebase
+        last_commit=$(git log -1 --format=%h -- "$codebase_path" 2>/dev/null || echo "$target_commit")
+        if [ -z "$last_commit" ]; then
+          last_commit="$target_commit"
+        fi
+      fi
+      has_changes="false"
+    fi
+    
+    # Output JSON for Terraform
+    echo "{\"has_changes\":\"$has_changes\",\"git_commit\":\"$last_commit\"}"
+  EOT
+  ]
 }
 
 locals {
   # Use provided codebase_path or fallback to default location
   codebase_directory = var.codebase_path != "" ? var.codebase_path : "${path.module}/function"
+
+  # OS detection (check for Windows drive letter like C:, D:)
+  is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
 
   # Generate hash of all files in the codebase directory, excluding utils folder
   # Any change triggers rebuild, but Docker cache makes it fast
@@ -46,15 +189,14 @@ locals {
 
   # Environment detection: GITHUB vs LOCAL
   is_github_ci = var.github_sha != ""
-  build_env    = local.is_github_ci ? "GITHUB" : "LOCAL"
-  # Use full GitHub commit SHA in CI, shortened MD5 hash for local builds
-  build_hash   = local.is_github_ci ? "GITHUB-${var.github_sha}" : "${local.build_env}-${substr(local.codebase_hash, 0, 7)}"
+  build_env    = data.external.git_status.result.has_changes == "true" ? "LOCAL" : "GITHUB"
+  # Use git commit from last change to codebase (LOCAL prefix only for uncommitted changes)
+  build_hash   = data.external.git_status.result.has_changes == "true" ? "LOCAL-${substr(local.codebase_hash, 0, 7)}" : "GITHUB-${data.external.git_status.result.git_commit}"
+
+
 
   # Sanitize job name for service account IDs (replace underscores with hyphens)
   sa_safe_job_name = replace(var.job_name, "_", "-")
-
-  # OS detection (check for Windows drive letter like C:, D:)
-  is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
 
   # Build commands for each OS
   windows_build_command = <<-EOT
