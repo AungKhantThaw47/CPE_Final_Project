@@ -82,12 +82,16 @@ data "external" "git_status" {
             # Current commit has real changes
             $lastCommit = $targetCommit
           } else {
-            # No real changes or only .build-hash changed - search from parent commit
-            $parentCommit = $targetCommit + '^'
-            $lastCommit = (git log -1 --format=%h $parentCommit -- $codebasePath 2>$null)
-            if (-not $lastCommit) {
-              # No parent or no history - use current commit
-              $lastCommit = $targetCommit
+            # No real changes or only .build-hash changed - find last commit that changed non-.build-hash files
+            # Use git log with path and grep to filter out .build-hash commits
+            $allCommits = (git log --format=%h -n 50 $targetCommit -- $codebasePath 2>$null)
+            $lastCommit = $targetCommit
+            foreach ($c in $allCommits) {
+              $cDiff = (git diff-tree --no-commit-id --name-only -r $c --  $codebasePath 2>$null | Where-Object { $_ -notlike '*/.build-hash' })
+              if ($cDiff) {
+                $lastCommit = $c
+                break
+              }
             }
           }
           $hasChanges = "false"
@@ -143,13 +147,15 @@ data "external" "git_status" {
         # Current commit has real changes
         last_commit="$target_commit"
       else
-        # No real changes or only .build-hash changed - search from parent commit
-        parent_commit="$target_commit^"
-        last_commit=$(git log -1 --format=%h "$parent_commit" -- "$codebase_path" 2>/dev/null || echo "$target_commit")
-        if [ -z "$last_commit" ]; then
-          # No parent or no history - use current commit
-          last_commit="$target_commit"
-        fi
+        # No real changes or only .build-hash changed - find last commit with real changes
+        last_commit="$target_commit"
+        for commit in $(git log --format=%h -n 50 "$target_commit" -- "$codebase_path" 2>/dev/null); do
+          c_diff=$(git diff-tree --no-commit-id --name-only -r "$commit" -- "$codebase_path" 2>/dev/null | grep -v '\.build-hash$' || echo "")
+          if [ -n "$c_diff" ]; then
+            last_commit="$commit"
+            break
+          fi
+        done
       fi
       has_changes="false"
     fi
