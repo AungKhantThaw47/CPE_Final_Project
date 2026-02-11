@@ -240,8 +240,16 @@ locals {
 }
 
 # Generate .build-hash file for the service
-resource "local_file" "build_hash" {
-  filename = "${local.codebase_directory}/.build-hash"
+# GitHub build hash (committed to git)
+resource "local_file" "build_hash_github" {
+  filename = "${local.codebase_directory}/.build-hash.github"
+  content  = data.external.git_status.result.has_changes == "true" ? "GITHUB-${data.external.git_status.result.git_commit}" : local.build_hash
+}
+
+# Local build hash (in .gitignore, only created when there are local changes)
+resource "local_file" "build_hash_local" {
+  count    = data.external.git_status.result.has_changes == "true" ? 1 : 0
+  filename = "${local.codebase_directory}/.build-hash.local"
   content  = local.build_hash
 }
 
@@ -254,7 +262,7 @@ resource "null_resource" "service_image_build" {
     build_hash    = local.build_hash
   }
 
-  depends_on = [local_file.build_hash]
+  depends_on = [local_file.build_hash_github, local_file.build_hash_local]
 
   # Copy utils to build context, build image, then cleanup
   provisioner "local-exec" {
