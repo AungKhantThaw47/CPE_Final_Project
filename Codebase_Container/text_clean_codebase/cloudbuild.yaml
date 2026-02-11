@@ -1,15 +1,32 @@
 steps:
-  - name: "gcr.io/cloud-builders/docker"
+  # Pull the existing image from Artifact Registry to use as cache
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
     args:
-      - "build"
-      - "-t"
-      - "${_IMAGE_TAG}"
-      - "."
+      - '-c'
+      - |
+        docker pull $_IMAGE_TAG || exit 0
+    id: 'pull-cache'
 
-  - name: "gcr.io/cloud-builders/docker"
+  # Build the image using the pulled image as cache
+  - name: 'gcr.io/cloud-builders/docker'
     args:
-      - "push"
-      - "${_IMAGE_TAG}"
+      - 'build'
+      - '--cache-from'
+      - '$_IMAGE_TAG'
+      - '-t'
+      - '$_IMAGE_TAG'
+      - '.'
+    id: 'build'
+    waitFor: ['pull-cache']
+
+  # Push the newly built image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '$_IMAGE_TAG'
+    id: 'push'
+    waitFor: ['build']
 
 options:
   logging: CLOUD_LOGGING_ONLY

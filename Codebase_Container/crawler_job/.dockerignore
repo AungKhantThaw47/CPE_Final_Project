@@ -1,0 +1,29 @@
+# Git files
+.git
+.gitignore
+.build-hash*
+
+# Node modules (if present locally)
+node_modules
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Documentation
+README.md
+*.md
+
+# Terraform
+*.tf
+.terraform
+
+# Build files
+cloudbuild.yaml
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
