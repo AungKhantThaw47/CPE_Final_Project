@@ -103,7 +103,7 @@ data "external" "git_status" {
       $result | ConvertTo-Json -Compress
     EOT
   ] : ["sh", "-c", <<-EOT
-    cd '${path.root}'
+    cd '${path.root}' || exit 1
     
     # Get current git commit (use github_sha if provided, otherwise HEAD)
     target_commit='${var.github_sha}'
