@@ -167,12 +167,12 @@ locals {
   # OS detection (check for Windows drive letter like C:, D:)
   is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
 
-  # Generate hash of all files in the codebase directory, excluding utils folder
+  # Generate hash of all files in the codebase directory, excluding utils folder and .build-hash
   # Any change triggers rebuild, but Docker cache makes it fast
   codebase_files = fileset(local.codebase_directory, "**")
   codebase_files_filtered = [
     for file in local.codebase_files :
-    file if !startswith(file, "utils/") && fileexists("${local.codebase_directory}/${file}")
+    file if !startswith(file, "utils/") && file != ".build-hash" && fileexists("${local.codebase_directory}/${file}")
   ]
 
   # Check if root utils folder exists and include it in hash
