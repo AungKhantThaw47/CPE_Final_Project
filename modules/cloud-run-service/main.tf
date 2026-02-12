@@ -260,8 +260,8 @@ resource "null_resource" "service_image_build" {
   count = var.build_image ? 1 : 0
 
   triggers = {
-    codebase_hash = local.codebase_hash
-    build_hash    = local.build_hash
+    # Only build_hash needed - already includes codebase changes (LOCAL-hash or GITHUB-commit)
+    build_hash = local.build_hash
   }
 
   depends_on = [local_file.build_hash_github, local_file.build_hash_local]
@@ -328,6 +328,12 @@ resource "google_cloud_run_v2_service" "service" {
           name  = env.key
           value = env.value
         }
+      }
+
+      # Build hash as environment variable - changes trigger redeployment
+      env {
+        name  = "BUILD_HASH"
+        value = local.build_hash
       }
 
       # Cloud SQL volume mount
