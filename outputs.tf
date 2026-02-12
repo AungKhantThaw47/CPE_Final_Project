@@ -22,6 +22,11 @@ output "jobs" {
 
       # Schedule info
       schedule = lookup(job_config, "schedule", null)
+      
+      # Deployment Hash Control
+      content_hash = module.jobs[job_key].content_hash
+      local_hash   = module.jobs[job_key].local_hash
+      github_hash  = module.jobs[job_key].github_hash
     }
   }
 }
@@ -50,6 +55,11 @@ output "services" {
 
       # Access info
       allow_public = lookup(svc_config, "allow_public", false)
+      
+      # Deployment Hash Control
+      content_hash = module.services[svc_key].content_hash
+      local_hash   = module.services[svc_key].local_hash
+      github_hash  = module.services[svc_key].github_hash
     }
   }
 }

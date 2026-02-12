@@ -255,6 +255,11 @@ module "jobs" {
   build_image     = lookup(each.value, "build_image", true)
   github_sha      = var.github_sha
 
+  # Deployment Hash Control
+  content_hash     = var.content_hash
+  local_username   = var.local_username
+  github_username  = var.github_username
+
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit
   timeout      = each.value.timeout
@@ -300,6 +305,11 @@ module "services" {
   codebase_path   = each.value.codebase_path
   build_image     = lookup(each.value, "build_image", true)
   github_sha      = var.github_sha
+
+  # Deployment Hash Control
+  content_hash     = var.content_hash
+  local_username   = var.local_username
+  github_username  = var.github_username
 
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit

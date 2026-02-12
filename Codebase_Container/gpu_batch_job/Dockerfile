@@ -24,20 +24,20 @@ RUN python -m pip install --no-cache-dir --upgrade pip
 
 # Copy requirements file FIRST (before code changes)
 # This allows Docker to cache pip install if requirements haven't changed
-COPY requirements.txt .
+# Build context is project root, so specify full path
+COPY Codebase_Container/gpu_batch_job/requirements.txt .
 
 # Install Python dependencies
 # Uses --extra-index-url to support both PyPI and PyTorch repos
 # This layer will only rebuild if requirements.txt changes
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy shared utils (expected to be in build context)
-# Placed AFTER pip install so code changes don't invalidate cache
+# Copy shared utils from root (build context is project root)
 COPY utils /workspace/utils
 
 # Copy job script LAST
 # This ensures code changes don't trigger pip reinstall
-COPY main.py .
+COPY Codebase_Container/gpu_batch_job/main.py .
 
 # Set environment variables for CUDA
 ENV CUDA_VISIBLE_DEVICES=0

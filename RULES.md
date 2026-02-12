@@ -2,39 +2,23 @@
 
 ## Directory Structure
 
-### 1. Single Utils Folder at Root
+### 1. Shared Utils at Root
 
-**Rule**: Maintain only ONE `utils/` folder at the project root level.
+**Rule**: All services use shared utilities from the project root `utils/` folder.
 
 **Location**: `D:\workspace\CPE_Final_Project\utils/`
 
 **Rationale**:
-- Prevents code duplication across multiple codebase directories
-- Ensures consistent utility functions across all services and jobs
-- Simplifies maintenance and updates to shared utilities
-- Terraform build process copies root `utils/` to each container build context automatically
-
-**What NOT to do**:
-- ❌ Do not create `utils/` folders inside individual codebase directories:
-  - ❌ `Codebase_Container/cloud_scheduler_function/utils/`
-  - ❌ `Codebase_Container/crawler_job/utils/`
-  - ❌ `Codebase_Container/gpu_batch_job/utils/`
-  - ❌ `Codebase_Container/text_clean_codebase/utils/`
-  - ❌ `modules/mlflow/utils/`
+- Prevents code duplication across services
+- Ensures consistent utility functions
+- Simplifies maintenance and updates
+- Docker images are built from root with utils included in context
 
 **What to do**:
-- ✅ Add all shared utilities to `utils/` at project root
-- ✅ Reference utilities in your code assuming they're in the build context
-- ✅ Terraform handles copying `utils/` during Docker image builds
-
-**Current Root Utils Structure**:
-```
-utils/
-├── __init__.py
-├── gcs_utils.js
-├── gcs_utils.py
-└── README.md
-```
+- ✅ Keep shared utilities in root `utils/` folder
+- ✅ All Dockerfiles copy utils: `COPY utils /workspace/utils`
+- ✅ Docker builds run from project root (not service directory)
+- ✅ cloudbuild.yaml receives root directory as build context
 
 ---
 
@@ -43,7 +27,7 @@ utils/
 ### 2. Infrastructure Files Don't Trigger Rebuilds
 
 **Excluded from rebuild triggers**:
-- `.build-hash*` files
+- `.build-hash*` files (legacy, no longer used but excluded defensively)
 - `.dockerignore` files
 - `cloudbuild.yaml` files
 - `Dockerfile` files
@@ -63,18 +47,19 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # 3. Copy dependency files (least frequently changed)
-COPY requirements.txt .
+# Build runs from root, so use full path
+COPY Codebase_Container/your_service/requirements.txt .
 
 # 4. Install dependencies (cached layer)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Copy shared utils (terraform provides during build)
+# 5. Copy shared utils from root
 COPY utils /workspace/utils
 
 # 6. Copy application code (most frequently changed)
-COPY main.py .
+COPY Codebase_Container/your_service/main.py .
 
-# 7. Runtime configuration
+# 6. Runtime configuration
 CMD ["python", "main.py"]
 ```
 
@@ -84,22 +69,24 @@ CMD ["python", "main.py"]
 
 ## Git Workflow
 
-### 4. Build Hash Tracking
+### 4. Deployment Hash Control
 
-**Dual File System**:
-- `.build-hash.github` - Tracked in git, references last code commit
-- `.build-hash.local` - Ignored by git, tracks local development changes
+**Environment Variables**:
+- `CONTENT_HASH` - SHA256 hash of codebase content
+- `LOCAL_HASH` - Username of deployer for local builds
+- `GITHUB_HASH` - GitHub commit SHA for CI/CD builds
 
 **Purpose**: 
-- Prevents unnecessary rebuilds in CI when no code changes exist
-- Allows local development without polluting commit history
-- Terraform automatically manages these files
+- Tracks deployment provenance in Cloud Run environment variables
+- Hash comparison happens BEFORE Terraform apply (external scripts)
+- Prevents unnecessary rebuilds when content hasn't changed
+- Terraform does NOT independently decide on rebuilds
 
 ---
 
 ## Best Practices
 
-1. **Keep utilities DRY**: If a function is used by multiple services, it belongs in `utils/`
-2. **Document utilities**: Update `utils/README.md` when adding new functions
+1. **Keep services self-contained**: Each service manages its own code and dependencies
+2. **Document changes**: Update service-specific README when adding new functionality
 3. **Test before commit**: Infrastructure changes should not force rebuilds
-4. **Review build hashes**: Ensure `.build-hash.github` references appropriate commits
+4. **Use hash comparison scripts**: Run deployment scripts that compare hashes before applying

@@ -1,0 +1,303 @@
+# GitHub Actions Workflow for Cloud Run Deployment with Hash Control
+# This workflow demonstrates how to use the hash control system in CI
+
+name: Deploy to Cloud Run with Hash Control
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Codebase_Container//**'
+      - 'modules//**'
+      - '**.tf'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: cpe-final-project
+  GCP_REGION: asia-southeast1
+
+jobs:
+  # Job 1: Deploy DVB Crawler Job
+  deploy-dvb-crawler:
+    name: Deploy DVB Crawler Job
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for git operations
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+      
+      - name: Compute current content hash
+        id: compute_hash
+        run: |
+          CURRENT_HASH=$(./scripts/compute_content_hash.sh ./Codebase_Container/crawler_job)
+          echo "current_hash=$CURRENT_HASH" >> $GITHUB_OUTPUT
+          echo "Current hash: $CURRENT_HASH"
+      
+      - name: Get deployed hash from Cloud Run
+        id: deployed_hash
+        continue-on-error: true
+        run: |
+          DEPLOYED_HASH=$(./scripts/get_deployed_hash.sh \
+            "${{ env.GCP_PROJECT_ID }}" \
+            "${{ env.GCP_REGION }}" \
+            "dvb-crawler-job" \
+            "job" || echo "")
+          echo "deployed_hash=$DEPLOYED_HASH" >> $GITHUB_OUTPUT
+          echo "Deployed hash: ${DEPLOYED_HASH:-<none>}"
+      
+      - name: Compare hashes and determine deployment
+        id: compare
+        run: |
+          CURRENT="${{ steps.compute_hash.outputs.current_hash }}"
+          DEPLOYED="${{ steps.deployed_hash.outputs.deployed_hash }}"
+          
+          if [ -z "$DEPLOYED" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "No deployed hash found. First deployment required."
+          elif [ "$CURRENT" = "$DEPLOYED" ]; then
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "Hashes match. Skipping deployment."
+          else
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "Hashes differ. Deploying."
+          fi
+      
+      - name: Setup Terraform
+        if: steps.compare.outputs.should_deploy == 'true'
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      
+      - name: Terraform Init
+        if: steps.compare.outputs.should_deploy == 'true'
+        run: terraform init
+      
+      - name: Terraform Plan
+        if: steps.compare.outputs.should_deploy == 'true'
+        env:
+          TF_VAR_content_hash: ${{ steps.compute_hash.outputs.current_hash }}
+          TF_VAR_github_sha: ${{ github.sha }}
+          TF_VAR_github_username: ${{ github.actor }}
+        run: |
+          terraform plan \
+            -var="content_hash=$TF_VAR_content_hash" \
+            -var="github_sha=$TF_VAR_github_sha" \
+            -var="github_username=$TF_VAR_github_username" \
+            -target="module.jobs[\"dvb-crawler-job\"]"
+      
+      - name: Terraform Apply
+        if: steps.compare.outputs.should_deploy == 'true'
+        env:
+          TF_VAR_content_hash: ${{ steps.compute_hash.outputs.current_hash }}
+          TF_VAR_github_sha: ${{ github.sha }}
+          TF_VAR_github_username: ${{ github.actor }}
+        run: |
+          terraform apply -auto-approve \
+            -var="content_hash=$TF_VAR_content_hash" \
+            -var="github_sha=$TF_VAR_github_sha" \
+            -var="github_username=$TF_VAR_github_username" \
+            -target="module.jobs[\"dvb-crawler-job\"]"
+      
+      - name: Deployment Result
+        if: always()
+        run: |
+          if [ "${{ steps.compare.outputs.should_deploy }}" = "true" ]; then
+            echo "✅ Deployment completed for dvb-crawler-job"
+          else
+            echo "⏭️ Deployment skipped - no changes detected"
+          fi
+
+  # Job 2: Deploy Text Cleaner Job
+  deploy-text-cleaner:
+    name: Deploy Text Cleaner Job
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+      
+      - name: Compute current content hash
+        id: compute_hash
+        run: |
+          CURRENT_HASH=$(./scripts/compute_content_hash.sh ./Codebase_Container/text_clean_codebase)
+          echo "current_hash=$CURRENT_HASH" >> $GITHUB_OUTPUT
+          echo "Current hash: $CURRENT_HASH"
+      
+      - name: Get deployed hash from Cloud Run
+        id: deployed_hash
+        continue-on-error: true
+        run: |
+          DEPLOYED_HASH=$(./scripts/get_deployed_hash.sh \
+            "${{ env.GCP_PROJECT_ID }}" \
+            "${{ env.GCP_REGION }}" \
+            "dvb-text-cleaner-job" \
+            "job" || echo "")
+          echo "deployed_hash=$DEPLOYED_HASH" >> $GITHUB_OUTPUT
+          echo "Deployed hash: ${DEPLOYED_HASH:-<none>}"
+      
+      - name: Compare hashes and determine deployment
+        id: compare
+        run: |
+          CURRENT="${{ steps.compute_hash.outputs.current_hash }}"
+          DEPLOYED="${{ steps.deployed_hash.outputs.deployed_hash }}"
+          
+          if [ -z "$DEPLOYED" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "No deployed hash found. First deployment required."
+          elif [ "$CURRENT" = "$DEPLOYED" ]; then
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "Hashes match. Skipping deployment."
+          else
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "Hashes differ. Deploying."
+          fi
+      
+      - name: Setup Terraform
+        if: steps.compare.outputs.should_deploy == 'true'
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      
+      - name: Terraform Init
+        if: steps.compare.outputs.should_deploy == 'true'
+        run: terraform init
+      
+      - name: Terraform Apply
+        if: steps.compare.outputs.should_deploy == 'true'
+        env:
+          TF_VAR_content_hash: ${{ steps.compute_hash.outputs.current_hash }}
+          TF_VAR_github_sha: ${{ github.sha }}
+          TF_VAR_github_username: ${{ github.actor }}
+        run: |
+          terraform apply -auto-approve \
+            -var="content_hash=$TF_VAR_content_hash" \
+            -var="github_sha=$TF_VAR_github_sha" \
+            -var="github_username=$TF_VAR_github_username" \
+            -target="module.jobs[\"dvb-text-cleaner-job\"]"
+      
+      - name: Deployment Result
+        if: always()
+        run: |
+          if [ "${{ steps.compare.outputs.should_deploy }}" = "true" ]; then
+            echo "✅ Deployment completed for dvb-text-cleaner-job"
+          else
+            echo "⏭️ Deployment skipped - no changes detected"
+          fi
+
+  # Job 3: Deploy MLflow Service
+  deploy-mlflow:
+    name: Deploy MLflow Service
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+      
+      - name: Compute current content hash
+        id: compute_hash
+        run: |
+          CURRENT_HASH=$(./scripts/compute_content_hash.sh ./modules/mlflow)
+          echo "current_hash=$CURRENT_HASH" >> $GITHUB_OUTPUT
+          echo "Current hash: $CURRENT_HASH"
+      
+      - name: Get deployed hash from Cloud Run
+        id: deployed_hash
+        continue-on-error: true
+        run: |
+          DEPLOYED_HASH=$(./scripts/get_deployed_hash.sh \
+            "${{ env.GCP_PROJECT_ID }}" \
+            "${{ env.GCP_REGION }}" \
+            "mlflow" \
+            "service" || echo "")
+          echo "deployed_hash=$DEPLOYED_HASH" >> $GITHUB_OUTPUT
+          echo "Deployed hash: ${DEPLOYED_HASH:-<none>}"
+      
+      - name: Compare hashes and determine deployment
+        id: compare
+        run: |
+          CURRENT="${{ steps.compute_hash.outputs.current_hash }}"
+          DEPLOYED="${{ steps.deployed_hash.outputs.deployed_hash }}"
+          
+          if [ -z "$DEPLOYED" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "No deployed hash found. First deployment required."
+          elif [ "$CURRENT" = "$DEPLOYED" ]; then
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "Hashes match. Skipping deployment."
+          else
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "Hashes differ. Deploying."
+          fi
+      
+      - name: Setup Terraform
+        if: steps.compare.outputs.should_deploy == 'true'
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      
+      - name: Terraform Init
+        if: steps.compare.outputs.should_deploy == 'true'
+        run: terraform init
+      
+      - name: Terraform Apply
+        if: steps.compare.outputs.should_deploy == 'true'
+        env:
+          TF_VAR_content_hash: ${{ steps.compute_hash.outputs.current_hash }}
+          TF_VAR_github_sha: ${{ github.sha }}
+          TF_VAR_github_username: ${{ github.actor }}
+        run: |
+          terraform apply -auto-approve \
+            -var="content_hash=$TF_VAR_content_hash" \
+            -var="github_sha=$TF_VAR_github_sha" \
+            -var="github_username=$TF_VAR_github_username" \
+            -target="module.services[\"mlflow\"]"
+      
+      - name: Deployment Result
+        if: always()
+        run: |
+          if [ "${{ steps.compare.outputs.should_deploy }}" = "true" ]; then
+            echo "✅ Deployment completed for mlflow"
+          else
+            echo "⏭️ Deployment skipped - no changes detected"
+          fi

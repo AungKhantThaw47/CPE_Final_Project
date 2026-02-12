@@ -95,3 +95,25 @@ variable "github_sha" {
   type        = string
   default     = ""
 }
+
+# ============================================
+# Deployment Hash Control System
+# ============================================
+
+variable "content_hash" {
+  description = "Pure hash of codebase files (deterministic, no metadata)"
+  type        = string
+  default     = ""
+}
+
+variable "local_username" {
+  description = "Local username for local deployments"
+  type        = string
+  default     = ""
+}
+
+variable "github_username" {
+  description = "GitHub username for CI deployments"
+  type        = string
+  default     = ""
+}

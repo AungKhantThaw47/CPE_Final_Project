@@ -9,9 +9,12 @@ steps:
     id: 'pull-cache'
 
   # Build the image using the pulled image as cache
+  # Build context is project root (.), Dockerfile is in service directory
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '-f'
+      - 'Codebase_Container/text_clean_codebase/Dockerfile'
       - '--cache-from'
       - '$_IMAGE_TAG'
       - '-t'

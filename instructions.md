@@ -37,41 +37,36 @@ Rules:
 - Each folder is built and deployed separately
 - Do not mix logic across folders unless explicitly instructed
 - Assume no shared runtime state between folders
-- **Shared utilities live in root `utils/` folder ONLY**
-- **No duplicate utils subfolders** in codebase directories
+- **All services share utilities from root `utils/` folder**
+- **Docker builds run from project root to include utils in context**
 
 ---
 
-## BUILD HASH CONVENTION (NON-NEGOTIABLE)
+## DEPLOYMENT HASH CONTROL (NON-NEGOTIABLE)
 
-Each logic folder **must contain a file named**:
+### Environment Variables Injected into Cloud Run
 
-.build-hash
+Every Cloud Run Job/Service receives three environment variables:
 
+1. **CONTENT_HASH** - SHA256 hash of codebase directory content
+2. **LOCAL_HASH** - Username for local deployments (e.g., "john.doe")
+3. **GITHUB_HASH** - Commit SHA for GitHub Actions deployments
 
 ### Format
 
-<GITHUB|LOCAL>-<content_hash>
-
-
-Examples:
-- `GITHUB-3fa9c21`
-- `LOCAL-3fa9c21`
-
-The file:
-- is generated automatically by Terraform using `local_file` resource
-- contains environment prefix (GITHUB/LOCAL) + 7-character content hash
-- is NOT committed to git (listed in .gitignore)
-- is overwritten when content changes
-- uses `lifecycle { ignore_changes = all }` to prevent unnecessary updates
+Environment variables are visible in Cloud Run:
+```bash
+gcloud run jobs describe JOB_NAME --format="value(template.template.containers[0].env)"
+```
 
 ### How it works
 
-**Terraform logic:**
-1. Detects environment via `github_sha` variable (empty = LOCAL, populated = GITHUB)
-2. Computes content hash from folder files + root `utils/` folder
-3. Writes `.build-hash` file with format `<ENV>-<hash>`
-4. Triggers rebuilds only when hash changes
+**Deployment Workflow:**
+1. Compute content hash of codebase directory (via scripts/compute_content_hash.ps1)
+2. Retrieve deployed hash from Cloud Run (via scripts/get_deployed_hash.ps1)
+3. Compare current vs deployed hash (via scripts/compare_hashes.ps1)
+4. Deploy ONLY if hashes differ (via scripts/deploy_local.ps1)
+5. Terraform receives hash values as variables and injects into Cloud Run env vars
 
 **Local execution:**
 ```bash
@@ -91,22 +86,16 @@ run: terraform apply  # generates GITHUB-abc1234
 
 The `<content_hash>` must be:
 - derived from **file contents inside the folder**
-- **ALSO include root `utils/` folder contents**
 - deterministic
 - identical for identical content
-- different if **any file content changes** (in folder OR utils)
+- different if **any file content changes**
 
 Ignore the following when hashing:
-- `.build-hash`
+- `.build-hash*` (legacy files, no longer used)
 - `.git`
 - generated artifacts or caches
 
 Hashing must be content-based, not git-based.
-
-**Why include utils folder:**
-- Services depend on shared utilities
-- Changes to `utils/gcs_utils.py` must trigger rebuilds
-- Ensures consistency across all deployments
 
 ---
 
@@ -211,7 +200,7 @@ Think like:
 ## FINAL SELF-CHECK BEFORE RESPONDING
 
 Before producing any answer, internally verify:
-- Does this respect the `.build-hash` rules?
+- Does this respect the hash control system (CONTENT_HASH, LOCAL_HASH, GITHUB_HASH)?
 - Does this work both locally and in CI?
 - Does this match the stated folder structure?
 - Does this avoid unnecessary scripts or hacks?
