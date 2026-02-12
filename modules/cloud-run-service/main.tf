@@ -75,19 +75,19 @@ data "external" "git_status" {
         }
         
         # Find the last commit that actually changed the codebase directory
+        # Exclude infrastructure files: .build-hash*, .dockerignore, cloudbuild.yaml, Dockerfile
         try {
-          # Check if current commit changed the codebase (excluding .build-hash)
-          $commitDiff = (git diff-tree --no-commit-id --name-only -r $targetCommit -- $codebasePath 2>$null | Where-Object { $_ -notlike '*/.build-hash' })
+          # Check if current commit changed the codebase (excluding infrastructure files)
+          $commitDiff = (git diff-tree --no-commit-id --name-only -r $targetCommit -- $codebasePath 2>$null | Where-Object { $_ -notlike '*/.build-hash*' -and $_ -notlike '*/.dockerignore' -and $_ -notlike '*/cloudbuild.yaml' -and $_ -notlike '*/Dockerfile' })
           if ($commitDiff) {
             # Current commit has real changes
             $lastCommit = $targetCommit
           } else {
-            # No real changes or only .build-hash changed - find last commit that changed non-.build-hash files
-            # Use git log with path and grep to filter out .build-hash commits
+            # No real changes or only infrastructure files changed - find last commit with real code changes
             $allCommits = (git log --format=%h -n 50 $targetCommit -- $codebasePath 2>$null)
             $lastCommit = $targetCommit
             foreach ($c in $allCommits) {
-              $cDiff = (git diff-tree --no-commit-id --name-only -r $c -- $codebasePath 2>$null | Where-Object { $_ -notlike '*/.build-hash' })
+              $cDiff = (git diff-tree --no-commit-id --name-only -r $c -- $codebasePath 2>$null | Where-Object { $_ -notlike '*/.build-hash*' -and $_ -notlike '*/.dockerignore' -and $_ -notlike '*/cloudbuild.yaml' -and $_ -notlike '*/Dockerfile' })
               if ($cDiff) {
                 $lastCommit = $c
                 break
@@ -141,16 +141,16 @@ data "external" "git_status" {
       fi
       
       # Find the last commit that actually changed the codebase directory
-      # Exclude .build-hash from change detection
-      commit_diff=$(git diff-tree --no-commit-id --name-only -r "$target_commit" -- "$codebase_path" 2>/dev/null | grep -v '\.build-hash$' || echo "")
+      # Exclude infrastructure files: .build-hash*, .dockerignore, cloudbuild.yaml, Dockerfile
+      commit_diff=$(git diff-tree --no-commit-id --name-only -r "$target_commit" -- "$codebase_path" 2>/dev/null | grep -v '\.build-hash' | grep -v '\.dockerignore$' | grep -v 'cloudbuild\.yaml$' | grep -v 'Dockerfile$' || echo "")
       if [ -n "$commit_diff" ]; then
         # Current commit has real changes
         last_commit="$target_commit"
       else
-        # No real changes or only .build-hash changed - find last commit with real changes
+        # No real changes or only infrastructure files changed - find last commit with real code changes
         last_commit="$target_commit"
         for commit in $(git log --format=%h -n 50 "$target_commit" -- "$codebase_path" 2>/dev/null); do
-          c_diff=$(git diff-tree --no-commit-id --name-only -r "$commit" -- "$codebase_path" 2>/dev/null | grep -v '\.build-hash$' || echo "")
+          c_diff=$(git diff-tree --no-commit-id --name-only -r "$commit" -- "$codebase_path" 2>/dev/null | grep -v '\.build-hash' | grep -v '\.dockerignore$' | grep -v 'cloudbuild\.yaml$' | grep -v 'Dockerfile$' || echo "")
           if [ -n "$c_diff" ]; then
             last_commit="$commit"
             break

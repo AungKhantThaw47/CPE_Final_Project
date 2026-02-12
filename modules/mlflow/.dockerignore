@@ -3,6 +3,8 @@
 .gitignore
 .build-hash*
 
+# NOTE: Do NOT ignore 'utils' folder - Terraform copies it from root before build
+
 # Python cache
 __pycache__
 *.py[cod]

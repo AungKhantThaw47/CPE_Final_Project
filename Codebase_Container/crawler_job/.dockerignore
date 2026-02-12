@@ -3,6 +3,8 @@
 .gitignore
 .build-hash*
 
+# NOTE: Do NOT ignore 'utils' folder - Terraform copies it from root before build
+
 # Node modules (if present locally)
 node_modules
 
