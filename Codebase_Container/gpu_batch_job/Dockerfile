@@ -36,7 +36,22 @@ COPY Codebase_Container/gpu_batch_job/requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ============================================
-# Stage 2: Runtime - Minimal final image
+# Stage 2: Intermediate - Additional processing
+# ============================================
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS intermediate
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Copy installed packages from builder
+COPY --from=builder /install /install
+
+# Add your intermediate processing here
+RUN echo "Intermediate stage processing..." && \
+    ls -la /install
+
+# ============================================
+# Stage 3: Runtime - Minimal final image
 # ============================================
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
@@ -52,12 +67,16 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# Additional setup stage (add your commands here)
+RUN echo "Python setup preparation..." && \
+    python3.11 --version
+
 # Create symbolic links for python and pip
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
     ln -sf /usr/bin/python3.11 /usr/bin/python3
 
-# Copy installed packages from builder stage
-COPY --from=builder /install /usr/local
+# Copy installed packages from intermediate stage
+COPY --from=intermediate /install /usr/local
 
 # Copy shared utils from root (build context is project root)
 COPY utils /workspace/utils

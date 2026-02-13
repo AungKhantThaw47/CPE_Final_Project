@@ -30,6 +30,11 @@ jobs:
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Authenticate gcloud
+        run: |
+          echo '${{ secrets.GOOGLE_CREDENTIALS }}' | gcloud auth activate-service-account --key-file=-
+          gcloud config set project ${{ env.GOOGLE_PROJECT }}
+
       - name: Terraform Format Check
         id: fmt
         run: terraform fmt -check -recursive
@@ -113,9 +118,13 @@ jobs:
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for Artifact Registry
+      - name: Authenticate gcloud
         run: |
           echo '${{ secrets.GOOGLE_CREDENTIALS }}' | gcloud auth activate-service-account --key-file=-
+          gcloud config set project ${{ env.GOOGLE_PROJECT }}
+
+      - name: Configure Docker for Artifact Registry
+        run: |
           gcloud auth configure-docker ${{ env.GOOGLE_REGION }}-docker.pkg.dev
 
       - name: Terraform Init
