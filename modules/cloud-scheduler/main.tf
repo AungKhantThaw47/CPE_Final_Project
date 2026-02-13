@@ -128,12 +128,8 @@ resource "null_resource" "scheduler_job_image_build" {
   count = var.build_image && local.content_has_changed ? 1 : 0
 
   triggers = {
-    # Trigger rebuild when content_hash changes from deployed version
-    content_hash = local.content_hash_value
-    # Also trigger on image tag changes
-    container_image = var.container_image
-    # Track deployed hash to detect changes
-    deployed_hash = local.deployed_content_hash
+    # Rebuild when deployed_content_hash differs from local content_hash
+    deployed_content_hash = local.deployed_content_hash
   }
 
   # Build Docker image via Cloud Build
