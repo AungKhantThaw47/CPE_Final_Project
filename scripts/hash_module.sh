@@ -145,11 +145,6 @@ hash_directory_content() {
     local file_list
     file_list=$(eval "$find_cmd" | awk '{print tolower($0) "\t" $0}' | LC_COLLATE=C sort | cut -f2-)
     
-    # Debug: Log file list to stderr
-    echo "[DEBUG hash_module.sh] File list ($(echo "$file_list" | wc -l) files):" >&2
-    echo "$file_list" | head -3 >&2
-    echo "..." >&2
-    
     if [ -z "$file_list" ]; then
         echo "Error: No files found in directory after filtering" >&2
         return 1
@@ -184,9 +179,6 @@ hash_directory_content() {
         echo "Error: Failed to compute directory hash" >&2
         return 1
     fi
-    
-    # Debug: Log computed hash to stderr
-    echo "[DEBUG hash_module.sh] Computed hash: $combined_hash" >&2
     
     # Return JSON-like output
     cat <<EOF
