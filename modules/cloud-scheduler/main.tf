@@ -72,10 +72,18 @@ locals {
   
   # Hash tracking for deployment context
   # When deploying locally: update local_hash, preserve github_hash
-  # When deploying from GitHub: update github_hash, preserve local_hash
+  # When deploying from GitHub: update github_hash only if content changed, preserve local_hash
   is_github_deployment = var.github_sha != "" && var.github_username != ""
+  
+  # Extract previous github_sha from deployed_github_hash (format: GITHUB_{hash}_{sha}_{user})
+  deployed_github_parts = local.deployed_github_hash != "" ? split("_", local.deployed_github_hash) : []
+  deployed_github_sha = length(local.deployed_github_parts) >= 4 ? local.deployed_github_parts[2] : ""
+  
+  # For GitHub deployments: only update github_sha if content has changed
+  github_sha_to_use = local.is_github_deployment ? (local.content_has_changed ? var.github_sha : local.deployed_github_sha) : ""
+  
   local_hash = local.is_github_deployment ? local.deployed_local_hash : "LOCAL_${local.content_hash_value}_${var.local_username}"
-  github_hash = local.is_github_deployment ? "GITHUB_${local.content_hash_value}_${var.github_sha}_${var.github_username}" : local.deployed_github_hash
+  github_hash = local.is_github_deployment ? "GITHUB_${local.content_hash_value}_${local.github_sha_to_use}_${var.github_username}" : local.deployed_github_hash
   
   # Determine which deployment type is in use (Local or Github)
   current_use = local.is_github_deployment ? "Github" : "Local"
