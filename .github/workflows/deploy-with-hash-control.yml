@@ -6,10 +6,6 @@ name: Deploy to Cloud Run with Hash Control
 on:
   push:
     branches: [main, ci_cd]
-    paths:
-      - 'Codebase_Container//**'
-      - 'modules//**'
-      - '**.tf'
   pull_request:
     branches: [main]
   workflow_dispatch:
