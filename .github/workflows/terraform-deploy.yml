@@ -53,6 +53,7 @@ jobs:
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           TF_VAR_github_sha: ${{ github.sha }}
+          TF_VAR_github_username: ${{ github.actor }}
 
       - name: Comment PR - Plan Results
         if: github.event_name == 'pull_request'
@@ -132,6 +133,7 @@ jobs:
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           TF_VAR_github_sha: ${{ github.sha }}
+          TF_VAR_github_username: ${{ github.actor }}
 
       - name: Display Outputs
         run: terraform output -json
