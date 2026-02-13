@@ -35,6 +35,23 @@ jobs:
           echo '${{ secrets.GOOGLE_CREDENTIALS }}' | gcloud auth activate-service-account --key-file=-
           gcloud config set project ${{ env.GOOGLE_PROJECT }}
 
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: DEBUG - Test hash computation
+        run: |
+          echo "======================================"
+          echo "DEBUG: Testing Hash Computation CI"
+          echo "======================================"
+          echo "Environment:"
+          echo "  LC_ALL: ${LC_ALL:-<not set>}"
+          echo "  LC_COLLATE: ${LC_COLLATE:-<not set>}"
+          echo "  LANG: ${LANG:-<not set>}"
+          echo ""
+          echo "=== Crawler Job Hash ==="
+          ./scripts/debug_hash_detailed.sh ./Codebase_Container/crawler_job || echo "Debug script failed"
+          echo ""
+
       - name: Terraform Format Check
         id: fmt
         run: terraform fmt -check -recursive
