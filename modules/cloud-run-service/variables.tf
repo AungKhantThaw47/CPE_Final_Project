@@ -89,3 +89,26 @@ variable "service_account_roles" {
   type        = list(string)
   default     = []
 }
+
+variable "github_sha" {
+  description = "GitHub commit SHA (provided by CI, empty for local builds)"
+  type        = string
+  default     = ""
+}
+
+# ============================================
+# Deployment Hash Control System
+# ============================================
+# Note: content_hash is now computed internally from codebase_path
+
+variable "local_username" {
+  description = "Local username for local deployments"
+  type        = string
+  default     = ""
+}
+
+variable "github_username" {
+  description = "GitHub username for CI deployments"
+  type        = string
+  default     = ""
+}

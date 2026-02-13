@@ -78,3 +78,31 @@ variable "mlflow_public_access" {
   type        = bool
   default     = true
 }
+
+variable "github_sha" {
+  description = "GitHub commit SHA (provided by CI via TF_VAR_github_sha, empty for local builds)"
+  type        = string
+  default     = ""
+}
+
+# ============================================
+# Deployment Hash Control System
+# ============================================
+
+variable "content_hash" {
+  description = "Pure hash of codebase files (deterministic, no metadata)"
+  type        = string
+  default     = ""
+}
+
+variable "local_username" {
+  description = "Local username for local deployments"
+  type        = string
+  default     = ""
+}
+
+variable "github_username" {
+  description = "GitHub username for CI deployments"
+  type        = string
+  default     = ""
+}

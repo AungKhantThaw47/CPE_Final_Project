@@ -2,6 +2,8 @@
 
 Terraform-managed GCP infrastructure for GPU batch processing, MLflow tracking, and web scraping with automated scheduling.
 
+> **Note**: Hash preservation system with smart rebuild detection - only builds when code changes!
+
 ## Project Overview
 
 This project provides a complete cloud infrastructure setup with:
@@ -9,6 +11,37 @@ This project provides a complete cloud infrastructure setup with:
 - **MLflow Tracking Server**: Experiment tracking and model registry
 - **Web Crawler**: Automated DVB Burmese news scraper with GCS storage
 - **Scheduled Jobs**: Automated data processing pipelines
+
+## Quick Start (Simplified Deployment)
+
+Just run Terraform directly - **all hash values are auto-computed**:
+
+```powershell
+# Windows
+terraform init
+terraform plan
+terraform apply
+```
+
+```bash
+# Linux/Mac  
+terraform init
+terraform plan
+terraform apply
+```
+
+**What happens automatically:**
+- ✅ **Content hash** computed from each codebase directory
+- ✅ **Username** detected for deployment tracking
+- ✅ **Hash comparison** - only deploys if code changed
+- ✅ **No wrapper scripts needed**
+
+**Documentation:**
+- 📘 [CONTENT_HASH_AUTOMATED.md](CONTENT_HASH_AUTOMATED.md) - How content hashing works
+- 📘 [DEPLOYMENT_SIMPLIFIED.md](DEPLOYMENT_SIMPLIFIED.md) - Deployment details
+- 📘 [MIGRATION_COMPLETE.md](MIGRATION_COMPLETE.md) - What changed
+
+**Helper scripts** in `scripts/` are now optional utilities.
 
 ## Project Structure
 
@@ -22,6 +55,11 @@ CPE_Final_Project/
 │   ├── provider.tf                # GCP provider configuration
 │   ├── terraform.tfvars.example   # Configuration template
 │   └── shell.nix                  # Nix development environment
+│
+├── .github/                       # GitHub Actions CI/CD
+│   ├── workflows/
+│   │   └── terraform-deploy.yml   # Automated deployment workflow
+│   └── GITHUB_ACTIONS_SETUP.md    # CI/CD setup guide
 │
 ├── utils/                         # Shared utilities
 │   ├── gcs_utils.py               # Python GCS utilities
@@ -332,6 +370,63 @@ gcloud projects get-iam-policy PROJECT_ID \
   --flatten="bindings[].members" \
   --filter="bindings.members:serviceAccount:*"
 ```
+
+## CI/CD with GitHub Actions
+
+This project includes automated deployment via GitHub Actions.
+
+### Features
+
+- **Automated Terraform Plan**: Runs on all pull requests with results commented on PR
+- **Automated Deploy**: Deploys to GCP when code is merged to main branch
+- **Build Hash Detection**: CI builds generate `.build-hash` with `GITHUB-<hash>` prefix
+- **Cloud Build Integration**: Automatically builds and pushes Docker images
+
+### Setup Instructions (10 minutes)
+
+📖 **Complete setup guide**: [.github/GITHUB_ACTIONS_SETUP.md](.github/GITHUB_ACTIONS_SETUP.md)
+
+**Quick Setup:**
+
+1. **Create GCP Service Account**
+   ```bash
+   gcloud iam service-accounts create github-actions \
+     --display-name="GitHub Actions Terraform"
+   ```
+
+2. **Grant Permissions**
+   ```bash
+   gcloud projects add-iam-policy-binding PROJECT_ID \
+     --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
+     --role="roles/editor"
+   ```
+
+3. **Create JSON Key**
+   ```bash
+   gcloud iam service-accounts keys create github-actions-key.json \
+     --iam-account=github-actions@PROJECT_ID.iam.gserviceaccount.com
+   ```
+
+4. **Add GitHub Secret**
+   - Go to repository **Settings** → **Secrets and variables** → **Actions**
+   - Create secret named `GOOGLE_CREDENTIALS`
+   - Paste entire contents of `github-actions-key.json`
+   - Delete local key file after adding to GitHub
+
+### Workflow Triggers
+
+- **Pull Request**: Plan only (no deployment)
+- **Push to main**: Plan + Apply (deploys infrastructure)
+- **Manual**: Can trigger via Actions tab
+
+### Build Hash Behavior
+
+| Environment | Build Hash Format | Detection Method |
+|------------|-------------------|------------------|
+| Local | `LOCAL-abc1234` | `TF_VAR_github_sha` is empty |
+| GitHub CI | `GITHUB-abc1234` | `TF_VAR_github_sha=${{ github.sha }}` |
+
+All services detect changes to code AND `utils/` folder content.
 
 ## Cleanup
 

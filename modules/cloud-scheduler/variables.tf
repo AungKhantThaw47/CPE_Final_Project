@@ -83,7 +83,11 @@ variable "job_service_account_roles" {
   type        = list(string)
   default     = []
 }
-
+variable "github_sha" {
+  description = "GitHub commit SHA (provided by CI, empty for local builds)"
+  type        = string
+  default     = ""
+}
 variable "codebase_path" {
   description = "Path to the codebase folder containing Dockerfile, main.py, and requirements.txt"
   type        = string
@@ -94,6 +98,23 @@ variable "build_image" {
   description = "Whether to build the container image (true) or use pre-built image (false)"
   type        = bool
   default     = true
+}
+
+# ============================================
+# Deployment Hash Control System
+# ============================================
+# Note: content_hash is now computed internally from codebase_path
+
+variable "local_username" {
+  description = "Local username for local deployments"
+  type        = string
+  default     = ""
+}
+
+variable "github_username" {
+  description = "GitHub username for CI deployments"
+  type        = string
+  default     = ""
 }
 
 variable "enable_gpu" {

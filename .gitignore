@@ -19,6 +19,13 @@ crash.*.log
 .terraformrc
 terraform.rc
 
+# Terraform plan files
+tfplan
+tfplan.*
+
+# Local build hash files (GitHub build hashes are tracked)
+.build-hash.local
+
 # ============================================
 # Python
 # ============================================

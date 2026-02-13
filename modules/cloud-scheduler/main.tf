@@ -8,77 +8,121 @@ terraform {
       source  = "hashicorp/null"
       version = "~> 3.0"
     }
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.3"
+    }
   }
 }
 
 locals {
   # Use provided codebase_path or fallback to default location
   codebase_directory = var.codebase_path != "" ? var.codebase_path : "${path.module}/function"
+
+  # OS detection (check for Windows drive letter like C:, D:)
+  is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
   
-  # Generate hash of all files in the codebase directory, excluding utils folder
-  # Any change triggers rebuild, but Docker cache makes it fast
-  codebase_files = fileset(local.codebase_directory, "**")
-  codebase_files_filtered = [
-    for file in local.codebase_files :
-    file if !startswith(file, "utils/") && fileexists("${local.codebase_directory}/${file}")
-  ]
-  codebase_hash  = md5(jsonencode({
-    for file in local.codebase_files_filtered :
-    file => filemd5("${local.codebase_directory}/${file}")
-  }))
-  
-  # Sanitize job name for service account IDs (replace underscores with hyphens)
+  # Sanitize job name for resource lookups (replace underscores with hyphens)
   sa_safe_job_name = replace(var.job_name, "_", "-")
+}
+
+# ============================================
+# Compute Content Hash using Hash Module
+# ============================================
+data "external" "content_hash" {
+  program = local.is_windows ? ["PowerShell", "-File", "${path.root}/scripts/terraform_compute_hash.ps1"] : ["bash", "${path.root}/scripts/terraform_compute_hash.sh"]
+  query = {
+    codebase_path = abspath(local.codebase_directory)
+  }
+}
+
+locals {
+  # Use hash from external module for cross-platform consistency
+  content_hash_computed = data.external.content_hash.result.content_hash
+}
+
+# ============================================
+# Get Currently Deployed Content Hash
+# ============================================
+data "external" "deployed_hash" {
+  program = local.is_windows ? ["PowerShell", "-File", "${path.root}/scripts/get_deployed_content_hash.ps1"] : ["bash", "${path.root}/scripts/get_deployed_content_hash.sh"]
+  query = {
+    project_id    = var.project_id
+    region        = var.region
+    resource_name = local.sa_safe_job_name
+    resource_type = "job"
+  }
+}
+
+locals {
+  # ============================================
+  # Deployment Hash Control System
+  # ============================================
   
-  # OS detection
-  is_windows = substr(pathexpand("~"), 0, 1) != "/"
+  # CONTENT_HASH: Pure hash of codebase files (computed natively in Terraform)
+  content_hash_value = local.content_hash_computed
   
+  # Currently deployed hashes
+  deployed_content_hash = data.external.deployed_hash.result.deployed_content_hash
+  deployed_local_hash   = data.external.deployed_hash.result.deployed_local_hash
+  deployed_github_hash  = data.external.deployed_hash.result.deployed_github_hash
+  
+  # Determine if content has changed
+  content_has_changed = local.deployed_content_hash == "" || local.deployed_content_hash != local.content_hash_value
+  
+  # Hash tracking for deployment context
+  # When deploying locally: update local_hash, preserve github_hash
+  # When deploying from GitHub: update github_hash only if content changed, preserve local_hash
+  is_github_deployment = var.github_sha != "" && var.github_username != ""
+  
+  # Extract previous github_sha from deployed_github_hash (format: GITHUB_{hash}_{sha}_{user})
+  deployed_github_parts = local.deployed_github_hash != "" ? split("_", local.deployed_github_hash) : []
+  deployed_github_sha = length(local.deployed_github_parts) >= 4 ? local.deployed_github_parts[2] : ""
+  
+  # For GitHub deployments: only update github_sha if content has changed
+  github_sha_to_use = local.is_github_deployment ? (local.content_has_changed ? var.github_sha : local.deployed_github_sha) : ""
+  
+  local_hash = local.is_github_deployment ? local.deployed_local_hash : "LOCAL_${local.content_hash_value}_${var.local_username}"
+  github_hash = local.is_github_deployment ? "GITHUB_${local.content_hash_value}_${local.github_sha_to_use}_${var.github_username}" : local.deployed_github_hash
+  
+  # Determine which deployment type is in use (Local or Github)
+  current_use = local.is_github_deployment ? "Github" : "Local"
+
   # Build commands for each OS
+  # Build from root directory to include utils folder in context
   windows_build_command = <<-EOT
-    if (Test-Path '${replace(path.root, "/", "\\")}\\utils') {
-      Copy-Item -Recurse -Force '${replace(path.root, "/", "\\")}\\utils' '${replace(local.codebase_directory, "/", "\\")}\'
-    }
-    
-    cd '${replace(local.codebase_directory, "/", "\\")}'
+    cd '${replace(path.root, "/", "\\")}'
     gcloud builds submit `
-      --config cloudbuild.yaml `
+      --project=${var.project_id} `
+      --config '${replace(local.codebase_directory, "/", "\\")}\cloudbuild.yaml' `
       --substitutions=_IMAGE_TAG=${var.container_image}
-    
-    if (Test-Path '${replace(local.codebase_directory, "/", "\\")}\\utils') {
-      Remove-Item -Recurse -Force '${replace(local.codebase_directory, "/", "\\")}\\utils'
-    }
   EOT
-  
+
   unix_build_command = <<-EOT
-    if [ -d '${path.root}/utils' ]; then
-      cp -r '${path.root}/utils' '${local.codebase_directory}/'
-    fi
-    
-    cd '${local.codebase_directory}'
+    cd '${path.root}'
     gcloud builds submit \
-      --config cloudbuild.yaml \
+      --project=${var.project_id} \
+      --config '${local.codebase_directory}/cloudbuild.yaml' \
       --substitutions=_IMAGE_TAG=${var.container_image}
-    
-    if [ -d '${local.codebase_directory}/utils' ]; then
-      rm -rf '${local.codebase_directory}/utils'
-    fi
   EOT
 }
 
-# Build scheduler job image (only if build_image is true)
+# Build scheduler job image (only if build_image is true AND content has changed)
+# Triggered only when deployed content_hash differs from calculated content_hash
 resource "null_resource" "scheduler_job_image_build" {
-  count = var.build_image ? 1 : 0
-  
+  count = var.build_image && local.content_has_changed ? 1 : 0
+
   triggers = {
-    codebase_hash = local.codebase_hash
+    # Rebuild when deployed_content_hash differs from local content_hash
+    deployed_content_hash = local.deployed_content_hash
   }
 
-  # Copy utils to build context, build image, then cleanup
+  # Build Docker image via Cloud Build
   provisioner "local-exec" {
-    when       = create
-    on_failure = fail
-    command    = local.is_windows ? local.windows_build_command : local.unix_build_command
-    interpreter = local.is_windows ? ["PowerShell", "-Command"] : ["bash", "-c"]
+    when        = create
+    on_failure  = fail
+    command     = local.is_windows ? local.windows_build_command : local.unix_build_command
+    interpreter = local.is_windows ? ["PowerShell", "-Command"] : ["sh", "-c"]
   }
 }
 
@@ -126,6 +170,28 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
             name  = env.key
             value = env.value
           }
+        }
+
+        # CONTENT_HASH: Pure hash of codebase files (deterministic, controls deployment decisions)
+        env {
+          name  = "CONTENT_HASH"
+          value = local.content_hash_value
+        }
+        
+        # Deployment tracking hashes
+        env {
+          name  = "LOCAL_HASH"
+          value = local.local_hash
+        }
+        
+        env {
+          name  = "GITHUB_HASH"
+          value = local.github_hash
+        }
+        
+        env {
+          name  = "CURRENT_USE"
+          value = local.current_use
         }
 
         dynamic "env" {
