@@ -8,6 +8,10 @@ terraform {
       source  = "hashicorp/null"
       version = "~> 3.0"
     }
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.3"
+    }
   }
 }
 
@@ -17,23 +21,57 @@ locals {
 
   # OS detection (check for Windows drive letter like C:, D:)
   is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
+  
+  # Sanitize job name for resource lookups (replace underscores with hyphens)
+  sa_safe_job_name = replace(var.job_name, "_", "-")
+}
 
+# ============================================
+# Compute Content Hash from Codebase
+# ============================================
+data "external" "content_hash" {
+  program = local.is_windows ? ["PowerShell", "-File", "${path.root}/scripts/compute_content_hash_json.ps1"] : ["bash", "${path.root}/scripts/compute_content_hash_json.sh"]
+  query = {
+    codebase_path = local.codebase_directory
+  }
+}
+
+# ============================================
+# Get Currently Deployed Content Hash
+# ============================================
+data "external" "deployed_hash" {
+  program = local.is_windows ? ["PowerShell", "-File", "${path.root}/scripts/get_deployed_content_hash.ps1"] : ["bash", "${path.root}/scripts/get_deployed_content_hash.sh"]
+  query = {
+    project_id    = var.project_id
+    region        = var.region
+    resource_name = local.sa_safe_job_name
+    resource_type = "job"
+  }
+}
+
+locals {
   # ============================================
   # Deployment Hash Control System
   # ============================================
   
-  # CONTENT_HASH: Pure hash of codebase files (deterministic)
-  # Must be provided externally via variable
-  content_hash_value = var.content_hash
+  # CONTENT_HASH: Pure hash of codebase files (computed from codebase_path)
+  content_hash_value = data.external.content_hash.result.content_hash
   
-  # LOCAL_HASH: Hash of (content_hash + local username)
-  local_hash_value = var.local_username != "" ? sha256("${local.content_hash_value}-${var.local_username}") : ""
+  # Currently deployed content hash (empty string if job doesn't exist yet)
+  deployed_content_hash = data.external.deployed_hash.result.deployed_content_hash
   
-  # GITHUB_HASH: Hash of (content_hash + github commit + github username)
-  github_hash_value = var.github_sha != "" && var.github_username != "" ? sha256("${local.content_hash_value}-${var.github_sha}-${var.github_username}") : ""
-
-  # Sanitize job name for service account IDs (replace underscores with hyphens)
-  sa_safe_job_name = replace(var.job_name, "_", "-")
+  # Determine if content has changed
+  content_has_changed = local.deployed_content_hash == "" || local.deployed_content_hash != local.content_hash_value
+  
+  # Determine deployment mode
+  is_local_deployment = var.github_sha == ""
+  is_ci_deployment    = var.github_sha != ""
+  
+  # LOCAL_HASH: Set only for local deployments when content changed
+  local_hash_value = local.is_local_deployment && local.content_has_changed && var.local_username != "" ? "${local.content_hash_value}_${var.local_username}" : ""
+  
+  # GITHUB_HASH: Set only for CI deployments when content changed
+  github_hash_value = local.is_ci_deployment && local.content_has_changed && var.github_username != "" ? sha256("${local.content_hash_value}-${var.github_sha}-${var.github_username}") : ""
 
   # Build commands for each OS
   # Build from root directory to include utils folder in context
@@ -54,16 +92,18 @@ locals {
   EOT
 }
 
-# Build scheduler job image (only if build_image is true)
-# Triggered by content_hash changes - deployment decision made externally
+# Build scheduler job image (only if build_image is true AND content has changed)
+# Triggered only when deployed content_hash differs from calculated content_hash
 resource "null_resource" "scheduler_job_image_build" {
-  count = var.build_image ? 1 : 0
+  count = var.build_image && local.content_has_changed ? 1 : 0
 
   triggers = {
-    # Trigger rebuild when content_hash changes
+    # Trigger rebuild when content_hash changes from deployed version
     content_hash = local.content_hash_value
     # Also trigger on image tag changes
     container_image = var.container_image
+    # Track deployed hash to detect changes
+    deployed_hash = local.deployed_content_hash
   }
 
   # Build Docker image via Cloud Build
@@ -128,7 +168,8 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
           value = local.content_hash_value
         }
 
-        # LOCAL_HASH: Hash of (content_hash + local username)
+        # LOCAL_HASH: Set only for local deployments when content changed
+        # Cleared for CI deployments or when no content change
         dynamic "env" {
           for_each = local.local_hash_value != "" ? [1] : []
           content {
@@ -137,7 +178,8 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
           }
         }
 
-        # GITHUB_HASH: Hash of (content_hash + github commit + github username)
+        # GITHUB_HASH: Set only for CI deployments when content changed
+        # Cleared for local deployments or when no content change
         dynamic "env" {
           for_each = local.github_hash_value != "" ? [1] : []
           content {

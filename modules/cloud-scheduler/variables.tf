@@ -103,12 +103,7 @@ variable "build_image" {
 # ============================================
 # Deployment Hash Control System
 # ============================================
-
-variable "content_hash" {
-  description = "Pure hash of codebase files (deterministic, no metadata)"
-  type        = string
-  default     = ""
-}
+# Note: content_hash is now computed internally from codebase_path
 
 variable "local_username" {
   description = "Local username for local deployments"

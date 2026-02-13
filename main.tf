@@ -1,8 +1,23 @@
+# ============================================
+# Auto-Detect Deployment Context
+# ============================================
+
+# Auto-detect username for local deployments
+data "external" "username" {
+  program = local.is_windows_env ? ["PowerShell", "-File", "${path.root}/scripts/get_username.ps1"] : ["bash", "${path.root}/scripts/get_username.sh"]
+}
+
 # OS detection for cross-platform build scripts
 locals {
-  is_windows  = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
-  image_path  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
-  bucket_name = "${var.project_id}-gpu-job-outputs"
+  is_windows_env = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
+  is_windows     = local.is_windows_env
+  image_path     = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
+  bucket_name    = "${var.project_id}-gpu-job-outputs"
+
+  # Auto-computed deployment context (use var overrides if provided, otherwise auto-detect)
+  actual_local_username  = var.local_username != "" ? var.local_username : data.external.username.result.username
+  actual_github_username = var.github_username
+  actual_github_sha      = var.github_sha
 
   # Define all jobs in one place
   jobs = {
@@ -253,12 +268,11 @@ module "jobs" {
   container_image = each.value.container_image
   codebase_path   = each.value.codebase_path
   build_image     = lookup(each.value, "build_image", true)
-  github_sha      = var.github_sha
+  github_sha      = local.actual_github_sha
 
-  # Deployment Hash Control
-  content_hash     = var.content_hash
-  local_username   = var.local_username
-  github_username  = var.github_username
+  # Deployment Hash Control (content_hash computed inside module from codebase_path)
+  local_username   = local.actual_local_username
+  github_username  = local.actual_github_username
 
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit
@@ -304,12 +318,11 @@ module "services" {
   container_image = each.value.container_image
   codebase_path   = each.value.codebase_path
   build_image     = lookup(each.value, "build_image", true)
-  github_sha      = var.github_sha
+  github_sha      = local.actual_github_sha
 
-  # Deployment Hash Control
-  content_hash     = var.content_hash
-  local_username   = var.local_username
-  github_username  = var.github_username
+  # Deployment Hash Control (content_hash computed inside module from codebase_path)
+  local_username   = local.actual_local_username
+  github_username  = local.actual_github_username
 
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit

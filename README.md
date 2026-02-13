@@ -10,6 +10,37 @@ This project provides a complete cloud infrastructure setup with:
 - **Web Crawler**: Automated DVB Burmese news scraper with GCS storage
 - **Scheduled Jobs**: Automated data processing pipelines
 
+## Quick Start (Simplified Deployment)
+
+Just run Terraform directly - **all hash values are auto-computed**:
+
+```powershell
+# Windows
+terraform init
+terraform plan
+terraform apply
+```
+
+```bash
+# Linux/Mac  
+terraform init
+terraform plan
+terraform apply
+```
+
+**What happens automatically:**
+- ✅ **Content hash** computed from each codebase directory
+- ✅ **Username** detected for deployment tracking
+- ✅ **Hash comparison** - only deploys if code changed
+- ✅ **No wrapper scripts needed**
+
+**Documentation:**
+- 📘 [CONTENT_HASH_AUTOMATED.md](CONTENT_HASH_AUTOMATED.md) - How content hashing works
+- 📘 [DEPLOYMENT_SIMPLIFIED.md](DEPLOYMENT_SIMPLIFIED.md) - Deployment details
+- 📘 [MIGRATION_COMPLETE.md](MIGRATION_COMPLETE.md) - What changed
+
+**Helper scripts** in `scripts/` are now optional utilities.
+
 ## Project Structure
 
 ```
