@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   TF_VERSION: 1.14.3
   GOOGLE_PROJECT: cpe-final-project
@@ -22,35 +26,36 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Cache Terraform Plugins
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            .terraform/providers
+          key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
+
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Authenticate gcloud
-        run: |
-          echo '${{ secrets.GOOGLE_CREDENTIALS }}' | gcloud auth activate-service-account --key-file=-
-          gcloud config set project ${{ env.GOOGLE_PROJECT }}
-
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
-
-      - name: DEBUG - Test hash computation
-        run: |
-          echo "======================================"
-          echo "DEBUG: Testing Hash Computation CI"
-          echo "======================================"
-          echo "Environment:"
-          echo "  LC_ALL: ${LC_ALL:-<not set>}"
-          echo "  LC_COLLATE: ${LC_COLLATE:-<not set>}"
-          echo "  LANG: ${LANG:-<not set>}"
-          echo ""
-          echo "=== Crawler Job Hash ==="
-          ./scripts/debug_hash_detailed.sh ./Codebase_Container/crawler_job || echo "Debug script failed"
-          echo ""
 
       - name: Terraform Format Check
         id: fmt
@@ -60,20 +65,15 @@ jobs:
       - name: Terraform Init
         id: init
         run: terraform init
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
       - name: Terraform Validate
         id: validate
         run: terraform validate -no-color
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
       - name: Terraform Plan
         id: plan
         run: terraform plan -no-color -out=tfplan
         env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           TF_VAR_github_sha: ${{ github.sha }}
           TF_VAR_github_username: ${{ github.actor }}
 
@@ -127,18 +127,33 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Cache Terraform Plugins
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            .terraform/providers
+          key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
+
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
-
-      - name: Authenticate gcloud
-        run: |
-          echo '${{ secrets.GOOGLE_CREDENTIALS }}' | gcloud auth activate-service-account --key-file=-
-          gcloud config set project ${{ env.GOOGLE_PROJECT }}
 
       - name: Configure Docker for Artifact Registry
         run: |
@@ -146,8 +161,6 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
       - name: Download Plan
         uses: actions/download-artifact@v4
@@ -157,16 +170,8 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
         env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           TF_VAR_github_sha: ${{ github.sha }}
           TF_VAR_github_username: ${{ github.actor }}
 
       - name: Display Outputs
         run: terraform output -json
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-
-      - name: Verify Build Hashes
-        run: |
-          echo "=== Build Hash Files Generated ==="
-          find . -name ".build-hash" -type f -exec echo "File: {}" \; -exec cat {} \; -exec echo "" \;
