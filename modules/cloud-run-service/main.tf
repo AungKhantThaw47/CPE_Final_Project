@@ -62,16 +62,20 @@ locals {
   # CONTENT_HASH: Pure hash of codebase files (computed natively in Terraform)
   content_hash_value = local.content_hash_computed
   
-  # Currently deployed hash
+  # Currently deployed hashes
   deployed_content_hash = data.external.deployed_hash.result.deployed_content_hash
+  deployed_local_hash   = data.external.deployed_hash.result.deployed_local_hash
+  deployed_github_hash  = data.external.deployed_hash.result.deployed_github_hash
   
   # Determine if content has changed
   content_has_changed = local.deployed_content_hash == "" || local.deployed_content_hash != local.content_hash_value
   
-  # Hash tracking for deployment context (only populate relevant hash)
+  # Hash tracking for deployment context
+  # When deploying locally: update local_hash, preserve github_hash
+  # When deploying from GitHub: update github_hash, preserve local_hash
   is_github_deployment = var.github_sha != "" && var.github_username != ""
-  local_hash = local.is_github_deployment ? "" : "LOCAL_${local.content_hash_value}_${var.local_username}"
-  github_hash = local.is_github_deployment ? "GITHUB_${local.content_hash_value}_${var.github_sha}_${var.github_username}" : ""
+  local_hash = local.is_github_deployment ? local.deployed_local_hash : "LOCAL_${local.content_hash_value}_${var.local_username}"
+  github_hash = local.is_github_deployment ? "GITHUB_${local.content_hash_value}_${var.github_sha}_${var.github_username}" : local.deployed_github_hash
   
   # Determine which deployment type is in use (Local or Github)
   current_use = local.is_github_deployment ? "Github" : "Local"
