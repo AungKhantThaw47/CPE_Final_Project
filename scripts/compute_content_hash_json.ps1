@@ -56,7 +56,12 @@ try {
              Where-Object { 
                  $_.Name -notlike ".build-hash*" -and
                  $_.Name -notlike "*.log" -and
-                 $_.Name -notlike "*.tmp"
+                 $_.Name -notlike "*.tmp" -and
+                 $_.FullName -notlike "*\node_modules\*" -and
+                 $_.FullName -notlike "*\__pycache__\*" -and
+                 $_.FullName -notlike "*\.pytest_cache\*" -and
+                 $_.FullName -notlike "*\venv\*" -and
+                 $_.FullName -notlike "*\.venv\*"
              } | Sort-Object FullName
 
     if ($files.Count -eq 0) {

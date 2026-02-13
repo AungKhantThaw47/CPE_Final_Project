@@ -21,6 +21,11 @@ fi
 # Compute hash of all files in codebase directory (normalize line endings)
 # Sort files and compute combined hash for deterministic result
 CURRENT_HASH=$(find "$CODEBASE_PATH" -type f \
+    ! -path "*/node_modules/*" \
+    ! -path "*/__pycache__/*" \
+    ! -path "*/.pytest_cache/*" \
+    ! -path "*/venv/*" \
+    ! -path "*/.venv/*" \
     ! -name ".build-hash*" \
     ! -name "*.log" \
     ! -name "*.tmp" \

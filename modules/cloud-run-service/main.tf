@@ -24,16 +24,34 @@ locals {
   
   # Sanitize service name for resource lookups (replace underscores with hyphens)
   sa_safe_service_name = replace(var.service_name, "_", "-")
-}
-
-# ============================================
-# Compute Content Hash from Codebase
-# ============================================
-data "external" "content_hash" {
-  program = local.is_windows ? ["PowerShell", "-File", "${path.root}/scripts/compute_content_hash_json.ps1"] : ["bash", "${path.root}/scripts/compute_content_hash_json.sh"]
-  query = {
-    codebase_path = local.codebase_directory
-  }
+  
+  # ============================================
+  # Compute Content Hash from Codebase (Native Terraform)
+  # ============================================
+  
+  # Get all files in codebase directory (excluding temp files)
+  codebase_files = fileset(local.codebase_directory, "**")
+  
+  # Filter out temporary files, build artifacts, and dependencies
+  filtered_files = [
+    for f in local.codebase_files : f
+    if !can(regex("\\.(log|tmp)$", f)) && 
+       !can(regex("^\\.build-hash", f)) &&
+       !can(regex("^node_modules/", f)) &&
+       !can(regex("^__pycache__/", f)) &&
+       !can(regex("^\\.pytest_cache/", f)) &&
+       !can(regex("^venv/", f)) &&
+       !can(regex("^\\.venv/", f))
+  ]
+  
+  # Read all files, normalize line endings (CRLF -> LF), and combine
+  files_content = join("", [
+    for f in sort(local.filtered_files) :
+    replace(file("${local.codebase_directory}/${f}"), "\r\n", "\n")
+  ])
+  
+  # Compute SHA-256 hash of combined normalized content
+  content_hash_computed = sha256(local.files_content)
 }
 
 # ============================================
@@ -54,8 +72,8 @@ locals {
   # Deployment Hash Control System
   # ============================================
   
-  # CONTENT_HASH: Pure hash of codebase files (computed from codebase_path)
-  content_hash_value = data.external.content_hash.result.content_hash
+  # CONTENT_HASH: Pure hash of codebase files (computed natively in Terraform)
+  content_hash_value = local.content_hash_computed
   
   # Currently deployed content hash (empty string if service doesn't exist yet)
   deployed_content_hash = data.external.deployed_hash.result.deployed_content_hash

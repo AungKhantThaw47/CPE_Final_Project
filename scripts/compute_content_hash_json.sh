@@ -18,8 +18,13 @@ fi
 # Compute hash of all files in codebase directory
 cd "$CODEBASE_PATH"
 
-# Find all files, excluding only temporary build artifacts
+# Find all files, excluding only temporary build artifacts and dependencies
 FILES=$(find . -type f \
+    ! -path "*/node_modules/*" \
+    ! -path "*/__pycache__/*" \
+    ! -path "*/.pytest_cache/*" \
+    ! -path "*/venv/*" \
+    ! -path "*/.venv/*" \
     ! -name ".build-hash*" \
     ! -name "*.log" \
     ! -name "*.tmp" \
