@@ -66,6 +66,7 @@ build
 .build-hash
 *.log
 *.tmp
+package-lock.json
 EOF
 }
 

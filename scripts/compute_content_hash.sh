@@ -34,6 +34,7 @@ CURRENT_HASH=$(find "$CODEBASE_PATH" -type f \
     ! -name ".build-hash*" \
     ! -name "*.log" \
     ! -name "*.tmp" \
+    ! -name "package-lock.json" \
     2>/dev/null | awk '{print tolower($0) "\t" $0}' | LC_COLLATE=C sort | cut -f2- | while read -r file; do
     # Convert CRLF to LF for consistent hashing across platforms
     tr -d '\r' < "$file"

@@ -23,6 +23,7 @@ find . -type f \
     ! -name ".build-hash*" \
     ! -name "*.log" \
     ! -name "*.tmp" \
+    ! -name "package-lock.json" \
     2>/dev/null | awk '{print tolower($0) "\t" $0}' | LC_COLLATE=C sort | cut -f2- | tee /tmp/file_list.txt
 
 echo ""

@@ -24,6 +24,7 @@ try {
                  $_.Name -notlike ".build-hash*" -and
                  $_.Name -notlike "*.log" -and
                  $_.Name -notlike "*.tmp" -and
+                 $_.Name -ne "package-lock.json" -and
                  $_.FullName -notlike "*\node_modules\*" -and
                  $_.FullName -notlike "*\__pycache__\*" -and
                  $_.FullName -notlike "*\.pytest_cache\*" -and

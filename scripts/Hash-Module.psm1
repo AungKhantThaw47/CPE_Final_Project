@@ -87,6 +87,7 @@ function Get-DefaultExclusionPatterns {
         ".build-hash*",
         "*.log",
         "*.tmp",
+        "package-lock.json",
         "*\node_modules\*",
         "*/__pycache__/*",
         "*\.pytest_cache\*",
