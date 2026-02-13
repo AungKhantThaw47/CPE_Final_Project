@@ -2,6 +2,8 @@
 
 Terraform-managed GCP infrastructure for GPU batch processing, MLflow tracking, and web scraping with automated scheduling.
 
+> **Note**: Hash preservation system with smart rebuild detection - only builds when code changes!
+
 ## Project Overview
 
 This project provides a complete cloud infrastructure setup with:
