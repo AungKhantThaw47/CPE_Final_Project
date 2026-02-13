@@ -8,16 +8,31 @@ param(
 
 try {
     if ($resource_type -eq "service") {
-        $output = gcloud run services describe $resource_name --region=$region --project=$project_id --format="value(template.containers[0].env.filter(name:CONTENT_HASH).value)" 2>$null
+        # Cloud Run Service - get as JSON and parse
+        $json = gcloud run services describe $resource_name `
+            --region=$region `
+            --project=$project_id `
+            --format=json 2>$null | ConvertFrom-Json
+        
+        $envVars = $json.spec.template.spec.containers[0].env
     } else {
-        $output = gcloud run jobs describe $resource_name --region=$region --project=$project_id --format="value(template.template.containers[0].env.filter(name:CONTENT_HASH).value)" 2>$null
+        # Cloud Run Job - get as JSON and parse  
+        $json = gcloud run jobs describe $resource_name `
+            --region=$region `
+            --project=$project_id `
+            --format=json 2>$null | ConvertFrom-Json
+        
+        $envVars = $json.spec.template.spec.template.spec.containers[0].env
     }
     
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($output)) {
+    # Find CONTENT_HASH in environment variables
+    $contentHashEnv = $envVars | Where-Object { $_.name -eq "CONTENT_HASH" }
+    
+    if ($null -eq $contentHashEnv -or [string]::IsNullOrWhiteSpace($contentHashEnv.value)) {
         # Resource doesn't exist yet or has no CONTENT_HASH - return empty hash
         Write-Output '{"deployed_content_hash":""}'
     } else {
-        $hash = $output.Trim()
+        $hash = $contentHashEnv.value.Trim()
         Write-Output "{`"deployed_content_hash`":`"$hash`"}"
     }
 } catch {
