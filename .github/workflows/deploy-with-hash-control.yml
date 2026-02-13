@@ -41,6 +41,18 @@ jobs:
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
       
+      - name: DEBUG - Show detailed hash computation
+        run: |
+          echo "======================================"
+          echo "DEBUG: Detailed Hash Computation"
+          echo "======================================"
+          echo "Environment:"
+          echo "  LC_ALL: ${LC_ALL:-<not set>}"
+          echo "  LC_COLLATE: ${LC_COLLATE:-<not set>}"
+          echo "  LANG: ${LANG:-<not set>}"
+          echo ""
+          ./scripts/debug_hash_detailed.sh ./Codebase_Container/crawler_job
+      
       - name: Compute current content hash
         id: compute_hash
         run: |
