@@ -137,8 +137,9 @@ hash_directory_content() {
     fi
     
     # Get sorted file list (lowercase + byte sort for cross-platform consistency)
+    # Use LC_COLLATE=C to ensure consistent byte-level sorting across all systems
     local file_list
-    file_list=$(eval "$find_cmd" | awk '{print tolower($0) "\t" $0}' | sort | cut -f2-)
+    file_list=$(eval "$find_cmd" | awk '{print tolower($0) "\t" $0}' | LC_COLLATE=C sort | cut -f2-)
     
     if [ -z "$file_list" ]; then
         echo "Error: No files found in directory after filtering" >&2
