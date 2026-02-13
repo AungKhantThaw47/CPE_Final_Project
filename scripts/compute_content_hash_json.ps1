@@ -51,6 +51,7 @@ if ([string]::IsNullOrEmpty($CodebasePath) -or -not (Test-Path $CodebasePath)) {
 }
 
 # Compute hash of all files in codebase directory
+# Use ordinal byte-level sorting for cross-platform consistency
 try {
     $files = Get-ChildItem -Path $CodebasePath -Recurse -File | 
              Where-Object { 
@@ -62,9 +63,24 @@ try {
                  $_.FullName -notlike "*\.pytest_cache\*" -and
                  $_.FullName -notlike "*\venv\*" -and
                  $_.FullName -notlike "*\.venv\*"
-             } | Sort-Object FullName
+             }
 
-    if ($files.Count -eq 0) {
+    # Convert to array with lowercase sort keys and sort using ordinal comparison
+    # This matches the bash approach with tolower() + LC_COLLATE=C sort
+    $fileList = [System.Collections.Generic.List[PSCustomObject]]::new()
+    foreach ($file in $files) {
+        $fileList.Add([PSCustomObject]@{
+            Path = $file.FullName
+            SortKey = $file.FullName.ToLowerInvariant().Replace('\', '/')
+        })
+    }
+    $fileList.Sort({
+        param($x, $y)
+        [string]::CompareOrdinal($x.SortKey, $y.SortKey)
+    })
+    $fileArray = $fileList | ForEach-Object { $_.Path }
+
+    if ($fileArray.Count -eq 0) {
         # Return empty hash for empty directories
         Write-Output (@{
             content_hash = ""
@@ -76,16 +92,16 @@ try {
     $hashAlgorithm = [System.Security.Cryptography.SHA256]::Create()
     $combinedBytes = [System.Collections.Generic.List[byte]]::new()
 
-    foreach ($file in $files) {
+    foreach ($filePath in $fileArray) {
         try {
             # Try to read as text and normalize line endings (CRLF -> LF)
-            $content = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
+            $content = [System.IO.File]::ReadAllText($filePath, [System.Text.Encoding]::UTF8)
             $normalizedContent = $content.Replace("`r`n", "`n")
             $fileBytes = [System.Text.Encoding]::UTF8.GetBytes($normalizedContent)
             $combinedBytes.AddRange($fileBytes)
         } catch {
             # If text read fails (binary file), read as binary without normalization
-            $fileBytes = [System.IO.File]::ReadAllBytes($file.FullName)
+            $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
             $combinedBytes.AddRange($fileBytes)
         }
     }

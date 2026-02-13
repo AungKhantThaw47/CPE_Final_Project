@@ -19,6 +19,7 @@ fi
 cd "$CODEBASE_PATH"
 
 # Find all files, excluding only temporary build artifacts and dependencies
+# Use lowercase + LC_COLLATE=C to ensure consistent byte-level sorting across all systems
 FILES=$(find . -type f \
     ! -path "*/node_modules/*" \
     ! -path "*/__pycache__/*" \
@@ -28,7 +29,7 @@ FILES=$(find . -type f \
     ! -name ".build-hash*" \
     ! -name "*.log" \
     ! -name "*.tmp" \
-    2>/dev/null | sort)
+    2>/dev/null | awk '{print tolower($0) "\t" $0}' | LC_COLLATE=C sort | cut -f2-)
 
 if [ -z "$FILES" ]; then
     # Return empty hash for empty directories

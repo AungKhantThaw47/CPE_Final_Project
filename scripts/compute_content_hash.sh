@@ -20,6 +20,7 @@ fi
 
 # Compute hash of all files in codebase directory (normalize line endings)
 # Sort files and compute combined hash for deterministic result
+# Use lowercase + LC_COLLATE=C to ensure consistent byte-level sorting across all systems
 CURRENT_HASH=$(find "$CODEBASE_PATH" -type f \
     ! -path "*/node_modules/*" \
     ! -path "*/__pycache__/*" \
@@ -29,7 +30,7 @@ CURRENT_HASH=$(find "$CODEBASE_PATH" -type f \
     ! -name ".build-hash*" \
     ! -name "*.log" \
     ! -name "*.tmp" \
-    2>/dev/null | sort | while read -r file; do
+    2>/dev/null | awk '{print tolower($0) "\t" $0}' | LC_COLLATE=C sort | cut -f2- | while read -r file; do
     # Convert CRLF to LF for consistent hashing across platforms
     tr -d '\r' < "$file"
 done | sha256sum | cut -d' ' -f1)
