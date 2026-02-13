@@ -25,17 +25,19 @@ try {
         $envVars = $json.spec.template.spec.template.spec.containers[0].env
     }
     
-    # Find CONTENT_HASH in environment variables
+    # Find hashes in environment variables
     $contentHashEnv = $envVars | Where-Object { $_.name -eq "CONTENT_HASH" }
+    $localHashEnv = $envVars | Where-Object { $_.name -eq "LOCAL_HASH" }
+    $githubHashEnv = $envVars | Where-Object { $_.name -eq "GITHUB_HASH" }
     
-    if ($null -eq $contentHashEnv -or [string]::IsNullOrWhiteSpace($contentHashEnv.value)) {
-        # Resource doesn't exist yet or has no CONTENT_HASH - return empty hash
-        Write-Output '{"deployed_content_hash":""}'
-    } else {
-        $hash = $contentHashEnv.value.Trim()
-        Write-Output "{`"deployed_content_hash`":`"$hash`"}"
-    }
+    # Extract values (empty string if not found)
+    $contentHash = if ($null -eq $contentHashEnv) { "" } else { $contentHashEnv.value }
+    $localHash = if ($null -eq $localHashEnv) { "" } else { $localHashEnv.value }
+    $githubHash = if ($null -eq $githubHashEnv) { "" } else { $githubHashEnv.value }
+    
+    # Return all three hashes as JSON
+    Write-Output "{`"deployed_content_hash`":`"$contentHash`",`"deployed_local_hash`":`"$localHash`",`"deployed_github_hash`":`"$githubHash`"}"
 } catch {
-    # Return empty hash on any error
-    Write-Output '{"deployed_content_hash":""}'
+    # Return empty hashes on any error
+    Write-Output '{"deployed_content_hash":"","deployed_local_hash":"","deployed_github_hash":""}'
 }

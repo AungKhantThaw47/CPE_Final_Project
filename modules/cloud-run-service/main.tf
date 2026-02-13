@@ -75,8 +75,10 @@ locals {
   # CONTENT_HASH: Pure hash of codebase files (computed natively in Terraform)
   content_hash_value = local.content_hash_computed
   
-  # Currently deployed content hash (empty string if service doesn't exist yet)
+  # Currently deployed hashes
   deployed_content_hash = data.external.deployed_hash.result.deployed_content_hash
+  deployed_local_hash   = data.external.deployed_hash.result.deployed_local_hash
+  deployed_github_hash  = data.external.deployed_hash.result.deployed_github_hash
   
   # Determine if content has changed
   content_has_changed = local.deployed_content_hash == "" || local.deployed_content_hash != local.content_hash_value
@@ -85,11 +87,21 @@ locals {
   is_local_deployment = var.github_sha == ""
   is_ci_deployment    = var.github_sha != ""
   
-  # LOCAL_HASH: Set only for local deployments when content changed
-  local_hash_value = local.is_local_deployment && local.content_has_changed && var.local_username != "" ? "${local.content_hash_value}_${var.local_username}" : ""
+  # LOCAL_HASH logic:
+  # - If content changed AND local deploy: set new local hash
+  # - If content changed AND CI deploy: clear it (empty string)
+  # - If content unchanged: preserve existing value
+  local_hash_value = local.content_has_changed ? (
+    local.is_local_deployment && var.local_username != "" ? "${local.content_hash_value}_${var.local_username}" : ""
+  ) : local.deployed_local_hash
   
-  # GITHUB_HASH: Set only for CI deployments when content changed
-  github_hash_value = local.is_ci_deployment && local.content_has_changed && var.github_username != "" ? sha256("${local.content_hash_value}-${var.github_sha}-${var.github_username}") : ""
+  # GITHUB_HASH logic:
+  # - If content changed AND CI deploy: set new github hash
+  # - If content changed AND local deploy: clear it (empty string)
+  # - If content unchanged: preserve existing value
+  github_hash_value = local.content_has_changed ? (
+    local.is_ci_deployment && var.github_username != "" ? sha256("${local.content_hash_value}-${var.github_sha}-${var.github_username}") : ""
+  ) : local.deployed_github_hash
 
   # Build commands for each OS
   # Build from root directory to include utils folder in context
