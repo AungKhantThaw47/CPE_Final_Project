@@ -18,17 +18,16 @@ if [ ! -d "$CODEBASE_PATH" ]; then
     exit 1
 fi
 
-# Compute hash of all files in codebase directory
+# Compute hash of all files in codebase directory (normalize line endings)
 # Sort files and compute combined hash for deterministic result
 CURRENT_HASH=$(find "$CODEBASE_PATH" -type f \
     ! -name ".build-hash*" \
-    ! -name ".dockerignore" \
-    ! -name "cloudbuild.yaml" \
-    ! -name "Dockerfile" \
-    -exec sha256sum {} \; | \
-    sort | \
-    sha256sum | \
-    cut -d' ' -f1)
+    ! -name "*.log" \
+    ! -name "*.tmp" \
+    2>/dev/null | sort | while read -r file; do
+    # Convert CRLF to LF for consistent hashing across platforms
+    tr -d '\r' < "$file"
+done | sha256sum | cut -d' ' -f1)
 
 if [ -z "$CURRENT_HASH" ]; then
     echo "Error: Failed to compute content hash"

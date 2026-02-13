@@ -31,9 +31,10 @@ if [ -z "$FILES" ]; then
     exit 0
 fi
 
-# Compute combined hash of all files
+# Compute combined hash of all files (normalize line endings to LF)
 CONTENT_HASH=$(echo "$FILES" | while read -r file; do
-    cat "$file"
+    # Convert CRLF to LF for consistent hashing across platforms
+    tr -d '\r' < "$file"
 done | sha256sum | awk '{print $1}')
 
 # Return JSON for Terraform external data source
