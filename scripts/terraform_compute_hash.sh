@@ -9,6 +9,9 @@ set -e
 export LC_ALL=C
 export LC_COLLATE=C
 
+# Debug: Log environment to stderr (won't affect JSON output)
+echo "[DEBUG terraform_compute_hash.sh] LC_ALL=$LC_ALL LC_COLLATE=$LC_COLLATE" >&2
+
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
