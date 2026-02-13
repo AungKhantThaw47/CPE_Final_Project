@@ -25,6 +25,9 @@ output "jobs" {
       
       # Deployment Hash Control
       content_hash = module.jobs[job_key].content_hash
+      local_hash   = module.jobs[job_key].local_hash
+      github_hash  = module.jobs[job_key].github_hash
+      current_use  = module.jobs[job_key].current_use
     }
   }
 }
@@ -56,6 +59,9 @@ output "services" {
       
       # Deployment Hash Control
       content_hash = module.services[svc_key].content_hash
+      local_hash   = module.services[svc_key].local_hash
+      github_hash  = module.services[svc_key].github_hash
+      current_use  = module.services[svc_key].current_use
     }
   }
 }

@@ -67,6 +67,14 @@ locals {
   
   # Determine if content has changed
   content_has_changed = local.deployed_content_hash == "" || local.deployed_content_hash != local.content_hash_value
+  
+  # Hash tracking for deployment context (only populate relevant hash)
+  is_github_deployment = var.github_sha != "" && var.github_username != ""
+  local_hash = local.is_github_deployment ? "" : "LOCAL_${local.content_hash_value}_${var.local_username}"
+  github_hash = local.is_github_deployment ? "GITHUB_${local.content_hash_value}_${var.github_sha}_${var.github_username}" : ""
+  
+  # Determine which deployment type is in use (Local or Github)
+  current_use = local.is_github_deployment ? "Github" : "Local"
 
   # Build commands for each OS
   # Build from root directory to include utils folder in context
@@ -165,6 +173,22 @@ resource "google_cloud_run_v2_service" "service" {
       env {
         name  = "CONTENT_HASH"
         value = local.content_hash_value
+      }
+      
+      # Deployment tracking hashes
+      env {
+        name  = "LOCAL_HASH"
+        value = local.local_hash
+      }
+      
+      env {
+        name  = "GITHUB_HASH"
+        value = local.github_hash
+      }
+      
+      env {
+        name  = "CURRENT_USE"
+        value = local.current_use
       }
 
       # Cloud SQL volume mount
