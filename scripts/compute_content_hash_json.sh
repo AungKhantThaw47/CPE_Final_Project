@@ -5,6 +5,10 @@
 
 set -e
 
+# Force C locale for consistent sorting across all systems
+export LC_ALL=C
+export LC_COLLATE=C
+
 # Read from stdin for Terraform external data source
 eval "$(jq -r '@sh "CODEBASE_PATH=\(.codebase_path)"')"
 

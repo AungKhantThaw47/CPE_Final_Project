@@ -5,6 +5,10 @@
 
 set -e
 
+# Force C locale for consistent sorting across all systems
+export LC_ALL=C
+export LC_COLLATE=C
+
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

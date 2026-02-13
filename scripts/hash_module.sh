@@ -3,6 +3,10 @@
 # Provides reusable hashing functions for content-based operations
 # Usage: source ./hash_module.sh
 
+# Force C locale for consistent sorting across all systems
+export LC_ALL=C
+export LC_COLLATE=C
+
 # Computes SHA256 hash of a string
 # Arguments:
 #   $1 - Content string to hash

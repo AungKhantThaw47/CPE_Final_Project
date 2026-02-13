@@ -5,6 +5,10 @@
 
 set -e
 
+# Force C locale for consistent sorting across all systems
+export LC_ALL=C
+export LC_COLLATE=C
+
 CODEBASE_PATH="$1"
 
 if [ -z "$CODEBASE_PATH" ]; then
