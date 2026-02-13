@@ -59,25 +59,25 @@ locals {
       service_account_roles = []
     }
 
-    dvb-crawler-job = {
-      codebase_path    = "${path.root}/Codebase_Container/crawler_job"
-      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
-      description      = "DVB Burmese news crawler job"
-      build_image      = true # Build from local Dockerfile
-      enable_scheduler = true
-      schedule         = "0 1 * * *" # Run every day at midnight
-      enable_gpu       = false
-      cpu_limit        = "1"
-      memory_limit     = "512Mi"
-      timeout          = "600s"
-      environment_variables = {
-        GCS_BUCKET = google_storage_bucket.crawler_data.name
-      }
-      service_account_roles = [
-        "roles/storage.objectAdmin",
-        "roles/logging.logWriter"
-      ]
-    }
+    # dvb-crawler-job = {
+    #   codebase_path    = "${path.root}/Codebase_Container/crawler_job"
+    #   container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
+    #   description      = "DVB Burmese news crawler job"
+    #   build_image      = true # Build from local Dockerfile
+    #   enable_scheduler = true
+    #   schedule         = "0 1 * * *" # Run every day at midnight
+    #   enable_gpu       = false
+    #   cpu_limit        = "1"
+    #   memory_limit     = "512Mi"
+    #   timeout          = "600s"
+    #   environment_variables = {
+    #     GCS_BUCKET = google_storage_bucket.crawler_data.name
+    #   }
+    #   service_account_roles = [
+    #     "roles/storage.objectAdmin",
+    #     "roles/logging.logWriter"
+    #   ]
+    # }
 
     dvb-text-cleaner-job = {
       codebase_path    = "${path.root}/Codebase_Container/text_clean_codebase"
