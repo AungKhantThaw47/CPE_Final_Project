@@ -62,33 +62,11 @@ locals {
   # CONTENT_HASH: Pure hash of codebase files (computed natively in Terraform)
   content_hash_value = local.content_hash_computed
   
-  # Currently deployed hashes
+  # Currently deployed hash
   deployed_content_hash = data.external.deployed_hash.result.deployed_content_hash
-  deployed_local_hash   = data.external.deployed_hash.result.deployed_local_hash
-  deployed_github_hash  = data.external.deployed_hash.result.deployed_github_hash
   
   # Determine if content has changed
   content_has_changed = local.deployed_content_hash == "" || local.deployed_content_hash != local.content_hash_value
-  
-  # Determine deployment mode
-  is_local_deployment = var.github_sha == ""
-  is_ci_deployment    = var.github_sha != ""
-  
-  # LOCAL_HASH logic:
-  # - If content changed AND local deploy: set new local hash
-  # - If content changed AND CI deploy: clear it (empty string)
-  # - If content unchanged: preserve existing value
-  local_hash_value = local.content_has_changed ? (
-    local.is_local_deployment && var.local_username != "" ? "${local.content_hash_value}_${var.local_username}" : ""
-  ) : local.deployed_local_hash
-  
-  # GITHUB_HASH logic:
-  # - If content changed AND CI deploy: set new github hash
-  # - If content changed AND local deploy: clear it (empty string)
-  # - If content unchanged: preserve existing value
-  github_hash_value = local.content_has_changed ? (
-    local.is_ci_deployment && var.github_username != "" ? sha256("${local.content_hash_value}-${var.github_sha}-${var.github_username}") : ""
-  ) : local.deployed_github_hash
 
   # Build commands for each OS
   # Build from root directory to include utils folder in context
@@ -174,31 +152,10 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
           }
         }
 
-        # Deployment Hash Control System
         # CONTENT_HASH: Pure hash of codebase files (deterministic, controls deployment decisions)
         env {
           name  = "CONTENT_HASH"
           value = local.content_hash_value
-        }
-
-        # LOCAL_HASH: Set only for local deployments when content changed
-        # Cleared for CI deployments or when no content change
-        dynamic "env" {
-          for_each = local.local_hash_value != "" ? [1] : []
-          content {
-            name  = "LOCAL_HASH"
-            value = local.local_hash_value
-          }
-        }
-
-        # GITHUB_HASH: Set only for CI deployments when content changed
-        # Cleared for local deployments or when no content change
-        dynamic "env" {
-          for_each = local.github_hash_value != "" ? [1] : []
-          content {
-            name  = "GITHUB_HASH"
-            value = local.github_hash_value
-          }
         }
 
         dynamic "env" {
