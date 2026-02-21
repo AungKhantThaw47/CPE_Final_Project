@@ -110,7 +110,7 @@ locals {
 # Build service image (only if build_image is true AND content has changed)
 # Triggered only when deployed content_hash differs from calculated content_hash
 resource "null_resource" "service_image_build" {
-  count = var.build_image && local.content_has_changed ? 1 : 0
+  count = (var.build_image && local.content_has_changed) ? 1 : 0
 
   triggers = {
     # Rebuild when deployed_content_hash differs from local content_hash

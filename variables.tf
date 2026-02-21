@@ -106,3 +106,10 @@ variable "github_username" {
   type        = string
   default     = ""
 }
+
+variable "hf_token" {
+  description = "HuggingFace API token for accessing gated models"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

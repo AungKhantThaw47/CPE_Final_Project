@@ -183,7 +183,7 @@ pkgs.mkShell {
     echo "Go:     $(go version 2>/dev/null | awk '{print $3}' || echo 'missing')"
     echo "Py:     $(python --version 2>&1 || echo 'missing')"
     echo "TF:     $(terraform version 2>/dev/null | head -n1 | awk '{print $2}' || echo 'missing')"
-    echo "gcloud: $(gcloud version 2>/dev/null | head -n1 | awk '{print $4}' || echo 'missing')"
+    echo "gcloud: $(gcloud version 2>/dev/null | grep 'Google Cloud SDK' | awk '{print $4}' || echo 'missing')"
 
     # Zsh config
     export ZDOTDIR="$PWD/.zsh"
