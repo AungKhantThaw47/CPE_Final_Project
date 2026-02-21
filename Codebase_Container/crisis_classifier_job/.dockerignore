@@ -1,0 +1,25 @@
+# Git files
+.git
+.gitignore
+.build-hash*
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Documentation
+README.md
+*.md
+
+# Terraform
+*.tf
+.terraform

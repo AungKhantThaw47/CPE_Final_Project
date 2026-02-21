@@ -2,6 +2,11 @@
 # Auto-Detect Deployment Context
 # ============================================
 
+# Get project details (needed for service account emails)
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
 # Auto-detect username for local deployments
 data "external" "username" {
   program = local.is_windows_env ? ["PowerShell", "-File", "${path.root}/scripts/get_username.ps1"] : ["bash", "${path.root}/scripts/get_username.sh"]
@@ -98,6 +103,7 @@ locals {
         "roles/logging.logWriter"
       ]
     }
+
   }
 
   # Define Cloud Run Services (always-on HTTP services)
@@ -125,6 +131,29 @@ locals {
       ]
       cloud_sql_instances = [] # Add ["${var.project_id}:${var.region}:mlflow-db"] if using Cloud SQL
     }
+
+    crisis-classifier = {
+      codebase_path   = "${path.root}/Codebase_Container/crisis_classifier_job"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/crisis-classifier:latest"
+      description     = "Crisis news classifier - webhook service triggered by Eventarc"
+      build_image     = true
+      cpu_limit       = "4"
+      memory_limit    = "16Gi"
+      min_instances   = 0  # Scale to zero when not in use
+      max_instances   = 1  # Only one instance needed for batch processing
+      port            = 8080
+      allow_public    = false  # Only accessible via Eventarc
+      environment_variables = {
+        GCS_BUCKET    = google_storage_bucket.cleaned_crawler_data.name
+        CRISIS_BUCKET = google_storage_bucket.crisis_crawler_data.name
+        HF_TOKEN      = var.hf_token
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter"
+      ]
+      cloud_sql_instances = []
+    }
   }
 }
 
@@ -139,7 +168,8 @@ resource "google_project_service" "apis" {
     "cloudbuild.googleapis.com",
     "sqladmin.googleapis.com",
     "vpcaccess.googleapis.com",
-    "cloudscheduler.googleapis.com"
+    "cloudscheduler.googleapis.com",
+    "eventarc.googleapis.com"
   ])
 
   service            = each.value
@@ -235,6 +265,26 @@ resource "google_storage_bucket" "cleaned_crawler_data" {
 }
 
 # ============================================
+# GCS Bucket for Crisis Articles
+# ============================================
+resource "google_storage_bucket" "crisis_crawler_data" {
+  name                        = "${var.project_id}-crisis-crawler-data"
+  location                    = var.region
+  force_destroy               = true
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 180 # Keep crisis articles longer (6 months)
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+
+# ============================================
 # Service Accounts
 # ============================================
 resource "google_service_account" "job_invoker_sa" {
@@ -302,6 +352,20 @@ resource "google_cloud_run_v2_job_iam_member" "invoker_can_run" {
   member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
 }
 
+# Grant Eventarc Event Receiver role to service account
+resource "google_project_iam_member" "eventarc_receiver" {
+  project = var.project_id
+  role    = "roles/eventarc.eventReceiver"
+  member  = "serviceAccount:${google_service_account.job_invoker_sa.email}"
+}
+
+# Grant Pub/Sub Publisher to GCS service account (required for Eventarc GCS triggers)
+resource "google_project_iam_member" "gcs_pubsub_publisher" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:service-${data.google_project.project.number}@gs-project-accounts.iam.gserviceaccount.com"
+}
+
 # ============================================
 # Cloud Run Services (using module)
 # ============================================
@@ -348,5 +412,54 @@ module "services" {
     google_project_service.apis,
     google_artifact_registry_repository.docker_repo,
     google_storage_bucket.mlflow_artifacts
+  ]
+}
+
+# ============================================
+# IAM: Allow Eventarc to invoke crisis classifier service
+# ============================================
+resource "google_cloud_run_v2_service_iam_member" "crisis_classifier_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = module.services["crisis-classifier"].service_name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
+}
+
+# ============================================
+# Eventarc Trigger for Crisis Classifier
+# ============================================
+resource "google_eventarc_trigger" "crisis_classifier_trigger" {
+  name     = "crisis-classifier-trigger"
+  location = var.region
+  project  = var.project_id
+
+  # Trigger when _COMPLETE file is created in cleaned bucket
+  matching_criteria {
+    attribute = "type"
+    value     = "google.cloud.storage.object.v1.finalized"
+  }
+
+  matching_criteria {
+    attribute = "bucket"
+    value     = google_storage_bucket.cleaned_crawler_data.name
+  }
+
+  # Note: We trigger on all object creations in the bucket
+  # The classifier code will check if it's a _COMPLETE file before processing
+
+  # Target: Crisis Classifier Service
+  destination {
+    cloud_run_service {
+      service = module.services["crisis-classifier"].service_name
+      region  = var.region
+    }
+  }
+
+  service_account = google_service_account.job_invoker_sa.email
+
+  depends_on = [
+    google_project_service.apis,
+    module.services
   ]
 }

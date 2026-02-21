@@ -76,6 +76,7 @@ jobs:
         env:
           TF_VAR_github_sha: ${{ github.sha }}
           TF_VAR_github_username: ${{ github.actor }}
+          TF_VAR_hf_token: ${{ secrets.HF_TOKEN }}
 
       - name: Comment PR - Plan Results
         if: github.event_name == 'pull_request'
@@ -172,6 +173,7 @@ jobs:
         env:
           TF_VAR_github_sha: ${{ github.sha }}
           TF_VAR_github_username: ${{ github.actor }}
+          TF_VAR_hf_token: ${{ secrets.HF_TOKEN }}
 
       - name: Display Outputs
         run: terraform output -json
