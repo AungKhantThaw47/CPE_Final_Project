@@ -281,4 +281,15 @@ if __name__ == "__main__":
         print("✅ All articles processed successfully!")
         final_date = date_str or (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
         print(f"   Cleaned data: gs://{target_bucket}/dvb_cleaned/{final_date}/")
+
+        # Create completion marker file to trigger classifier
+        try:
+            client = storage.Client()
+            marker_path = f"dvb_cleaned/{final_date}/_COMPLETE"
+            marker_blob = client.bucket(target_bucket).blob(marker_path)
+            marker_blob.upload_from_string("", content_type='text/plain')
+            print(f"   Completion marker: gs://{target_bucket}/{marker_path}")
+        except Exception as e:
+            print(f"   ⚠️  Failed to create completion marker: {e}")
+
         exit(0)

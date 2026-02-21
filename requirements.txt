@@ -22,3 +22,6 @@ python-Levenshtein
 google-auth==2.27.0
 google-auth-httplib2==0.2.0
 mlflow==3.8.1
+
+# Crisis classifier dependencies
+scikit-learn==1.5.2
