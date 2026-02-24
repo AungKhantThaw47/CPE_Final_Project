@@ -243,18 +243,20 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
         try:
             is_crisis, confidence = classify_text(model, content)
 
-            if is_crisis:
+            if is_crisis and confidence >= 0.70:
                 destination_path = f"crisis_articles/{date_str}/{filename}"
                 success = upload_article(content, crisis_bucket, destination_path)
 
                 if success:
                     stats['crisis'] += 1
-                    logger.info(f"  🚨 CRISIS (confidence: {confidence:.2%}) - Saved")
+                    logger.info(f"  CRISIS (confidence: {confidence:.2%}) - Saved")
                 else:
                     stats['errors'] += 1
-                    logger.error(f"  🚨 CRISIS but upload failed")
+                    logger.error(f"  CRISIS but upload failed")
+            elif is_crisis and confidence < 0.70:
+                logger.info(f"  Low-confidence crisis (confidence: {confidence:.2%}) - Skipped")
             else:
-                logger.info(f"  ✅ Non-crisis (confidence: {confidence:.2%}) - Skipped")
+                logger.info(f"  Non-crisis (confidence: {confidence:.2%}) - Skipped")
 
         except Exception as e:
             stats['errors'] += 1
