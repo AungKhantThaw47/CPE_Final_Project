@@ -1,4 +1,10 @@
 steps:
+  # Validate JS syntax before building - fails fast if crawler code is broken
+  - name: 'node:20-alpine'
+    entrypoint: 'node'
+    args: ['--check', 'Codebase_Container/crawler_job/DVB_Burmese.crawler.js']
+    id: 'syntax-check'
+
   # Pull the existing image from Artifact Registry to use as cache
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
@@ -7,6 +13,7 @@ steps:
       - |
         docker pull $_IMAGE_TAG || exit 0
     id: 'pull-cache'
+    waitFor: ['syntax-check']
 
   # Build the image using the pulled image as cache
   # Build context is project root (.), Dockerfile is in service directory
