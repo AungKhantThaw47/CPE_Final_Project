@@ -11,8 +11,8 @@ COPY Codebase_Container/crawler_job/package*.json ./
 # Cached layer - only rebuilds if package*.json changes
 RUN npm install
 
-# Copy shared utils from root (build context is project root)
-COPY utils /workspace/utils
+# Copy shared utils into /app/utils so require('./utils/gcs_utils') resolves correctly
+COPY utils ./utils
 
 # Copy application code LAST (most frequently changed)
 # This ensures code changes don't invalidate dependency cache
