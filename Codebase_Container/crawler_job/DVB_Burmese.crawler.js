@@ -99,10 +99,58 @@ async function scrapePage(baseUrl, url, page) {
             console.log("Crawling completed successfully!");
             console.log(`Finished at: ${new Date().toISOString()}`);
             console.log("============================================================");
+
+            // Trigger text cleaner immediately for the same date
+            await triggerTextCleaner(dateStr);
         }
 
     } catch (error) {
         console.error("Error fetching the page:", error.message);
+    }
+}
+
+async function triggerTextCleaner(dateStr) {
+    console.log("\n============================================================");
+    console.log(`Triggering text cleaner for date: ${dateStr}`);
+    console.log("============================================================");
+
+    try {
+        const metadataBase = 'http://metadata.google.internal/computeMetadata/v1';
+        const metaHeaders = { 'Metadata-Flavor': 'Google' };
+
+        // Get auth token and project ID from GCP metadata server
+        const [tokenRes, projectRes] = await Promise.all([
+            axios.get(`${metadataBase}/instance/service-accounts/default/token`, { headers: metaHeaders }),
+            axios.get(`${metadataBase}/project/project-id`, { headers: metaHeaders })
+        ]);
+
+        const accessToken = tokenRes.data.access_token;
+        const projectId = projectRes.data;
+        const region = process.env.GCP_REGION || 'asia-southeast1';
+        const jobName = 'dvb-text-cleaner-job';
+
+        const apiUrl = `https://run.googleapis.com/v2/projects/${projectId}/locations/${region}/jobs/${jobName}:run`;
+
+        await axios.post(apiUrl, {
+            overrides: {
+                containerOverrides: [{
+                    env: [{ name: 'PROCESS_DATE', value: dateStr }]
+                }]
+            }
+        }, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log(`Text cleaner job triggered successfully for ${dateStr}`);
+        console.log("Pipeline: Crawler -> Text Cleaner -> Crisis Classifier");
+
+    } catch (error) {
+        // Log error but don't fail the crawler — cleaner has its own scheduler as fallback
+        console.error(`Failed to trigger text cleaner: ${error.message}`);
+        console.log("Text cleaner will run on its scheduled time as fallback.");
     }
 }
 

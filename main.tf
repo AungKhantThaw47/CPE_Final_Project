@@ -77,6 +77,7 @@ locals {
       timeout          = "600s"
       environment_variables = {
         GCS_BUCKET = google_storage_bucket.crawler_data.name
+        GCP_REGION = var.region
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -350,6 +351,17 @@ resource "google_cloud_run_v2_job_iam_member" "invoker_can_run" {
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
+}
+
+# Allow crawler SA to trigger the text cleaner job (for direct pipeline chaining)
+resource "google_cloud_run_v2_job_iam_member" "crawler_triggers_cleaner" {
+  project  = var.project_id
+  location = var.region
+  name     = module.jobs["dvb-text-cleaner-job"].job_name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:${module.jobs["dvb-crawler-job"].service_account_email}"
+
+  depends_on = [module.jobs]
 }
 
 # Grant Eventarc Event Receiver role to service account
