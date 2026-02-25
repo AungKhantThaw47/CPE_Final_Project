@@ -1,0 +1,3 @@
+Okay, here are the tagged disaster events from the provided article. As per the instructions, I have focused on identifying and tagging events that fall within the specified disaster types (Fire, Armed Conflict, Natural Disaster, Attack, and Bombing). Also, I skipped annotating any displacement information.
+
+No disaster events were found in this article.
