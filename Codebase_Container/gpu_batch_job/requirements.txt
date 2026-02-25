@@ -1,0 +1,12 @@
+# Python dependencies for the GPU job container
+# These are installed inside the Docker image
+
+# PyTorch with CUDA 12.1 support (from PyTorch index)
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.2.0+cu121
+
+# Google Cloud Storage client (from PyPI)
+google-cloud-storage==2.14.0
+
+# Logging and utilities (from PyPI)
+python-dateutil==2.8.2

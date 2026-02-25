@@ -1,0 +1,30 @@
+# Git files
+.git
+.gitignore
+.build-hash*
+
+# NOTE: Do NOT ignore 'utils' folder - Terraform copies it from root before build
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Documentation
+README.md
+*.md
+
+# Terraform
+*.tf
+.terraform
+
+# Build files
+cloudbuild.yaml

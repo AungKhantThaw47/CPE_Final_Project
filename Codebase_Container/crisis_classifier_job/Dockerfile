@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install torch CPU first (separate step to use smaller CPU-only version)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Copy and install other requirements
+COPY Codebase_Container/crisis_classifier_job/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the pre-trained Gemma model (1.2GB - copied last to avoid cache invalidation)
+COPY Codebase_Container/crisis_classifier_job/crisis_model.pkl .
+
+# Copy application code
+COPY Codebase_Container/crisis_classifier_job/classify_articles.py .
+
+# Run the Flask app with gunicorn (longer timeout for Gemma model loading)
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "1", "--timeout", "1800", "classify_articles:app"]
