@@ -70,7 +70,7 @@ locals {
       description      = "DVB Burmese news crawler job"
       build_image      = true # Build from local Dockerfile
       enable_scheduler = true
-      schedule         = "15 12 * * *" # Run every day at 12:15 PM Bangkok time
+      schedule         = "30 13 * * *" # Run every day at 1:30 PM Bangkok time
       enable_gpu       = false
       cpu_limit        = "1"
       memory_limit     = "512Mi"
@@ -91,7 +91,7 @@ locals {
       description      = "DVB text cleaning job - removes author names and source citations"
       build_image      = true # Build from local Dockerfile
       enable_scheduler = true
-      schedule         = "15 12 * * *" # Run every day at 12:15 PM Bangkok time
+      schedule         = "30 13 * * *" # Run every day at 1:30 PM Bangkok time
       enable_gpu       = false
       cpu_limit        = "1"
       memory_limit     = "512Mi"
@@ -141,7 +141,7 @@ locals {
       cpu_limit       = "4"
       memory_limit    = "16Gi"
       min_instances   = 0 # Scale to zero when not in use
-      max_instances   = 1 # Only one instance needed for batch processing
+      max_instances   = 2 # Allow 2 instances for concurrent admin + processing
       port            = 8080
       allow_public    = true # Admin needs to access /admin page
       environment_variables = {
