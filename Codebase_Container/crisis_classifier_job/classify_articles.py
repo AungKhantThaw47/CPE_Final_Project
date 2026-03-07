@@ -15,52 +15,57 @@ import pickle
 import re
 import logging
 import sys
-import numpy as np
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from google.cloud import storage
 from typing import List, Dict, Optional
-from sklearn.base import BaseEstimator, TransformerMixin
 
+# Heavy ML imports — only loaded if available (not needed for admin routes)
+try:
+    import numpy as np
+    from sklearn.base import BaseEstimator, TransformerMixin
 
-# Required for unpickling the Gemma model
-class GemmaEmbeddingVectorizer(BaseEstimator, TransformerMixin):
-    """Sklearn-compatible transformer that returns mean-pooled Gemma embeddings."""
+    # Required for unpickling the Gemma model
+    class GemmaEmbeddingVectorizer(BaseEstimator, TransformerMixin):
+        """Sklearn-compatible transformer that returns mean-pooled Gemma embeddings."""
 
-    def __init__(self, model_name="google/embeddinggemma-300m",
-                 batch_size=32, normalize=True, device=None):
-        self.model_name = model_name
-        self.batch_size = batch_size
-        self.normalize = normalize
-        self.device = device
-        self.model_ = None
+        def __init__(self, model_name="google/embeddinggemma-300m",
+                     batch_size=32, normalize=True, device=None):
+            self.model_name = model_name
+            self.batch_size = batch_size
+            self.normalize = normalize
+            self.device = device
+            self.model_ = None
 
-    def fit(self, X, y=None):
-        from sentence_transformers import SentenceTransformer
-        self.model_ = SentenceTransformer(self.model_name, device=self.device)
-        return self
-
-    def transform(self, X):
-        if self.model_ is None:
+        def fit(self, X, y=None):
             from sentence_transformers import SentenceTransformer
-            hf_token = os.environ.get("HF_TOKEN")
-            self.model_ = SentenceTransformer(self.model_name, device=self.device, token=hf_token)
-        texts = list(X)
-        token_embeddings = self.model_.encode(
-            texts,
-            output_value="token_embeddings",
-            convert_to_numpy=False,
-            normalize_embeddings=False,
-            show_progress_bar=False,
-            batch_size=self.batch_size,
-        )
-        matrices = list(token_embeddings)
-        pooled = np.vstack([m.numpy().mean(axis=0) for m in matrices]).astype(np.float32)
-        if self.normalize:
-            norms = np.linalg.norm(pooled, axis=1, keepdims=True)
-            norms[norms == 0.0] = 1.0
-            pooled = pooled / norms
-        return pooled
+            self.model_ = SentenceTransformer(self.model_name, device=self.device)
+            return self
+
+        def transform(self, X):
+            if self.model_ is None:
+                from sentence_transformers import SentenceTransformer
+                hf_token = os.environ.get("HF_TOKEN")
+                self.model_ = SentenceTransformer(self.model_name, device=self.device, token=hf_token)
+            texts = list(X)
+            token_embeddings = self.model_.encode(
+                texts,
+                output_value="token_embeddings",
+                convert_to_numpy=False,
+                normalize_embeddings=False,
+                show_progress_bar=False,
+                batch_size=self.batch_size,
+            )
+            matrices = list(token_embeddings)
+            pooled = np.vstack([m.numpy().mean(axis=0) for m in matrices]).astype(np.float32)
+            if self.normalize:
+                norms = np.linalg.norm(pooled, axis=1, keepdims=True)
+                norms[norms == 0.0] = 1.0
+                pooled = pooled / norms
+            return pooled
+
+except ImportError:
+    pass  # ML deps not installed; model loading will fail gracefully
 
 # Configure logging
 logging.basicConfig(
@@ -208,7 +213,8 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
                                   model, date_str: str,
                                   prefix_path: str = "dvb_cleaned") -> Dict[str, int]:
     """
-    Process all articles: fetch, classify, and save only crisis articles to crisis bucket.
+    Process all articles: fetch, classify, and save crisis articles to pending_review bucket.
+    Admin must confirm/reject from /admin page before articles move to crisis_articles/.
     Returns statistics about the classification job.
     """
     logger.info("")
@@ -216,7 +222,7 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
     logger.info("CLASSIFYING ARTICLES")
     logger.info("=" * 60)
     logger.info(f"📥 Source:     gs://{source_bucket}/{prefix_path}/{date_str}/")
-    logger.info(f"🚨 Crisis:     gs://{crisis_bucket}/crisis_articles/{date_str}/")
+    logger.info(f"⏳ Pending:    gs://{crisis_bucket}/pending_review/{date_str}/")
     logger.info("")
 
     articles = fetch_cleaned_articles(source_bucket, date_str, prefix_path)
@@ -243,18 +249,16 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
         try:
             is_crisis, confidence = classify_text(model, content)
 
-            if is_crisis and confidence >= 0.70:
-                destination_path = f"crisis_articles/{date_str}/{filename}"
+            if is_crisis:
+                destination_path = f"pending_review/{date_str}/{filename}"
                 success = upload_article(content, crisis_bucket, destination_path)
 
                 if success:
                     stats['crisis'] += 1
-                    logger.info(f"  CRISIS (confidence: {confidence:.2%}) - Saved")
+                    logger.info(f"  CRISIS (confidence: {confidence:.2%}) - Saved to pending_review")
                 else:
                     stats['errors'] += 1
                     logger.error(f"  CRISIS but upload failed")
-            elif is_crisis and confidence < 0.70:
-                logger.info(f"  Low-confidence crisis (confidence: {confidence:.2%}) - Skipped")
             else:
                 logger.info(f"  Non-crisis (confidence: {confidence:.2%}) - Skipped")
 
@@ -271,6 +275,9 @@ def handle_eventarc():
     Handle Eventarc webhook for Cloud Storage events.
     Triggered when files are created in the cleaned bucket.
     """
+    if MODEL is None:
+        return jsonify({"status": "error", "reason": "Model not loaded"}), 503
+
     try:
         # Parse the Eventarc CloudEvent
         event_data = request.get_json()
@@ -348,7 +355,7 @@ def handle_eventarc():
         if stats['total'] > 0:
             crisis_rate = stats['crisis'] / stats['total'] * 100
             logger.info(f"   Crisis rate: {stats['crisis']}/{stats['total']} ({crisis_rate:.1f}%)")
-            logger.info(f"   Crisis output: gs://{crisis_bucket}/crisis_articles/{date_str}/")
+            logger.info(f"   Pending review: gs://{crisis_bucket}/pending_review/{date_str}/")
 
         return jsonify({
             "status": "success",
@@ -363,6 +370,145 @@ def handle_eventarc():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+def list_pending_articles(crisis_bucket: str) -> List[Dict]:
+    """List all articles in pending_review/ across all dates."""
+    client = storage.Client()
+    bucket = client.bucket(crisis_bucket)
+    blobs = list(bucket.list_blobs(prefix="pending_review/"))
+    articles = []
+    for blob in blobs:
+        if blob.name.endswith('.txt'):
+            parts = blob.name.split('/')  # pending_review/{date}/{filename}
+            date = parts[1] if len(parts) >= 3 else 'unknown'
+            articles.append({
+                'blob_name': blob.name,
+                'filename': os.path.basename(blob.name),
+                'date': date,
+                'size': blob.size,
+            })
+    return articles
+
+
+@app.route("/admin", methods=["GET"])
+def admin_page():
+    """Admin HTML page for reviewing pending crisis articles."""
+    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
+    try:
+        articles = list_pending_articles(crisis_bucket) if crisis_bucket else []
+    except Exception as e:
+        articles = []
+        logger.error(f"Error listing pending articles: {e}")
+
+    rows = ""
+    for a in articles:
+        rows += f"""
+        <tr>
+            <td>{a['date']}</td>
+            <td>{a['filename']}</td>
+            <td>{a['size']} bytes</td>
+            <td>
+                <form method="POST" action="/admin/confirm" style="display:inline">
+                    <input type="hidden" name="blob_name" value="{a['blob_name']}">
+                    <button type="submit" class="btn confirm">Confirm</button>
+                </form>
+                <form method="POST" action="/admin/reject" style="display:inline">
+                    <input type="hidden" name="blob_name" value="{a['blob_name']}">
+                    <button type="submit" class="btn reject">Reject</button>
+                </form>
+                <a href="/admin/view?blob={a['blob_name']}" target="_blank" class="btn view">View</a>
+            </td>
+        </tr>"""
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Crisis Article Review</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
+        h1 {{ color: #c0392b; }}
+        table {{ border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }}
+        th, td {{ padding: 12px 16px; text-align: left; border-bottom: 1px solid #eee; }}
+        th {{ background: #2c3e50; color: white; }}
+        tr:hover {{ background: #fafafa; }}
+        .btn {{ padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; text-decoration: none; display: inline-block; }}
+        .confirm {{ background: #27ae60; color: white; }}
+        .reject {{ background: #e74c3c; color: white; margin-left: 6px; }}
+        .view {{ background: #2980b9; color: white; margin-left: 6px; }}
+        .empty {{ color: #888; padding: 20px; text-align: center; }}
+        .count {{ color: #555; margin-bottom: 16px; }}
+    </style>
+</head>
+<body>
+    <h1>Crisis Article Review</h1>
+    <p class="count">Pending articles: <strong>{len(articles)}</strong></p>
+    {'<table><thead><tr><th>Date</th><th>Filename</th><th>Size</th><th>Action</th></tr></thead><tbody>' + rows + '</tbody></table>' if articles else '<p class="empty">No pending articles.</p>'}
+</body>
+</html>"""
+    return html
+
+
+@app.route("/admin/view", methods=["GET"])
+def admin_view_article():
+    """View raw content of a pending article."""
+    blob_name = request.args.get('blob', '')
+    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
+    if not blob_name or not crisis_bucket:
+        return "Missing parameters", 400
+    try:
+        content = read_article_from_gcs(crisis_bucket, blob_name)
+        if content is None:
+            return "Article not found", 404
+        return f"<pre style='font-family:monospace;padding:20px;white-space:pre-wrap'>{content}</pre>"
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
+@app.route("/admin/confirm", methods=["POST"])
+def admin_confirm():
+    """Move a pending article to crisis_articles/."""
+    blob_name = request.form.get('blob_name', '')
+    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
+    if not blob_name or not crisis_bucket:
+        return "Missing parameters", 400
+
+    try:
+        client = storage.Client()
+        bucket = client.bucket(crisis_bucket)
+        source_blob = bucket.blob(blob_name)
+
+        # pending_review/{date}/{filename} -> crisis_articles/{date}/{filename}
+        destination_name = blob_name.replace('pending_review/', 'crisis_articles/', 1)
+        bucket.copy_blob(source_blob, bucket, destination_name)
+        source_blob.delete()
+
+        logger.info(f"✅ Confirmed: {blob_name} -> {destination_name}")
+    except Exception as e:
+        logger.error(f"❌ Confirm failed: {e}")
+        return f"Error: {e}", 500
+
+    return redirect('/admin')
+
+
+@app.route("/admin/reject", methods=["POST"])
+def admin_reject():
+    """Delete a pending article (reject it)."""
+    blob_name = request.form.get('blob_name', '')
+    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
+    if not blob_name or not crisis_bucket:
+        return "Missing parameters", 400
+
+    try:
+        client = storage.Client()
+        bucket = client.bucket(crisis_bucket)
+        bucket.blob(blob_name).delete()
+        logger.info(f"🗑️  Rejected: {blob_name}")
+    except Exception as e:
+        logger.error(f"❌ Reject failed: {e}")
+        return f"Error: {e}", 500
+
+    return redirect('/admin')
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint."""
@@ -370,16 +516,26 @@ def health():
 
 
 # Load model at module import time (when gunicorn starts)
-import sklearn
 logger.info("=" * 60)
 logger.info("🚀 Starting Crisis Classifier Service...")
 logger.info(f"📦 Loading model from: {MODEL_PATH}")
-logger.info(f"🔬 sklearn version: {sklearn.__version__}")
+try:
+    import sklearn
+    logger.info(f"🔬 sklearn version: {sklearn.__version__}")
+except ImportError:
+    logger.warning("⚠️  sklearn not installed")
 logger.info("=" * 60)
-MODEL = load_crisis_model(MODEL_PATH)
-logger.info("=" * 60)
-logger.info("✅ Model loaded successfully, ready to classify!")
-logger.info("=" * 60)
+try:
+    MODEL = load_crisis_model(MODEL_PATH)
+    logger.info("=" * 60)
+    logger.info("✅ Model loaded successfully, ready to classify!")
+    logger.info("=" * 60)
+except Exception as e:
+    MODEL = None
+    logger.warning("=" * 60)
+    logger.warning(f"⚠️  Model not loaded: {e}")
+    logger.warning("⚠️  Classification disabled. Admin routes still available.")
+    logger.warning("=" * 60)
 
 
 if __name__ == "__main__":

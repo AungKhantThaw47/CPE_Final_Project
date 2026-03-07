@@ -21,7 +21,7 @@ locals {
 
   # OS detection (check for Windows drive letter like C:, D:)
   is_windows = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
-  
+
   # Sanitize job name for resource lookups (replace underscores with hyphens)
   sa_safe_job_name = replace(var.job_name, "_", "-")
 }
@@ -58,33 +58,33 @@ locals {
   # ============================================
   # Deployment Hash Control System
   # ============================================
-  
+
   # CONTENT_HASH: Pure hash of codebase files (computed natively in Terraform)
   content_hash_value = local.content_hash_computed
-  
+
   # Currently deployed hashes
   deployed_content_hash = data.external.deployed_hash.result.deployed_content_hash
   deployed_local_hash   = data.external.deployed_hash.result.deployed_local_hash
   deployed_github_hash  = data.external.deployed_hash.result.deployed_github_hash
-  
+
   # Determine if content has changed
   content_has_changed = local.deployed_content_hash == "" || local.deployed_content_hash != local.content_hash_value
-  
+
   # Hash tracking for deployment context
   # When deploying locally: update local_hash, preserve github_hash
   # When deploying from GitHub: update github_hash only if content changed, preserve local_hash
   is_github_deployment = var.github_sha != "" && var.github_username != ""
-  
+
   # Extract previous github_sha from deployed_github_hash (format: GITHUB_{hash}_{sha}_{user})
   deployed_github_parts = local.deployed_github_hash != "" ? split("_", local.deployed_github_hash) : []
-  deployed_github_sha = length(local.deployed_github_parts) >= 4 ? local.deployed_github_parts[2] : ""
-  
+  deployed_github_sha   = length(local.deployed_github_parts) >= 4 ? local.deployed_github_parts[2] : ""
+
   # For GitHub deployments: only update github_sha if content has changed
   github_sha_to_use = local.is_github_deployment ? (local.content_has_changed ? var.github_sha : local.deployed_github_sha) : ""
-  
-  local_hash = local.is_github_deployment ? local.deployed_local_hash : "LOCAL_${local.content_hash_value}_${var.local_username}"
+
+  local_hash  = local.is_github_deployment ? local.deployed_local_hash : "LOCAL_${local.content_hash_value}_${var.local_username}"
   github_hash = local.is_github_deployment ? "GITHUB_${local.content_hash_value}_${local.github_sha_to_use}_${var.github_username}" : local.deployed_github_hash
-  
+
   # Determine which deployment type is in use (Local or Github)
   current_use = local.is_github_deployment ? "Github" : "Local"
 
@@ -177,18 +177,18 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
           name  = "CONTENT_HASH"
           value = local.content_hash_value
         }
-        
+
         # Deployment tracking hashes
         env {
           name  = "LOCAL_HASH"
           value = local.local_hash
         }
-        
+
         env {
           name  = "GITHUB_HASH"
           value = local.github_hash
         }
-        
+
         env {
           name  = "CURRENT_USE"
           value = local.current_use
