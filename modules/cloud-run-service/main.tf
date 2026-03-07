@@ -31,7 +31,7 @@ locals {
 # ============================================
 data "external" "content_hash" {
   program = local.is_windows ? ["PowerShell", "-File", "${path.root}/scripts/terraform_compute_hash.ps1"] : ["bash", "${path.root}/scripts/terraform_compute_hash.sh"]
-  query   = {
+  query = {
     codebase_path = abspath(local.codebase_directory)
   }
 }
@@ -46,7 +46,7 @@ locals {
 # ============================================
 data "external" "deployed_hash" {
   program = local.is_windows ? ["PowerShell", "-File", "${path.root}/scripts/get_deployed_content_hash.ps1"] : ["bash", "${path.root}/scripts/get_deployed_content_hash.sh"]
-  query   = {
+  query = {
     project_id    = var.project_id
     region        = var.region
     resource_name = local.sa_safe_service_name

@@ -140,10 +140,10 @@ locals {
       build_image     = true
       cpu_limit       = "4"
       memory_limit    = "16Gi"
-      min_instances   = 0  # Scale to zero when not in use
-      max_instances   = 1  # Only one instance needed for batch processing
+      min_instances   = 0 # Scale to zero when not in use
+      max_instances   = 1 # Only one instance needed for batch processing
       port            = 8080
-      allow_public    = true  # Admin needs to access /admin page
+      allow_public    = true # Admin needs to access /admin page
       environment_variables = {
         GCS_BUCKET    = google_storage_bucket.cleaned_crawler_data.name
         CRISIS_BUCKET = google_storage_bucket.crisis_crawler_data.name
@@ -322,8 +322,8 @@ module "jobs" {
   github_sha      = local.actual_github_sha
 
   # Deployment Hash Control (content_hash computed inside module from codebase_path)
-  local_username   = local.actual_local_username
-  github_username  = local.actual_github_username
+  local_username  = local.actual_local_username
+  github_username = local.actual_github_username
 
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit
@@ -397,8 +397,8 @@ module "services" {
   github_sha      = local.actual_github_sha
 
   # Deployment Hash Control (content_hash computed inside module from codebase_path)
-  local_username   = local.actual_local_username
-  github_username  = local.actual_github_username
+  local_username  = local.actual_local_username
+  github_username = local.actual_github_username
 
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit
