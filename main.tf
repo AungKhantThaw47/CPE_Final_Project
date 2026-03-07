@@ -70,7 +70,7 @@ locals {
       description      = "DVB Burmese news crawler job"
       build_image      = true # Build from local Dockerfile
       enable_scheduler = true
-      schedule         = "15 12 * * *" # Run every day at 12:15 PM Bangkok time
+      schedule         = "10 13 * * *" # Run every day at 1:10 PM Bangkok time
       enable_gpu       = false
       cpu_limit        = "1"
       memory_limit     = "512Mi"
@@ -91,7 +91,7 @@ locals {
       description      = "DVB text cleaning job - removes author names and source citations"
       build_image      = true # Build from local Dockerfile
       enable_scheduler = true
-      schedule         = "15 12 * * *" # Run every day at 12:15 PM Bangkok time
+      schedule         = "10 13 * * *" # Run every day at 1:10 PM Bangkok time
       enable_gpu       = false
       cpu_limit        = "1"
       memory_limit     = "512Mi"
