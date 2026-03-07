@@ -143,7 +143,7 @@ locals {
       min_instances   = 0  # Scale to zero when not in use
       max_instances   = 1  # Only one instance needed for batch processing
       port            = 8080
-      allow_public    = false  # Only accessible via Eventarc
+      allow_public    = true  # Admin needs to access /admin page
       environment_variables = {
         GCS_BUCKET    = google_storage_bucket.cleaned_crawler_data.name
         CRISIS_BUCKET = google_storage_bucket.crisis_crawler_data.name
