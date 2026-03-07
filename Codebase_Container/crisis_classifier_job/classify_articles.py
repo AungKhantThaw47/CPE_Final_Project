@@ -399,11 +399,20 @@ def admin_page():
         articles = []
         logger.error(f"Error listing pending articles: {e}")
 
-    rows = ""
+    # Group articles by date, sorted oldest first (process chronologically)
+    from collections import defaultdict
+    by_date = defaultdict(list)
     for a in articles:
-        rows += f"""
+        by_date[a['date']].append(a)
+    sorted_dates = sorted(by_date.keys())
+
+    sections = ""
+    for date in sorted_dates:
+        date_articles = by_date[date]
+        rows = ""
+        for a in date_articles:
+            rows += f"""
         <tr>
-            <td>{a['date']}</td>
             <td>{a['filename']}</td>
             <td>{a['size']} bytes</td>
             <td>
@@ -418,6 +427,12 @@ def admin_page():
                 <a href="/admin/view?blob={a['blob_name']}" target="_blank" class="btn view">View</a>
             </td>
         </tr>"""
+        sections += f"""
+    <h2 class="date-header">{date} <span class="date-count">({len(date_articles)} articles)</span></h2>
+    <table>
+        <thead><tr><th>Filename</th><th>Size</th><th>Action</th></tr></thead>
+        <tbody>{rows}</tbody>
+    </table>"""
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -426,7 +441,9 @@ def admin_page():
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
         h1 {{ color: #c0392b; }}
-        table {{ border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }}
+        h2.date-header {{ color: #2c3e50; margin-top: 32px; margin-bottom: 8px; font-size: 18px; }}
+        .date-count {{ color: #888; font-size: 14px; font-weight: normal; }}
+        table {{ border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.1); margin-bottom: 24px; }}
         th, td {{ padding: 12px 16px; text-align: left; border-bottom: 1px solid #eee; }}
         th {{ background: #2c3e50; color: white; }}
         tr:hover {{ background: #fafafa; }}
@@ -441,7 +458,7 @@ def admin_page():
 <body>
     <h1>Crisis Article Review</h1>
     <p class="count">Pending articles: <strong>{len(articles)}</strong></p>
-    {'<table><thead><tr><th>Date</th><th>Filename</th><th>Size</th><th>Action</th></tr></thead><tbody>' + rows + '</tbody></table>' if articles else '<p class="empty">No pending articles.</p>'}
+    {sections if articles else '<p class="empty">No pending articles.</p>'}
 </body>
 </html>"""
     return html

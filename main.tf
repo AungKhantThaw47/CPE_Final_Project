@@ -141,7 +141,7 @@ locals {
       cpu_limit       = "4"
       memory_limit    = "16Gi"
       min_instances   = 0 # Scale to zero when not in use
-      max_instances   = 1 # Only one instance needed for batch processing
+      max_instances   = 2 # Allow 2 instances for concurrent admin + processing
       port            = 8080
       allow_public    = true # Admin needs to access /admin page
       environment_variables = {
