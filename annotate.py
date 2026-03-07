@@ -1,4 +1,5 @@
 import os
+import time
 from google.cloud import storage
 from google import genai
 
@@ -6,8 +7,8 @@ from google import genai
 # PUT YOUR VALUES HERE
 # ===============================
 PROJECT_ID = "cpe-final-project"
-BUCKET_NAME = "cpe-final-project-crawler-data"
-PREFIX = "dvb/2026-02-08/"
+BUCKET_NAME = "cpe-final-project-crisis-crawler-data"
+PREFIX = "crisis_articles/2026-02-26/"
 
 
 # ===============================
@@ -26,11 +27,11 @@ storage_client = storage.Client(project=PROJECT_ID)
 # Annotation Prompt
 # ===============================
 ANNOTATION_PROMPT = """
-1. Wrap each disaster event in the article with `<event1>` and `</event1>` tags.
+1. Wrap each disaster event in the article with `<event>` and `</event>` tags.
 
 2. Only add a tag when the text describes a real disaster event.
 
-   The scope of disasters includes: **Fire, Armed Conflict, Natural Disaster, Attack, and Bombing**.
+   The scope of disasters includes: **Fire, Airstrike, Armed Conflict, Natural Disaster, Attack, and Bombing**.
 
 3. Consider multiple sentences as the **same event** and use a single tag if all of the following are true:
 
@@ -96,7 +97,11 @@ for blob in blobs:
         local_path = os.path.join("downloaded_txt", filename)
 
         print("Downloading:", filename)
-        blob.download_to_filename(local_path)
+        try:
+            blob.download_to_filename(local_path)
+        except Exception as e:
+            print(f"Skipping {filename}: {e}")
+            continue
 
         with open(local_path, "r", encoding="utf-8") as f:
             article_text = f.read()
@@ -106,17 +111,9 @@ for blob in blobs:
         print("Annotating:", filename)
 
         response = client_genai.models.generate_content(
-            model="gemini-3",
+            model="gemini-3-flash-preview",
             contents=full_prompt
-
         )
-        
-        import time
-
-        response = client_genai.models.generate_content(
-        model="gemini-3",
-        contents=full_prompt
-)
 
         time.sleep(30)
 

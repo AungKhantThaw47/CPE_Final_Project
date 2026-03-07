@@ -113,3 +113,10 @@ variable "hf_token" {
   sensitive   = true
   default     = ""
 }
+
+variable "gemini_api_key" {
+  description = "Gemini API key for article annotation"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

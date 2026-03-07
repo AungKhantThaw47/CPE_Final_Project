@@ -123,3 +123,11 @@ pnpm-lock.yaml
 *.backup
 .cache/
 
+# Local annotation test files
+annotated_output/
+downloaded_txt/
+downloaded.txt
+download_gcs_files.py
+DVB_Burmese_*.json
+test_local.py
+
