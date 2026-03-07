@@ -155,6 +155,28 @@ locals {
       ]
       cloud_sql_instances = []
     }
+
+    dvb-annotator = {
+      codebase_path   = "${path.root}/Codebase_Container/annotator_job"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-annotator:latest"
+      description     = "Crisis article annotator - triggered by Eventarc when article confirmed to crisis_articles/"
+      build_image     = true
+      cpu_limit       = "1"
+      memory_limit    = "512Mi"
+      min_instances   = 0
+      max_instances   = 3
+      port            = 8080
+      allow_public    = false
+      environment_variables = {
+        CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
+        GEMINI_API_KEY = var.gemini_api_key
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter"
+      ]
+      cloud_sql_instances = []
+    }
   }
 }
 
@@ -464,6 +486,52 @@ resource "google_eventarc_trigger" "crisis_classifier_trigger" {
   destination {
     cloud_run_service {
       service = module.services["crisis-classifier"].service_name
+      region  = var.region
+    }
+  }
+
+  service_account = google_service_account.job_invoker_sa.email
+
+  depends_on = [
+    google_project_service.apis,
+    module.services
+  ]
+}
+
+# ============================================
+# IAM: Allow Eventarc to invoke annotator service
+# ============================================
+resource "google_cloud_run_v2_service_iam_member" "annotator_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = module.services["dvb-annotator"].service_name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
+}
+
+# ============================================
+# Eventarc Trigger for Annotator
+# ============================================
+resource "google_eventarc_trigger" "annotator_trigger" {
+  name     = "annotator-trigger"
+  location = var.region
+  project  = var.project_id
+
+  # Trigger when a .txt file is confirmed to crisis_articles/
+  matching_criteria {
+    attribute = "type"
+    value     = "google.cloud.storage.object.v1.finalized"
+  }
+
+  matching_criteria {
+    attribute = "bucket"
+    value     = google_storage_bucket.crisis_crawler_data.name
+  }
+
+  # Target: Annotator Service
+  destination {
+    cloud_run_service {
+      service = module.services["dvb-annotator"].service_name
       region  = var.region
     }
   }

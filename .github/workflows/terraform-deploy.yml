@@ -77,6 +77,7 @@ jobs:
           TF_VAR_github_sha: ${{ github.sha }}
           TF_VAR_github_username: ${{ github.actor }}
           TF_VAR_hf_token: ${{ secrets.HF_TOKEN }}
+          TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Comment PR - Plan Results
         if: github.event_name == 'pull_request'
@@ -174,6 +175,7 @@ jobs:
           TF_VAR_github_sha: ${{ github.sha }}
           TF_VAR_github_username: ${{ github.actor }}
           TF_VAR_hf_token: ${{ secrets.HF_TOKEN }}
+          TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Display Outputs
         run: terraform output -json
