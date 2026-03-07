@@ -325,6 +325,17 @@ def handle_eventarc():
             logger.error("❌ Missing required env vars: GCS_BUCKET, CRISIS_BUCKET")
             return jsonify({"status": "error", "reason": "missing env vars"}), 500
 
+        # Check if this date has already been classified (articles exist in pending_review or crisis_articles)
+        storage_client = storage.Client()
+        crisis_bkt = storage_client.bucket(crisis_bucket)
+        already_classified = (
+            any(True for _ in crisis_bkt.list_blobs(prefix=f"pending_review/{date_str}/", max_results=1)) or
+            any(True for _ in crisis_bkt.list_blobs(prefix=f"crisis_articles/{date_str}/", max_results=1))
+        )
+        if already_classified:
+            logger.info(f"⏭️  Already classified for {date_str}, skipping to avoid duplicate processing.")
+            return jsonify({"status": "skipped", "reason": "already classified"}), 200
+
         logger.info("=" * 60)
         logger.info("CRISIS NEWS CLASSIFIER - EVENT TRIGGERED")
         logger.info("=" * 60)
