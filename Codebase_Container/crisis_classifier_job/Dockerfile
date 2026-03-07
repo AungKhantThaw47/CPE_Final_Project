@@ -16,4 +16,4 @@ COPY Codebase_Container/crisis_classifier_job/crisis_model.pkl .
 COPY Codebase_Container/crisis_classifier_job/classify_articles.py .
 
 # Run the Flask app with gunicorn (longer timeout for Gemma model loading)
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "1", "--timeout", "1800", "classify_articles:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "4", "--timeout", "1800", "classify_articles:app"]
