@@ -61,9 +61,11 @@ ANNOTATION_PROMPT = """
 
 * a same event connected in different location (use a new tag).
 
-11. When annotating, it is **not necessary to include or mention displacement information** (e.g., people being evacuated or moved) as part of deciding or defining the disaster event.
+11. When annotating, it is **not necessary to include or mention displacement information** (e.g., people being evacuated or moved or soldiers being relocated or fleeing away) as part of deciding or defining the disaster event. But if it is happening in the same sentence together and connected with the event cosinder that sentence as the event together.
 
 12. Also tag supporting details for that same event if it is disaster related.
+
+13. Do not cut off from the middle of the sentence and always take from the begining of the event sentence.
 """
 
 
@@ -71,7 +73,7 @@ def annotate_article(article_text: str, gemini_client) -> str:
     """Annotate a single article using Gemini."""
     full_prompt = ANNOTATION_PROMPT + "\n\nArticle:\n" + article_text
     response = gemini_client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-3-flash-preview",
         contents=full_prompt
     )
     return response.text
