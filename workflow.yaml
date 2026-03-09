@@ -1,0 +1,115 @@
+main:
+  steps:
+    - init:
+        assign:
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - region: "asia-southeast1"
+
+    - log_start:
+        call: sys.log
+        args:
+          text: "=== Daily Pipeline Started ==="
+          severity: INFO
+
+    - run_crawler:
+        call: run_job
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          job_name: "dvb-crawler-job"
+        result: crawler_status
+
+    - log_crawler_done:
+        call: sys.log
+        args:
+          text: '${"Crawler finished: " + crawler_status}'
+          severity: INFO
+
+    - run_cleaner:
+        call: run_job
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          job_name: "dvb-text-cleaner-job"
+        result: cleaner_status
+
+    - log_cleaner_done:
+        call: sys.log
+        args:
+          text: '${"Cleaner finished: " + cleaner_status}'
+          severity: INFO
+
+    - run_classifier:
+        call: run_job
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          job_name: "crisis-classifier-job"
+        result: classifier_status
+
+    - log_classifier_done:
+        call: sys.log
+        args:
+          text: '${"Classifier finished: " + classifier_status}'
+          severity: INFO
+
+    - log_done:
+        call: sys.log
+        args:
+          text: "=== Daily Pipeline Complete ==="
+          severity: INFO
+
+    - done:
+        return:
+          crawler: ${crawler_status}
+          cleaner: ${cleaner_status}
+          classifier: ${classifier_status}
+
+
+# Subworkflow: run a Cloud Run Job and wait for completion
+run_job:
+  params: [project_id, region, job_name]
+  steps:
+    - trigger:
+        call: http.post
+        args:
+          url: '${"https://" + region + "-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/" + project_id + "/jobs/" + job_name + ":run"}'
+          auth:
+            type: OAuth2
+        result: trigger_response
+
+    - get_execution_name:
+        assign:
+          - execution_name: ${trigger_response.body.metadata.name}
+
+    - poll:
+        call: http.get
+        args:
+          url: '${"https://" + region + "-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/" + project_id + "/executions/" + execution_name}'
+          auth:
+            type: OAuth2
+        result: execution_response
+
+    - check_done:
+        switch:
+          - condition: ${"completionTime" in execution_response.body.status}
+            next: check_success
+        next: wait
+
+    - wait:
+        call: sys.sleep
+        args:
+          seconds: 30
+        next: poll
+
+    - check_success:
+        switch:
+          - condition: ${execution_response.body.status.conditions[0].status == "True"}
+            next: success
+        next: failed
+
+    - success:
+        return: "succeeded"
+
+    - failed:
+        raise: '${"Job " + job_name + " failed"}'

@@ -69,8 +69,8 @@ locals {
       container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
       description      = "DVB Burmese news crawler job"
       build_image      = true # Build from local Dockerfile
-      enable_scheduler = true
-      schedule         = "30 13 * * *" # Run every day at 1:30 PM Bangkok time
+      enable_scheduler = false # Triggered by workflow
+      schedule         = ""
       enable_gpu       = false
       cpu_limit        = "1"
       memory_limit     = "512Mi"
@@ -90,14 +90,36 @@ locals {
       container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-text-cleaner:latest"
       description      = "DVB text cleaning job - removes author names and source citations"
       build_image      = true # Build from local Dockerfile
-      enable_scheduler = true
-      schedule         = "30 13 * * *" # Run every day at 1:30 PM Bangkok time
+      enable_scheduler = false # Triggered by workflow
+      schedule         = ""
       enable_gpu       = false
       cpu_limit        = "1"
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
         GCS_BUCKET = google_storage_bucket.crawler_data.name
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter"
+      ]
+    }
+
+    crisis-classifier-job = {
+      codebase_path    = "${path.root}/Codebase_Container/crisis_classifier_job"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/crisis-classifier:latest"
+      description      = "Crisis news classifier batch job - classifies cleaned articles daily"
+      build_image      = true
+      enable_scheduler = false # Triggered by workflow
+      schedule         = ""
+      enable_gpu       = false
+      cpu_limit        = "4"
+      memory_limit     = "16Gi"
+      timeout          = "3600s" # 1 hour max for large batches
+      environment_variables = {
+        GCS_BUCKET    = google_storage_bucket.cleaned_crawler_data.name
+        CRISIS_BUCKET = google_storage_bucket.crisis_crawler_data.name
+        HF_TOKEN      = var.hf_token
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -133,21 +155,19 @@ locals {
       cloud_sql_instances = [] # Add ["${var.project_id}:${var.region}:mlflow-db"] if using Cloud SQL
     }
 
-    crisis-classifier = {
-      codebase_path   = "${path.root}/Codebase_Container/crisis_classifier_job"
-      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/crisis-classifier:latest"
-      description     = "Crisis news classifier - webhook service triggered by Eventarc"
+    crisis-admin = {
+      codebase_path   = "${path.root}/Codebase_Container/crisis_admin"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/crisis-admin:latest"
+      description     = "Crisis article admin portal"
       build_image     = true
-      cpu_limit       = "4"
-      memory_limit    = "16Gi"
-      min_instances   = 0 # Scale to zero when not in use
-      max_instances   = 2 # Allow 2 instances for concurrent admin + processing
+      cpu_limit       = "1"
+      memory_limit    = "512Mi"
+      min_instances   = 0
+      max_instances   = 1
       port            = 8080
-      allow_public    = true # Admin needs to access /admin page
+      allow_public    = true
       environment_variables = {
-        GCS_BUCKET    = google_storage_bucket.cleaned_crawler_data.name
         CRISIS_BUCKET = google_storage_bucket.crisis_crawler_data.name
-        HF_TOKEN      = var.hf_token
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -177,6 +197,29 @@ locals {
       ]
       cloud_sql_instances = []
     }
+
+    dvb-extractor = {
+      codebase_path   = "${path.root}/Codebase_Container/extractor_job"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-extractor:latest"
+      description     = "Crisis event extractor - triggered by Eventarc when annotated article lands in annotated_articles/"
+      build_image     = true
+      cpu_limit       = "1"
+      memory_limit    = "512Mi"
+      min_instances   = 0
+      max_instances   = 3
+      port            = 8080
+      allow_public    = false
+      environment_variables = {
+        CRISIS_BUCKET     = google_storage_bucket.crisis_crawler_data.name
+        EXTRACTION_BUCKET = google_storage_bucket.llm_extraction.name
+        GEMINI_API_KEY    = var.gemini_api_key
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter"
+      ]
+      cloud_sql_instances = []
+    }
   }
 }
 
@@ -192,7 +235,9 @@ resource "google_project_service" "apis" {
     "sqladmin.googleapis.com",
     "vpcaccess.googleapis.com",
     "cloudscheduler.googleapis.com",
-    "eventarc.googleapis.com"
+    "eventarc.googleapis.com",
+    "workflows.googleapis.com",
+    "workflowexecutions.googleapis.com"
   ])
 
   service            = each.value
@@ -299,6 +344,25 @@ resource "google_storage_bucket" "crisis_crawler_data" {
   lifecycle_rule {
     condition {
       age = 180 # Keep crisis articles longer (6 months)
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+# ============================================
+# GCS Bucket for LLM Extraction Output
+# ============================================
+resource "google_storage_bucket" "llm_extraction" {
+  name                        = "${var.project_id}-llm-extraction"
+  location                    = var.region
+  force_destroy               = true
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 180
     }
     action {
       type = "Delete"
@@ -449,54 +513,6 @@ module "services" {
   ]
 }
 
-# ============================================
-# IAM: Allow Eventarc to invoke crisis classifier service
-# ============================================
-resource "google_cloud_run_v2_service_iam_member" "crisis_classifier_invoker" {
-  project  = var.project_id
-  location = var.region
-  name     = module.services["crisis-classifier"].service_name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
-}
-
-# ============================================
-# Eventarc Trigger for Crisis Classifier
-# ============================================
-resource "google_eventarc_trigger" "crisis_classifier_trigger" {
-  name     = "crisis-classifier-trigger"
-  location = var.region
-  project  = var.project_id
-
-  # Trigger when _COMPLETE file is created in cleaned bucket
-  matching_criteria {
-    attribute = "type"
-    value     = "google.cloud.storage.object.v1.finalized"
-  }
-
-  matching_criteria {
-    attribute = "bucket"
-    value     = google_storage_bucket.cleaned_crawler_data.name
-  }
-
-  # Note: We trigger on all object creations in the bucket
-  # The classifier code will check if it's a _COMPLETE file before processing
-
-  # Target: Crisis Classifier Service
-  destination {
-    cloud_run_service {
-      service = module.services["crisis-classifier"].service_name
-      region  = var.region
-    }
-  }
-
-  service_account = google_service_account.job_invoker_sa.email
-
-  depends_on = [
-    google_project_service.apis,
-    module.services
-  ]
-}
 
 # ============================================
 # IAM: Allow Eventarc to invoke annotator service
@@ -541,5 +557,132 @@ resource "google_eventarc_trigger" "annotator_trigger" {
   depends_on = [
     google_project_service.apis,
     module.services
+  ]
+}
+
+# ============================================
+# IAM: Allow Eventarc to invoke extractor service
+# ============================================
+resource "google_cloud_run_v2_service_iam_member" "extractor_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = module.services["dvb-extractor"].service_name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
+}
+
+# ============================================
+# Eventarc Trigger for Extractor
+# ============================================
+resource "google_eventarc_trigger" "extractor_trigger" {
+  name     = "extractor-trigger"
+  location = var.region
+  project  = var.project_id
+
+  # Trigger when a file lands in annotated_articles/ in the crisis bucket
+  matching_criteria {
+    attribute = "type"
+    value     = "google.cloud.storage.object.v1.finalized"
+  }
+
+  matching_criteria {
+    attribute = "bucket"
+    value     = google_storage_bucket.crisis_crawler_data.name
+  }
+
+  # Target: Extractor Service
+  destination {
+    cloud_run_service {
+      service = module.services["dvb-extractor"].service_name
+      region  = var.region
+    }
+  }
+
+  service_account = google_service_account.job_invoker_sa.email
+
+  depends_on = [
+    google_project_service.apis,
+    module.services
+  ]
+}
+
+# ============================================
+# Daily Pipeline Workflow
+# ============================================
+
+# Service account for the workflow to invoke Cloud Run Jobs
+resource "google_service_account" "workflow_sa" {
+  account_id   = "daily-pipeline-workflow"
+  display_name = "Daily Pipeline Workflow Service Account"
+  project      = var.project_id
+}
+
+# Allow workflow SA to run Cloud Run Jobs and read executions
+resource "google_project_iam_member" "workflow_run_developer" {
+  project = var.project_id
+  role    = "roles/run.developer"
+  member  = "serviceAccount:${google_service_account.workflow_sa.email}"
+}
+
+# Allow workflow SA to write logs
+resource "google_project_iam_member" "workflow_log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.workflow_sa.email}"
+}
+
+# Cloud Workflows definition
+resource "google_workflows_workflow" "daily_pipeline" {
+  name            = "daily-pipeline"
+  region          = var.region
+  project         = var.project_id
+  description     = "Orchestrates daily pipeline: crawler → cleaner → classifier"
+  service_account = google_service_account.workflow_sa.email
+  source_contents = file("${path.root}/workflow.yaml")
+
+  depends_on = [google_project_service.apis]
+}
+
+# Service account for Cloud Scheduler to invoke the workflow
+resource "google_service_account" "workflow_scheduler_sa" {
+  account_id   = "workflow-scheduler-sa"
+  display_name = "Cloud Scheduler SA for Daily Pipeline Workflow"
+  project      = var.project_id
+}
+
+# Allow scheduler SA to invoke the workflow
+resource "google_project_iam_member" "workflow_invoker" {
+  project = var.project_id
+  role    = "roles/workflows.invoker"
+  member  = "serviceAccount:${google_service_account.workflow_scheduler_sa.email}"
+}
+
+# Single Cloud Scheduler to trigger the workflow daily
+resource "google_cloud_scheduler_job" "daily_pipeline_trigger" {
+  name             = "daily-pipeline-trigger"
+  description      = "Triggers the daily pipeline workflow at 12:05 AM Bangkok time"
+  schedule         = "5 0 * * *"
+  time_zone        = "Asia/Bangkok"
+  project          = var.project_id
+  region           = var.region
+  attempt_deadline = "320s"
+
+  retry_config {
+    retry_count = 1
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://workflowexecutions.googleapis.com/v1/projects/${var.project_id}/locations/${var.region}/workflows/${google_workflows_workflow.daily_pipeline.name}/executions"
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = google_service_account.workflow_scheduler_sa.email
+    }
+  }
+
+  depends_on = [
+    google_workflows_workflow.daily_pipeline,
+    google_project_iam_member.workflow_invoker
   ]
 }
