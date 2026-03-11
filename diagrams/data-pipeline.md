@@ -1,0 +1,118 @@
+# Data Pipeline
+
+End-to-end flow of data from the DVB Burmese news website through scraping, cleaning, crisis classification, human review, annotation, and structured extraction.
+
+## Pipeline Flow Diagram
+
+```mermaid
+flowchart TD
+    DVB["🌐 DVB Burmese News\ndvb.no/category/8/news"]
+
+    subgraph CrawlJob["Cloud Run Job — dvb-crawler-job"]
+        C1["Fetch yesterday's articles\n(Axios + Cheerio)"]
+        C2["Unicode NFC normalisation\nRemove zero-width chars"]
+        C3["Write JSON metadata\n+ article text files"]
+    end
+
+    subgraph CrawlerBucket["GCS — crawler-data"]
+        RAW["raw_articles/\nYYYY-MM-DD/*.json\n*.txt"]
+    end
+
+    subgraph CleanJob["Cloud Run Job — dvb-text-cleaner-job"]
+        CL1["Read raw articles"]
+        CL2["Remove DVB author names\n& source citations"]
+        CL3["Validate min-length\n& Burmese character ratio"]
+        CL4["Write cleaned articles"]
+    end
+
+    subgraph CleanedBucket["GCS — cleaned-crawler-data"]
+        CLEAN["cleaned_articles/\nYYYY-MM-DD/*.txt"]
+    end
+
+    subgraph ClassifyJob["Cloud Run Job — crisis-classifier-job"]
+        CF1["Load Hugging Face model\n(sentence-transformers)"]
+        CF2["Classify each article\ncrisis vs. non-crisis"]
+        CF3["Write crisis articles\nto crisis bucket"]
+    end
+
+    subgraph CrisisBucket["GCS — crisis-crawler-data"]
+        CR1["pending_articles/"]
+        CR2["crisis_articles/\n(confirmed)"]
+        CR3["annotated_articles/"]
+    end
+
+    subgraph AdminService["Cloud Run Service — crisis-admin"]
+        ADM["Admin reviews article\nApprove → move to\ncrisis_articles/"]
+    end
+
+    subgraph AnnotatorService["Cloud Run Service — dvb-annotator\n(Eventarc: crisis_articles/ write)"]
+        AN1["Receive Eventarc event"]
+        AN2["Call Gemini API\nAdd structured annotations"]
+        AN3["Write annotated JSON\nto annotated_articles/"]
+    end
+
+    subgraph ExtractorService["Cloud Run Service — dvb-extractor\n(Eventarc: annotated_articles/ write)"]
+        EX1["Receive Eventarc event"]
+        EX2["Call Gemini API\nExtract crisis events"]
+        EX3["Write structured\nextraction JSON"]
+    end
+
+    subgraph ExtractionBucket["GCS — llm-extraction"]
+        EXT["extracted_events/\nYYYY-MM-DD/*.json"]
+    end
+
+    subgraph MLflowService["Cloud Run Service — mlflow"]
+        ML["Track model experiments\nStore artifacts\nModel registry"]
+    end
+
+    subgraph MLBucket["GCS — mlflow-artifacts"]
+        MLA["experiments/\nmodels/"]
+    end
+
+    DVB -->|"HTTP scrape (daily midnight)"| C1
+    C1 --> C2 --> C3
+    C3 --> RAW
+
+    RAW --> CL1
+    CL1 --> CL2 --> CL3 --> CL4
+    CL4 --> CLEAN
+
+    CLEAN --> CF1
+    CF1 --> CF2 --> CF3
+    CF3 --> CR1
+
+    CR1 --> ADM
+    ADM -->|"Approve"| CR2
+
+    CR2 -->|"Eventarc GCS trigger"| AN1
+    AN1 --> AN2 --> AN3
+    AN3 --> CR3
+
+    CR3 -->|"Eventarc GCS trigger"| EX1
+    EX1 --> EX2 --> EX3
+    EX3 --> EXT
+
+    CF2 -.->|"log metrics"| ML
+    ML --> MLA
+```
+
+## Storage Bucket Summary
+
+| Bucket | Contents | Retention |
+|--------|----------|-----------|
+| `{project}-crawler-data` | Raw scraped articles (JSON + TXT) | 90 days |
+| `{project}-cleaned-crawler-data` | Cleaned and validated articles | 90 days |
+| `{project}-crisis-crawler-data` | Pending, confirmed, and annotated crisis articles | 180 days |
+| `{project}-llm-extraction` | Gemini-extracted structured crisis events | Long-term |
+| `{project}-mlflow-artifacts` | MLflow experiment artifacts and model registry | 90 days |
+
+## Trigger Summary
+
+| Job / Service | Trigger | Schedule / Event |
+|---------------|---------|-----------------|
+| `dvb-crawler-job` | Manual / workflow | Ad-hoc |
+| `dvb-text-cleaner-job` | Manual / workflow | Ad-hoc |
+| `crisis-classifier-job` | Manual / workflow | Ad-hoc |
+| `daily-data-processor` | Cloud Scheduler | `0 * * * *` (every hour) |
+| `dvb-annotator` | Eventarc (GCS) | Object written to `crisis_articles/` |
+| `dvb-extractor` | Eventarc (GCS) | Object written to `annotated_articles/` |
