@@ -18,5 +18,6 @@ COPY utils ./utils
 # This ensures code changes don't invalidate dependency cache
 COPY Codebase_Container/crawler_job/*.js Codebase_Container/crawler_job/*.json Codebase_Container/crawler_job/*.html ./
 
-# Run the crawler
-CMD ["node", "DVB_Burmese.crawler.js"]
+# Use entrypoint so Cloud Run Job arguments are forwarded to the crawler script
+ENTRYPOINT ["node", "DVB_Burmese.crawler.js"]
+CMD []

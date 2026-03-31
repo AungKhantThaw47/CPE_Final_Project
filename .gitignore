@@ -120,6 +120,9 @@ pnpm-lock.yaml
 # ============================================
 # Project Specific
 # ============================================
+.env
+.env.*
+!.env.example
 *.backup
 .cache/
 
@@ -130,4 +133,3 @@ downloaded.txt
 download_gcs_files.py
 DVB_Burmese_*.json
 test_local.py
-

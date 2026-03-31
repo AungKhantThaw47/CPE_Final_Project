@@ -71,14 +71,20 @@ def save_results_to_gcs(results_data, confirm_save=True):
             content_type="application/json"
         )
         
-        print(f"✅ Results saved to gs://{bucket_name}/{filename}")
+        folder_name = os.path.dirname(filename)
+        file_url = f"gs://{bucket_name}/{filename}"
+        folder_url = f"gs://{bucket_name}/{folder_name}/" if folder_name else f"gs://{bucket_name}/"
+
+        print(f"✅ Results saved to {file_url}")
+        print(f"   Saved folder: {folder_url}")
         
         return {
             "status": "success",
             "bucket": bucket_name,
+            "folder": folder_name,
             "filename": filename,
             "size_bytes": len(json_payload),
-            "url": f"gs://{bucket_name}/{filename}"
+            "url": file_url
         }
         
     except Exception as e:

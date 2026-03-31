@@ -32,7 +32,7 @@ graph TD
         MV_BUILD["null_resource\nCloud Build trigger"]
     end
 
-    subgraph ModMLflow["modules/mlflow"]
+    subgraph ModMLflow["Codebase_Container/mlflow"]
         ML_SVC["MLflow Tracking Server\n(extends cloud-run-service)"]
         ML_IMG["Dockerfile\nMLflow 3.8.1 + GCS backend"]
     end
@@ -110,9 +110,9 @@ Provisions a **Cloud Run Service** (always-on HTTP) with optional public access 
 | `service_account_roles` | IAM roles granted to the service's service account |
 | `cloud_sql_instances` | List of Cloud SQL connection strings (optional) |
 
-### `modules/mlflow`
+### `Codebase_Container/mlflow`
 
-Extends `modules/cloud-run-service` with a pre-built MLflow Docker image and GCS artifact backend configuration.
+Contains the MLflow Cloud Run container assets used by the root module's `mlflow` service entry.
 
 ## Directory Structure
 
@@ -124,9 +124,9 @@ CPE_Final_Project/
 ├── provider.tf                # GCP provider + GCS backend for Terraform state
 ├── modules/
 │   ├── cloud-scheduler/       # Reusable Cloud Run Job + Scheduler module
-│   ├── cloud-run-service/     # Reusable Cloud Run Service module
-│   └── mlflow/                # MLflow server (uses cloud-run-service)
+│   └── cloud-run-service/     # Reusable Cloud Run Service module
 ├── Codebase_Container/
+│   ├── mlflow/               # MLflow server container assets
 │   ├── crawler_job/           # dvb-crawler-job source (Node.js)
 │   ├── gpu_batch_job/         # gpu-batch-job source (Python + PyTorch)
 │   ├── cloud_scheduler_function/ # daily-data-processor source (Python)
@@ -139,7 +139,12 @@ CPE_Final_Project/
 │   ├── gcs_utils.py           # Shared Python GCS helpers
 │   └── gcs_utils.js           # Shared Node.js GCS helpers
 └── scripts/
-    ├── compute_content_hash.sh  # Unix content-hash script
-    ├── compute_content_hash.ps1 # Windows content-hash script
-    └── build_image.sh / .ps1   # Docker build helpers
+    ├── terraform_compute_hash.sh     # Unix Terraform hash adapter
+    ├── terraform_compute_hash.ps1    # Windows Terraform hash adapter
+    ├── get_deployed_content_hash.sh  # Unix deployed hash lookup
+    ├── get_deployed_content_hash.ps1 # Windows deployed hash lookup
+    ├── get_username.sh               # Unix username lookup
+    ├── get_username.ps1              # Windows username lookup
+    ├── hash_module.sh                # Shared Unix hash helpers
+    └── Hash-Module.psm1              # Shared PowerShell hash helpers
 ```

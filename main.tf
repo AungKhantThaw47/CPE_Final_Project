@@ -68,7 +68,7 @@ locals {
       codebase_path    = "${path.root}/Codebase_Container/crawler_job"
       container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
       description      = "DVB Burmese news crawler job"
-      build_image      = true # Build from local Dockerfile
+      build_image      = true  # Build from local Dockerfile
       enable_scheduler = false # Triggered by workflow
       schedule         = ""
       enable_gpu       = false
@@ -89,7 +89,7 @@ locals {
       codebase_path    = "${path.root}/Codebase_Container/text_clean_codebase"
       container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-text-cleaner:latest"
       description      = "DVB text cleaning job - removes author names and source citations"
-      build_image      = true # Build from local Dockerfile
+      build_image      = true  # Build from local Dockerfile
       enable_scheduler = false # Triggered by workflow
       schedule         = ""
       enable_gpu       = false
@@ -132,7 +132,7 @@ locals {
   # Define Cloud Run Services (always-on HTTP services)
   services = {
     mlflow = {
-      codebase_path   = "${path.root}/modules/mlflow"
+      codebase_path   = "${path.root}/Codebase_Container/mlflow"
       container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/mlflow-server:latest"
       description     = "MLflow Tracking Server"
       build_image     = true # Build from Dockerfile
@@ -233,7 +233,6 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "cloudbuild.googleapis.com",
     "sqladmin.googleapis.com",
-    "vpcaccess.googleapis.com",
     "cloudscheduler.googleapis.com",
     "eventarc.googleapis.com",
     "workflows.googleapis.com",
@@ -370,7 +369,6 @@ resource "google_storage_bucket" "llm_extraction" {
   }
 }
 
-
 # ============================================
 # Service Accounts
 # ============================================
@@ -490,8 +488,9 @@ module "services" {
   memory_limit = each.value.memory_limit
 
   # Scaling
-  min_instances = lookup(each.value, "min_instances", 0)
-  max_instances = lookup(each.value, "max_instances", 10)
+  min_instances         = lookup(each.value, "min_instances", 0)
+  max_instances         = lookup(each.value, "max_instances", 10)
+  execution_environment = lookup(each.value, "execution_environment", null)
 
   # Networking
   port         = lookup(each.value, "port", 8080)

@@ -86,8 +86,10 @@ pkgs.mkShell {
     echo "=== EventAtlas Nix Dev Shell ==="
 
     ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-      export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
-      export LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib:${pkgs.zlib}/lib:$LIBRARY_PATH"
+      # Avoid injecting glibc into LD_LIBRARY_PATH; it can destabilize Nix binaries.
+      export PROJECT_LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib"
+      export LD_LIBRARY_PATH="$PROJECT_LD_LIBRARY_PATH''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+      export LIBRARY_PATH="$PROJECT_LD_LIBRARY_PATH''${LIBRARY_PATH:+:$LIBRARY_PATH}"
     ''}
     ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
       export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -191,10 +193,13 @@ pkgs.mkShell {
     cp ${zshRc} "$ZDOTDIR/.zshrc" 2>/dev/null || cat ${zshRc} > "$ZDOTDIR/.zshrc"
     chmod 644 "$ZDOTDIR/.zshrc" 2>/dev/null || true
 
-    if [ -z "$ZSH_VERSION" ]; then
-      exec ${pkgs.zsh}/bin/zsh -l
-    else
-      source "$ZDOTDIR/.zshrc"
+    # Only switch shells for interactive sessions.
+    if [ -n "$PS1" ]; then
+      if [ -z "$ZSH_VERSION" ]; then
+        exec ${pkgs.zsh}/bin/zsh -l
+      else
+        source "$ZDOTDIR/.zshrc"
+      fi
     fi
   '';
 }

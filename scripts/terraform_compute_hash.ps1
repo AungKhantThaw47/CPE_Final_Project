@@ -24,6 +24,7 @@ if (-not $inputJson) {
 try {
     $queryData = $inputJson | ConvertFrom-Json
     $codebasePath = $queryData.codebase_path
+    $utilsPath = $queryData.utils_path
 } catch {
     Write-Output (@{
         content_hash = ""
@@ -46,13 +47,30 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Import-Module "$ScriptDir\Hash-Module.psm1" -Force
 
 try {
-    # Compute hash using the hash module
+    # Compute codebase hash
     $result = Get-DirectoryContentHash -DirectoryPath $codebasePath
+    $codebaseHash = $result.Hash
+    $codebaseFileCount = $result.FileCount
+
+    # Compute utils hash when available so shared utils changes trigger rebuilds
+    $utilsHash = $null
+    $utilsFileCount = 0
+    if ($utilsPath -and (Test-Path $utilsPath)) {
+        $utilsResult = Get-DirectoryContentHash -DirectoryPath $utilsPath
+        $utilsHash = $utilsResult.Hash
+        $utilsFileCount = $utilsResult.FileCount
+    }
+
+    if ($utilsHash) {
+        $combinedHash = Get-StringHash -Content "$codebaseHash`:$utilsHash"
+    } else {
+        $combinedHash = $codebaseHash
+    }
     
     # Return JSON for Terraform
     Write-Output (@{
-        content_hash = $result.Hash
-        file_count = $result.FileCount.ToString()
+        content_hash = $combinedHash
+        file_count = ($codebaseFileCount + $utilsFileCount).ToString()
     } | ConvertTo-Json -Compress)
     
 } catch {

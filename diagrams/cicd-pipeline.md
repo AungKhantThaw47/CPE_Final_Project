@@ -88,7 +88,7 @@ cancel-in-progress: true
 
 Terraform uses a content hash of each job's source directory to decide whether to rebuild and redeploy the Docker image:
 
-- **Local builds**: hash computed from file contents using `scripts/compute_content_hash.sh`
+- **Local builds**: hash computed from file contents using `scripts/terraform_compute_hash.sh`
 - **GitHub Actions builds**: hash derived from `GITHUB-{first 7 chars of commit SHA}`
 
 This ensures that only changed jobs trigger a new Cloud Build + Cloud Run deployment, minimising build time and cost.

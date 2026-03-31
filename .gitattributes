@@ -12,6 +12,7 @@
 *.md text eol=lf
 *.txt text eol=lf
 Dockerfile text eol=lf
+Makefile text eol=lf
 
 # Binary files - don't normalize
 *.png binary

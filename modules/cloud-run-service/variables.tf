@@ -84,6 +84,12 @@ variable "cloud_sql_instances" {
   default     = []
 }
 
+variable "execution_environment" {
+  description = "Cloud Run execution environment"
+  type        = string
+  default     = null
+}
+
 variable "service_account_roles" {
   description = "IAM roles to grant to the service's service account"
   type        = list(string)

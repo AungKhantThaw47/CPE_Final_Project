@@ -36,14 +36,20 @@ async function uploadFileToGCS(localFilePath, destinationPath) {
         });
         
         const fileSize = fs.statSync(localFilePath).size;
-        console.log(`✅ File uploaded to gs://${bucketName}/${destinationPath}`);
+        const folderPath = path.posix.dirname(destinationPath);
+        const fileUri = `gs://${bucketName}/${destinationPath}`;
+        const folderUri = `gs://${bucketName}/${folderPath === "." ? "" : `${folderPath}/`}`;
+
+        console.log(`✅ File uploaded to ${fileUri}`);
+        console.log(`   Saved folder: ${folderUri}`);
         
         return {
             status: 'success',
             bucket: bucketName,
+            folder: folderPath,
             filename: destinationPath,
             size_bytes: fileSize,
-            url: `gs://${bucketName}/${destinationPath}`
+            url: fileUri
         };
         
     } catch (error) {
@@ -82,15 +88,21 @@ async function uploadJSONToGCS(data, destinationPath) {
         await blob.save(jsonPayload, {
             contentType: 'application/json',
         });
-        
-        console.log(`✅ JSON uploaded to gs://${bucketName}/${destinationPath}`);
+
+        const folderPath = path.posix.dirname(destinationPath);
+        const fileUri = `gs://${bucketName}/${destinationPath}`;
+        const folderUri = `gs://${bucketName}/${folderPath === "." ? "" : `${folderPath}/`}`;
+
+        console.log(`✅ JSON uploaded to ${fileUri}`);
+        console.log(`   Saved folder: ${folderUri}`);
         
         return {
             status: 'success',
             bucket: bucketName,
+            folder: folderPath,
             filename: destinationPath,
             size_bytes: Buffer.byteLength(jsonPayload, 'utf8'),
-            url: `gs://${bucketName}/${destinationPath}`
+            url: fileUri
         };
         
     } catch (error) {
@@ -126,15 +138,21 @@ async function uploadTextToGCS(content, destinationPath) {
         await blob.save(content, {
             contentType: 'text/plain',
         });
-        
-        console.log(`✅ Text uploaded to gs://${bucketName}/${destinationPath}`);
+
+        const folderPath = path.posix.dirname(destinationPath);
+        const fileUri = `gs://${bucketName}/${destinationPath}`;
+        const folderUri = `gs://${bucketName}/${folderPath === "." ? "" : `${folderPath}/`}`;
+
+        console.log(`✅ Text uploaded to ${fileUri}`);
+        console.log(`   Saved folder: ${folderUri}`);
         
         return {
             status: 'success',
             bucket: bucketName,
+            folder: folderPath,
             filename: destinationPath,
             size_bytes: Buffer.byteLength(content, 'utf8'),
-            url: `gs://${bucketName}/${destinationPath}`
+            url: fileUri
         };
         
     } catch (error) {

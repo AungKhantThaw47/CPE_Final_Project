@@ -67,6 +67,10 @@ CPE_Final_Project/
 │   └── README.md                  # Utils documentation
 │
 ├── Codebase_Container/            # Application code
+│   ├── mlflow/                    # MLflow service container assets
+│   │   ├── Dockerfile             # MLflow container
+│   │   └── cloudbuild.yaml        # Cloud Build configuration
+│   │
 │   ├── crawler_job/               # DVB Burmese news crawler
 │   │   ├── DVB_Burmese.crawler.js # Web scraper implementation
 │   │   ├── package.json           # Node.js dependencies
@@ -93,10 +97,6 @@ CPE_Final_Project/
     │   ├── main.tf                # Service resources
     │   ├── variables.tf           # Module inputs
     │   └── outputs.tf             # Module outputs
-    │
-    └── mlflow/                    # MLflow server
-        ├── Dockerfile             # MLflow container
-        └── cloudbuild.yaml        # Cloud Build configuration
 ```
 
 ## Infrastructure Components
@@ -143,14 +143,17 @@ CPE_Final_Project/
 ### 1. Configure Project
 
 ```bash
-# Copy and edit configuration
+# Copy tracked examples
 cp terraform.tfvars.example terraform.tfvars
+cp .env.example .env
 
-# Edit terraform.tfvars with your settings:
-# - project_id
-# - region
-# - other customizations
+# Put non-sensitive settings in terraform.tfvars
+# Put secrets and TF_VAR_* values in .env
 ```
+
+Recommended split:
+- `terraform.tfvars`: non-sensitive values like `project_id`, `region`, `zone`, `environment`
+- `.env`: sensitive values like `TF_VAR_hf_token` and `TF_VAR_gemini_api_key`
 
 ### 2. Deploy Infrastructure
 

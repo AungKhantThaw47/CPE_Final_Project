@@ -33,6 +33,7 @@ data "external" "content_hash" {
   program = local.is_windows ? ["PowerShell", "-File", "${path.root}/scripts/terraform_compute_hash.ps1"] : ["bash", "${path.root}/scripts/terraform_compute_hash.sh"]
   query = {
     codebase_path = abspath(local.codebase_directory)
+    utils_path    = abspath("${path.root}/utils")
   }
 }
 
@@ -105,23 +106,43 @@ locals {
       --config '${local.codebase_directory}/cloudbuild.yaml' \
       --substitutions=_IMAGE_TAG=${var.container_image}
   EOT
+
+  windows_build_or_skip_command = <<-EOT
+    if ($env:SHOULD_BUILD -eq 'true') {
+      ${local.windows_build_command}
+    } else {
+      Write-Host 'Skipping image build; deployed CONTENT_HASH matches local CONTENT_HASH.'
+    }
+  EOT
+
+  unix_build_or_skip_command = <<-EOT
+    if [ "$SHOULD_BUILD" = "true" ]; then
+      ${local.unix_build_command}
+    else
+      echo "Skipping image build; deployed CONTENT_HASH matches local CONTENT_HASH."
+    fi
+  EOT
 }
 
 # Build scheduler job image (only if build_image is true AND content has changed)
 # Triggered only when deployed content_hash differs from calculated content_hash
 resource "null_resource" "scheduler_job_image_build" {
-  count = (var.build_image && local.content_has_changed) ? 1 : 0
+  count = var.build_image ? 1 : 0
 
   triggers = {
-    # Rebuild when deployed_content_hash differs from local content_hash
+    content_hash          = local.content_hash_value
     deployed_content_hash = local.deployed_content_hash
+    should_build          = tostring(local.content_has_changed)
   }
 
   # Build Docker image via Cloud Build
   provisioner "local-exec" {
-    when        = create
-    on_failure  = fail
-    command     = local.is_windows ? local.windows_build_command : local.unix_build_command
+    when       = create
+    on_failure = fail
+    command    = local.is_windows ? local.windows_build_or_skip_command : local.unix_build_or_skip_command
+    environment = {
+      SHOULD_BUILD = self.triggers.should_build
+    }
     interpreter = local.is_windows ? ["PowerShell", "-Command"] : ["sh", "-c"]
   }
 }

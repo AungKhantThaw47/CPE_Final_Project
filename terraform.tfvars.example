@@ -1,4 +1,5 @@
 # Copy this file to terraform.tfvars and fill in your values
+# Keep sensitive values in .env as TF_VAR_* entries instead of committing them here.
 project_id  = "your-gcp-project-id"
 region      = "us-central1"
 zone        = "us-central1-a"
