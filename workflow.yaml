@@ -53,6 +53,34 @@ main:
           text: '${"Classifier finished: " + classifier_status}'
           severity: INFO
 
+    - run_annotator:
+        call: run_job
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          job_name: "dvb-annotator-job"
+        result: annotator_status
+
+    - log_annotator_done:
+        call: sys.log
+        args:
+          text: '${"Annotator finished: " + annotator_status}'
+          severity: INFO
+
+    - run_extractor:
+        call: run_job
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          job_name: "dvb-extractor-job"
+        result: extractor_status
+
+    - log_extractor_done:
+        call: sys.log
+        args:
+          text: '${"Extractor finished: " + extractor_status}'
+          severity: INFO
+
     - log_done:
         call: sys.log
         args:
@@ -64,6 +92,8 @@ main:
           crawler: ${crawler_status}
           cleaner: ${cleaner_status}
           classifier: ${classifier_status}
+          annotator: ${annotator_status}
+          extractor: ${extractor_status}
 
 
 # Subworkflow: run a Cloud Run Job and wait for completion

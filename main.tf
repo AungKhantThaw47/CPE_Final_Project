@@ -26,43 +26,44 @@ locals {
 
   # Define all jobs in one place
   jobs = {
-    gpu-batch-job = {
-      codebase_path    = "${path.root}/Codebase_Container/gpu_batch_job"
-      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
-      description      = "GPU-accelerated batch processing job"
-      build_image      = true # Build from local Dockerfile
-      enable_scheduler = false
-      enable_gpu       = true
-      gpu_type         = var.gpu_type
-      cpu_limit        = "4"
-      memory_limit     = "16Gi"
-      timeout          = "900s"
-      environment_variables = {
-        GCS_BUCKET = google_storage_bucket.job_outputs.name
-        JOB_NAME   = var.job_name
-      }
-      service_account_roles = [
-        "roles/storage.objectAdmin",
-        "roles/logging.logWriter"
-      ]
-    }
+    # Disabled from infra for now; kept as reference for future re-enable.
+    # gpu-batch-job = {
+    #   codebase_path    = "${path.root}/Codebase_Container/gpu_batch_job"
+    #   container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
+    #   description      = "GPU-accelerated batch processing job"
+    #   build_image      = true # Build from local Dockerfile
+    #   enable_scheduler = false
+    #   enable_gpu       = true
+    #   gpu_type         = var.gpu_type
+    #   cpu_limit        = "4"
+    #   memory_limit     = "16Gi"
+    #   timeout          = "900s"
+    #   environment_variables = {
+    #     GCS_BUCKET = google_storage_bucket.job_outputs.name
+    #     JOB_NAME   = var.job_name
+    #   }
+    #   service_account_roles = [
+    #     "roles/storage.objectAdmin",
+    #     "roles/logging.logWriter"
+    #   ]
+    # }
 
-    daily-data-processor = {
-      codebase_path    = "${path.root}/Codebase_Container/cloud_scheduler_function"
-      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/scheduler-job:latest"
-      description      = "Daily data processing job"
-      build_image      = true # Build from local Dockerfile
-      enable_scheduler = true
-      schedule         = "0 * * * *"
-      enable_gpu       = false
-      cpu_limit        = "1"
-      memory_limit     = "512Mi"
-      timeout          = "600s"
-      environment_variables = {
-        ENV = "production"
-      }
-      service_account_roles = []
-    }
+    # daily-data-processor = {
+    #   codebase_path    = "${path.root}/Codebase_Container/cloud_scheduler_function"
+    #   container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/scheduler-job:latest"
+    #   description      = "Daily data processing job"
+    #   build_image      = true # Build from local Dockerfile
+    #   enable_scheduler = true
+    #   schedule         = "0 * * * *"
+    #   enable_gpu       = false
+    #   cpu_limit        = "1"
+    #   memory_limit     = "512Mi"
+    #   timeout          = "600s"
+    #   environment_variables = {
+    #     ENV = "production"
+    #   }
+    #   service_account_roles = []
+    # }
 
     dvb-crawler-job = {
       codebase_path    = "${path.root}/Codebase_Container/crawler_job"
@@ -127,6 +128,49 @@ locals {
       ]
     }
 
+    dvb-annotator-job = {
+      codebase_path    = "${path.root}/Codebase_Container/annotator_job"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-annotator:latest"
+      description      = "Crisis article annotator batch job"
+      build_image      = true
+      enable_scheduler = false
+      schedule         = ""
+      enable_gpu       = false
+      cpu_limit        = "1"
+      memory_limit     = "512Mi"
+      timeout          = "600s"
+      environment_variables = {
+        CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
+        GEMINI_API_KEY = var.gemini_api_key
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter"
+      ]
+    }
+
+    dvb-extractor-job = {
+      codebase_path    = "${path.root}/Codebase_Container/extractor_job"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-extractor:latest"
+      description      = "Crisis event extractor batch job"
+      build_image      = true
+      enable_scheduler = false
+      schedule         = ""
+      enable_gpu       = false
+      cpu_limit        = "1"
+      memory_limit     = "512Mi"
+      timeout          = "600s"
+      environment_variables = {
+        CRISIS_BUCKET     = google_storage_bucket.crisis_crawler_data.name
+        EXTRACTION_BUCKET = google_storage_bucket.llm_extraction.name
+        GEMINI_API_KEY    = var.gemini_api_key
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter"
+      ]
+    }
+
   }
 
   # Define Cloud Run Services (always-on HTTP services)
@@ -176,50 +220,6 @@ locals {
       cloud_sql_instances = []
     }
 
-    dvb-annotator = {
-      codebase_path   = "${path.root}/Codebase_Container/annotator_job"
-      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-annotator:latest"
-      description     = "Crisis article annotator - triggered by Eventarc when article confirmed to crisis_articles/"
-      build_image     = true
-      cpu_limit       = "1"
-      memory_limit    = "512Mi"
-      min_instances   = 0
-      max_instances   = 3
-      port            = 8080
-      allow_public    = true
-      environment_variables = {
-        CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
-        GEMINI_API_KEY = var.gemini_api_key
-      }
-      service_account_roles = [
-        "roles/storage.objectAdmin",
-        "roles/logging.logWriter"
-      ]
-      cloud_sql_instances = []
-    }
-
-    dvb-extractor = {
-      codebase_path   = "${path.root}/Codebase_Container/extractor_job"
-      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-extractor:latest"
-      description     = "Crisis event extractor - triggered by Eventarc when annotated article lands in annotated_articles/"
-      build_image     = true
-      cpu_limit       = "1"
-      memory_limit    = "512Mi"
-      min_instances   = 0
-      max_instances   = 3
-      port            = 8080
-      allow_public    = true
-      environment_variables = {
-        CRISIS_BUCKET     = google_storage_bucket.crisis_crawler_data.name
-        EXTRACTION_BUCKET = google_storage_bucket.llm_extraction.name
-        GEMINI_API_KEY    = var.gemini_api_key
-      }
-      service_account_roles = [
-        "roles/storage.objectAdmin",
-        "roles/logging.logWriter"
-      ]
-      cloud_sql_instances = []
-    }
   }
 }
 
@@ -514,98 +514,6 @@ module "services" {
 
 
 # ============================================
-# IAM: Allow Eventarc to invoke annotator service
-# ============================================
-resource "google_cloud_run_v2_service_iam_member" "annotator_invoker" {
-  project  = var.project_id
-  location = var.region
-  name     = module.services["dvb-annotator"].service_name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
-}
-
-# ============================================
-# Eventarc Trigger for Annotator
-# ============================================
-resource "google_eventarc_trigger" "annotator_trigger" {
-  name     = "annotator-trigger"
-  location = var.region
-  project  = var.project_id
-
-  # Trigger when a .txt file is confirmed to crisis_articles/
-  matching_criteria {
-    attribute = "type"
-    value     = "google.cloud.storage.object.v1.finalized"
-  }
-
-  matching_criteria {
-    attribute = "bucket"
-    value     = google_storage_bucket.crisis_crawler_data.name
-  }
-
-  # Target: Annotator Service
-  destination {
-    cloud_run_service {
-      service = module.services["dvb-annotator"].service_name
-      region  = var.region
-    }
-  }
-
-  service_account = google_service_account.job_invoker_sa.email
-
-  depends_on = [
-    google_project_service.apis,
-    module.services
-  ]
-}
-
-# ============================================
-# IAM: Allow Eventarc to invoke extractor service
-# ============================================
-resource "google_cloud_run_v2_service_iam_member" "extractor_invoker" {
-  project  = var.project_id
-  location = var.region
-  name     = module.services["dvb-extractor"].service_name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
-}
-
-# ============================================
-# Eventarc Trigger for Extractor
-# ============================================
-resource "google_eventarc_trigger" "extractor_trigger" {
-  name     = "extractor-trigger"
-  location = var.region
-  project  = var.project_id
-
-  # Trigger when a file lands in annotated_articles/ in the crisis bucket
-  matching_criteria {
-    attribute = "type"
-    value     = "google.cloud.storage.object.v1.finalized"
-  }
-
-  matching_criteria {
-    attribute = "bucket"
-    value     = google_storage_bucket.crisis_crawler_data.name
-  }
-
-  # Target: Extractor Service
-  destination {
-    cloud_run_service {
-      service = module.services["dvb-extractor"].service_name
-      region  = var.region
-    }
-  }
-
-  service_account = google_service_account.job_invoker_sa.email
-
-  depends_on = [
-    google_project_service.apis,
-    module.services
-  ]
-}
-
-# ============================================
 # Daily Pipeline Workflow
 # ============================================
 
@@ -635,7 +543,7 @@ resource "google_workflows_workflow" "daily_pipeline" {
   name            = "daily-pipeline"
   region          = var.region
   project         = var.project_id
-  description     = "Orchestrates daily pipeline: crawler → cleaner → classifier"
+  description     = "Orchestrates daily pipeline: crawler → cleaner → classifier → annotator → extractor"
   service_account = google_service_account.workflow_sa.email
   source_contents = file("${path.root}/workflow.yaml")
 

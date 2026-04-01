@@ -186,6 +186,21 @@ def run_cypher(base_uri: str, user: str, password: str, database: str, statement
 def load_graph(config: dict, manifest: dict) -> None:
     base_uri = build_http_base_uri(config["uri"])
 
+    managed_prefixes = [
+        "project:",
+        "registry:",
+        "bucket:",
+        "workflow:",
+        "scheduler:",
+        "job:",
+        "service:",
+    ]
+    allowed_managed_keys = []
+    for node in manifest.get("nodes", []):
+        key = node.get("key", "")
+        if any(key.startswith(prefix) for prefix in managed_prefixes):
+            allowed_managed_keys.append(key)
+
     if config["clean"]:
         run_cypher(
             base_uri,
@@ -195,35 +210,22 @@ def load_graph(config: dict, manifest: dict) -> None:
             "MATCH (n) DETACH DELETE n",
         )
     else:
+        # Keep DB in sync with the incoming manifest by removing stale managed nodes.
         run_cypher(
             base_uri,
             config["user"],
             config["password"],
             config["database"],
             """
-            MATCH (:DeploymentHash)-[r]-()
-            DELETE r
-            """,
-        )
-        run_cypher(
-            base_uri,
-            config["user"],
-            config["password"],
-            config["database"],
-            """
-            MATCH (n)-[r:USES_ACTIVE_HASH]->()
-            DELETE r
-            """,
-        )
-        run_cypher(
-            base_uri,
-            config["user"],
-            config["password"],
-            config["database"],
-            """
-            MATCH (n:DeploymentHash)
+            MATCH (n:SystemNode)
+            WHERE any(prefix IN $managed_prefixes WHERE n.key STARTS WITH prefix)
+              AND NOT n.key IN $allowed_managed_keys
             DETACH DELETE n
             """,
+            {
+                "managed_prefixes": managed_prefixes,
+                "allowed_managed_keys": allowed_managed_keys,
+            },
         )
 
     for node in manifest.get("nodes", []):
@@ -235,6 +237,7 @@ def load_graph(config: dict, manifest: dict) -> None:
             f"""
             MERGE (n:{node["label"]} {{key: $key}})
             SET n += $properties
+            SET n.created_at = coalesce(n.created_at, datetime())
             SET n.updated_at = datetime()
             """,
             {
@@ -243,12 +246,99 @@ def load_graph(config: dict, manifest: dict) -> None:
             },
         )
 
+    if not config["clean"]:
+        # Preserve hash lineage: when a component points to a new hash, link new -> previous.
+        for node in manifest.get("nodes", []):
+            if node.get("label") != "DeploymentHash":
+                continue
+
+            props = node.get("properties", {})
+            component_key = props.get("component_key")
+            new_key = node.get("key")
+            if not component_key or not new_key:
+                continue
+
+            run_cypher(
+                base_uri,
+                config["user"],
+                config["password"],
+                config["database"],
+                """
+                MATCH (component {key: $component_key})-[r:HAS_HASH]->(old:DeploymentHash)
+                MATCH (new:DeploymentHash {key: $new_key})
+                WHERE old.key <> new.key
+                MERGE (new)-[prev:PREVIOUS_HASH]->(old)
+                SET prev.updated_at = datetime()
+                """,
+                {
+                    "component_key": component_key,
+                    "new_key": new_key,
+                },
+            )
+
+        # Remove stale hash relationships so only manifest-current links remain,
+        # while preserving PREVIOUS_HASH lineage edges.
+        run_cypher(
+            base_uri,
+            config["user"],
+            config["password"],
+            config["database"],
+            """
+            MATCH (a)-[r]->(b)
+            WHERE (a:DeploymentHash OR b:DeploymentHash)
+              AND type(r) <> 'PREVIOUS_HASH'
+            DELETE r
+            """,
+        )
+
+    # Enforce latest component -> hash links for all current DeploymentHash nodes.
+    # If hash already exists, this relinks to it; if hash is new, node was created above.
+    for node in manifest.get("nodes", []):
+        if node.get("label") != "DeploymentHash":
+            continue
+
+        props = node.get("properties", {})
+        component_key = props.get("component_key")
+        hash_key = node.get("key")
+        hash_value = props.get("hash_value", "")
+        if not component_key or not hash_key:
+            continue
+
+        run_cypher(
+            base_uri,
+            config["user"],
+            config["password"],
+            config["database"],
+            """
+            MATCH (component {key: $component_key})
+            MATCH (hash:DeploymentHash {key: $hash_key})
+            OPTIONAL MATCH (component)-[old_rel:HAS_HASH]->(:DeploymentHash)
+            DELETE old_rel
+            MERGE (component)-[r:HAS_HASH]->(hash)
+            SET r.hash_type = 'content'
+            SET r.hash_value = $hash_value
+            SET r.updated_at = datetime()
+            """,
+            {
+                "component_key": component_key,
+                "hash_key": hash_key,
+                "hash_value": hash_value,
+            },
+        )
+
     run_cypher(
         base_uri,
         config["user"],
         config["password"],
         config["database"],
-        "MATCH (n) SET n:SystemNode",
+        "MATCH (n) WHERE NOT n:DeploymentHash SET n:SystemNode",
+    )
+    run_cypher(
+        base_uri,
+        config["user"],
+        config["password"],
+        config["database"],
+        "MATCH (n:DeploymentHash:SystemNode) REMOVE n:SystemNode",
     )
     run_cypher(
         base_uri,
@@ -259,6 +349,10 @@ def load_graph(config: dict, manifest: dict) -> None:
     )
 
     for relationship in manifest.get("relationships", []):
+        # HAS_HASH is managed explicitly above to guarantee one latest hash per component.
+        if relationship.get("type") == "HAS_HASH":
+            continue
+
         run_cypher(
             base_uri,
             config["user"],

@@ -19,6 +19,7 @@ The graph includes:
 - `graph_manifest.json`: declarative system graph definition
 - `load_graph.py`: loads the manifest into Neo4j
 - `requirements.txt`: Python dependency for the Neo4j driver
+- `queries/*.cypher`: reusable Cypher queries for pipeline and hash analysis
 
 ## Setup
 
@@ -63,6 +64,7 @@ That generated file extends the base system graph with:
 
 - one `DeploymentHash` node per job or service content hash
 - `HAS_HASH` edges from each component to its content hash node
+- `PREVIOUS_HASH` edges from each new hash node to the prior active hash node
 - `deployment_source`, `updater`, and `deployment_ref` stored on the hash node
 - direct `READS_FROM` and `WRITES_TO` edges between content-hash nodes and storage buckets
 - `DEPENDS_ON_DATA_FROM` edges between content-hash nodes using the existing bucket-based data flow
@@ -85,7 +87,7 @@ RETURN n
 Show the pipeline path from crawler to extractor:
 
 ```cypher
-MATCH p = (:CloudRunJob {name: "dvb-crawler-job"})-[*1..6]->(:CloudRunService {name: "dvb-extractor"})
+MATCH p = (:CloudRunJob {name: "dvb-crawler-job"})-[*1..10]->(:CloudRunJob {name: "dvb-extractor-job"})
 RETURN p
 ```
 

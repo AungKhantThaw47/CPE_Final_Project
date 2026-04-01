@@ -20,15 +20,6 @@
       }
     },
     {
-      "key": "workflow:terraform-deploy",
-      "label": "CiWorkflow",
-      "properties": {
-        "name": "terraform-deploy",
-        "file": ".github/workflows/terraform-deploy.yml",
-        "platform": "GitHub Actions"
-      }
-    },
-    {
       "key": "build:cloud-build",
       "label": "BuildSystem",
       "properties": {
@@ -99,15 +90,6 @@
       }
     },
     {
-      "key": "bucket:terraform-state",
-      "label": "StorageBucket",
-      "properties": {
-        "name": "terraform-state",
-        "retention_days": -1,
-        "purpose": "Terraform remote state"
-      }
-    },
-    {
       "key": "source:dvb-news",
       "label": "ExternalSource",
       "properties": {
@@ -149,29 +131,6 @@
       }
     },
     {
-      "key": "job:gpu-batch-job",
-      "label": "CloudRunJob",
-      "properties": {
-        "name": "gpu-batch-job",
-        "runtime": "Python + PyTorch",
-        "cpu": "4",
-        "memory": "16Gi",
-        "gpu": "nvidia-l4",
-        "trigger": "manual"
-      }
-    },
-    {
-      "key": "job:daily-data-processor",
-      "label": "CloudRunJob",
-      "properties": {
-        "name": "daily-data-processor",
-        "runtime": "Python",
-        "cpu": "1",
-        "memory": "512Mi",
-        "schedule": "0 * * * *"
-      }
-    },
-    {
       "key": "service:mlflow",
       "label": "CloudRunService",
       "properties": {
@@ -196,45 +155,25 @@
       }
     },
     {
-      "key": "service:dvb-annotator",
-      "label": "CloudRunService",
+      "key": "job:dvb-annotator-job",
+      "label": "CloudRunJob",
       "properties": {
-        "name": "dvb-annotator",
+        "name": "dvb-annotator-job",
         "runtime": "Python + Gemini API",
         "cpu": "1",
         "memory": "512Mi",
-        "min_instances": 0,
-        "max_instances": 3
+        "trigger": "manual_or_workflow"
       }
     },
     {
-      "key": "service:dvb-extractor",
-      "label": "CloudRunService",
+      "key": "job:dvb-extractor-job",
+      "label": "CloudRunJob",
       "properties": {
-        "name": "dvb-extractor",
+        "name": "dvb-extractor-job",
         "runtime": "Python + Gemini API",
         "cpu": "1",
         "memory": "512Mi",
-        "min_instances": 0,
-        "max_instances": 3
-      }
-    },
-    {
-      "key": "eventarc:annotator-trigger",
-      "label": "EventTrigger",
-      "properties": {
-        "name": "annotator-trigger",
-        "type": "gcs.finalized",
-        "match_prefix": "crisis_articles/"
-      }
-    },
-    {
-      "key": "eventarc:extractor-trigger",
-      "label": "EventTrigger",
-      "properties": {
-        "name": "extractor-trigger",
-        "type": "gcs.finalized",
-        "match_prefix": "annotated_articles/"
+        "trigger": "manual_or_workflow"
       }
     },
     {
@@ -256,19 +195,10 @@
       }
     },
     {
-      "key": "scheduler:hourly-data-processor",
-      "label": "Scheduler",
-      "properties": {
-        "name": "hourly-data-processor",
-        "schedule": "0 * * * *",
-        "timezone": "UTC"
-      }
-    },
-    {
       "key": "hash:job:crisis-classifier-job:5671054bd68b020786a465c8aac553d558f22291c00fde8edf9d1d3efb11b4fd",
       "label": "DeploymentHash",
       "properties": {
-        "name": "crisis-classifier-job:content",
+        "name": "5671054bd68b020786a465c8aac553d558f22291c00fde8edf9d1d3efb11b4fd",
         "component_key": "job:crisis-classifier-job",
         "component_name": "crisis-classifier-job",
         "component_kind": "job",
@@ -280,25 +210,25 @@
       }
     },
     {
-      "key": "hash:job:daily-data-processor:d19119fb12f9beda50f5929004c6688f896c457555bb0557663ff1ca307a64f5",
+      "key": "hash:job:dvb-annotator-job:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
       "label": "DeploymentHash",
       "properties": {
-        "name": "daily-data-processor:content",
-        "component_key": "job:daily-data-processor",
-        "component_name": "daily-data-processor",
+        "name": "dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
+        "component_key": "job:dvb-annotator-job",
+        "component_name": "dvb-annotator-job",
         "component_kind": "job",
-        "hash_value": "d19119fb12f9beda50f5929004c6688f896c457555bb0557663ff1ca307a64f5",
+        "hash_value": "dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
         "hash_type": "content",
         "deployment_source": "local",
         "updater": "akt",
-        "deployment_ref": "d19119fb12f9beda50f5929004c6688f896c457555bb0557663ff1ca307a64f5"
+        "deployment_ref": "dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807"
       }
     },
     {
       "key": "hash:job:dvb-crawler-job:1012cdb4658b2d5e51337f6ab4d9b51b412cef9cc71f24e962319a1f26450a6d",
       "label": "DeploymentHash",
       "properties": {
-        "name": "dvb-crawler-job:content",
+        "name": "1012cdb4658b2d5e51337f6ab4d9b51b412cef9cc71f24e962319a1f26450a6d",
         "component_key": "job:dvb-crawler-job",
         "component_name": "dvb-crawler-job",
         "component_kind": "job",
@@ -310,10 +240,25 @@
       }
     },
     {
+      "key": "hash:job:dvb-extractor-job:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+      "label": "DeploymentHash",
+      "properties": {
+        "name": "b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+        "component_key": "job:dvb-extractor-job",
+        "component_name": "dvb-extractor-job",
+        "component_kind": "job",
+        "hash_value": "b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+        "hash_type": "content",
+        "deployment_source": "local",
+        "updater": "akt",
+        "deployment_ref": "b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018"
+      }
+    },
+    {
       "key": "hash:job:dvb-text-cleaner-job:91aa30272c57b3ea1641e8369773ee863518c2996f48cb0118c22df0a24052d1",
       "label": "DeploymentHash",
       "properties": {
-        "name": "dvb-text-cleaner-job:content",
+        "name": "91aa30272c57b3ea1641e8369773ee863518c2996f48cb0118c22df0a24052d1",
         "component_key": "job:dvb-text-cleaner-job",
         "component_name": "dvb-text-cleaner-job",
         "component_kind": "job",
@@ -325,25 +270,10 @@
       }
     },
     {
-      "key": "hash:job:gpu-batch-job:27dd3114dfdbdf49b74415d427101371c6364f1ae7b8e860f9de5b297064ff3d",
-      "label": "DeploymentHash",
-      "properties": {
-        "name": "gpu-batch-job:content",
-        "component_key": "job:gpu-batch-job",
-        "component_name": "gpu-batch-job",
-        "component_kind": "job",
-        "hash_value": "27dd3114dfdbdf49b74415d427101371c6364f1ae7b8e860f9de5b297064ff3d",
-        "hash_type": "content",
-        "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "27dd3114dfdbdf49b74415d427101371c6364f1ae7b8e860f9de5b297064ff3d"
-      }
-    },
-    {
       "key": "hash:service:crisis-admin:8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
       "label": "DeploymentHash",
       "properties": {
-        "name": "crisis-admin:content",
+        "name": "8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
         "component_key": "service:crisis-admin",
         "component_name": "crisis-admin",
         "component_kind": "service",
@@ -355,40 +285,10 @@
       }
     },
     {
-      "key": "hash:service:dvb-annotator:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
-      "label": "DeploymentHash",
-      "properties": {
-        "name": "dvb-annotator:content",
-        "component_key": "service:dvb-annotator",
-        "component_name": "dvb-annotator",
-        "component_kind": "service",
-        "hash_value": "dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
-        "hash_type": "content",
-        "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807"
-      }
-    },
-    {
-      "key": "hash:service:dvb-extractor:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
-      "label": "DeploymentHash",
-      "properties": {
-        "name": "dvb-extractor:content",
-        "component_key": "service:dvb-extractor",
-        "component_name": "dvb-extractor",
-        "component_kind": "service",
-        "hash_value": "b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
-        "hash_type": "content",
-        "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018"
-      }
-    },
-    {
       "key": "hash:service:mlflow:533d840bd7b7fc9cc2c42de307397aad11b010606de6feff56984a994a8b485b",
       "label": "DeploymentHash",
       "properties": {
-        "name": "mlflow:content",
+        "name": "533d840bd7b7fc9cc2c42de307397aad11b010606de6feff56984a994a8b485b",
         "component_key": "service:mlflow",
         "component_name": "mlflow",
         "component_kind": "service",
@@ -405,18 +305,6 @@
       "from": "project:cpe-final-project",
       "to": "repo:cpe-final-project",
       "type": "DEFINED_BY",
-      "properties": {}
-    },
-    {
-      "from": "repo:cpe-final-project",
-      "to": "workflow:terraform-deploy",
-      "type": "USES_CI",
-      "properties": {}
-    },
-    {
-      "from": "workflow:terraform-deploy",
-      "to": "build:cloud-build",
-      "type": "TRIGGERS",
       "properties": {}
     },
     {
@@ -469,12 +357,6 @@
     },
     {
       "from": "project:cpe-final-project",
-      "to": "bucket:terraform-state",
-      "type": "OWNS",
-      "properties": {}
-    },
-    {
-      "from": "project:cpe-final-project",
       "to": "job:dvb-crawler-job",
       "type": "RUNS",
       "properties": {}
@@ -493,18 +375,6 @@
     },
     {
       "from": "project:cpe-final-project",
-      "to": "job:gpu-batch-job",
-      "type": "RUNS",
-      "properties": {}
-    },
-    {
-      "from": "project:cpe-final-project",
-      "to": "job:daily-data-processor",
-      "type": "RUNS",
-      "properties": {}
-    },
-    {
-      "from": "project:cpe-final-project",
       "to": "service:mlflow",
       "type": "SERVES",
       "properties": {}
@@ -517,14 +387,14 @@
     },
     {
       "from": "project:cpe-final-project",
-      "to": "service:dvb-annotator",
-      "type": "SERVES",
+      "to": "job:dvb-annotator-job",
+      "type": "RUNS",
       "properties": {}
     },
     {
       "from": "project:cpe-final-project",
-      "to": "service:dvb-extractor",
-      "type": "SERVES",
+      "to": "job:dvb-extractor-job",
+      "type": "RUNS",
       "properties": {}
     },
     {
@@ -547,18 +417,6 @@
     },
     {
       "from": "registry:artifact-registry",
-      "to": "job:gpu-batch-job",
-      "type": "HOSTS_IMAGE_FOR",
-      "properties": {}
-    },
-    {
-      "from": "registry:artifact-registry",
-      "to": "job:daily-data-processor",
-      "type": "HOSTS_IMAGE_FOR",
-      "properties": {}
-    },
-    {
-      "from": "registry:artifact-registry",
       "to": "service:mlflow",
       "type": "HOSTS_IMAGE_FOR",
       "properties": {}
@@ -571,13 +429,13 @@
     },
     {
       "from": "registry:artifact-registry",
-      "to": "service:dvb-annotator",
+      "to": "job:dvb-annotator-job",
       "type": "HOSTS_IMAGE_FOR",
       "properties": {}
     },
     {
       "from": "registry:artifact-registry",
-      "to": "service:dvb-extractor",
+      "to": "job:dvb-extractor-job",
       "type": "HOSTS_IMAGE_FOR",
       "properties": {}
     },
@@ -644,21 +502,7 @@
       }
     },
     {
-      "from": "bucket:crisis-crawler-data",
-      "to": "eventarc:annotator-trigger",
-      "type": "EMITS_EVENT_TO",
-      "properties": {
-        "path": "crisis_articles/"
-      }
-    },
-    {
-      "from": "eventarc:annotator-trigger",
-      "to": "service:dvb-annotator",
-      "type": "INVOKES",
-      "properties": {}
-    },
-    {
-      "from": "service:dvb-annotator",
+      "from": "job:dvb-annotator-job",
       "to": "bucket:crisis-crawler-data",
       "type": "READS_FROM",
       "properties": {
@@ -666,7 +510,7 @@
       }
     },
     {
-      "from": "service:dvb-annotator",
+      "from": "job:dvb-annotator-job",
       "to": "bucket:crisis-crawler-data",
       "type": "WRITES_TO",
       "properties": {
@@ -674,21 +518,7 @@
       }
     },
     {
-      "from": "bucket:crisis-crawler-data",
-      "to": "eventarc:extractor-trigger",
-      "type": "EMITS_EVENT_TO",
-      "properties": {
-        "path": "annotated_articles/"
-      }
-    },
-    {
-      "from": "eventarc:extractor-trigger",
-      "to": "service:dvb-extractor",
-      "type": "INVOKES",
-      "properties": {}
-    },
-    {
-      "from": "service:dvb-extractor",
+      "from": "job:dvb-extractor-job",
       "to": "bucket:crisis-crawler-data",
       "type": "READS_FROM",
       "properties": {
@@ -696,7 +526,7 @@
       }
     },
     {
-      "from": "service:dvb-extractor",
+      "from": "job:dvb-extractor-job",
       "to": "bucket:llm-extraction",
       "type": "WRITES_TO",
       "properties": {
@@ -713,18 +543,6 @@
       "from": "job:crisis-classifier-job",
       "to": "service:mlflow",
       "type": "LOGS_TO",
-      "properties": {}
-    },
-    {
-      "from": "job:gpu-batch-job",
-      "to": "bucket:gpu-job-outputs",
-      "type": "WRITES_TO",
-      "properties": {}
-    },
-    {
-      "from": "scheduler:hourly-data-processor",
-      "to": "job:daily-data-processor",
-      "type": "TRIGGERS",
       "properties": {}
     },
     {
@@ -758,6 +576,22 @@
       }
     },
     {
+      "from": "workflow:daily-pipeline",
+      "to": "job:dvb-annotator-job",
+      "type": "ORCHESTRATES",
+      "properties": {
+        "step_order": 4
+      }
+    },
+    {
+      "from": "workflow:daily-pipeline",
+      "to": "job:dvb-extractor-job",
+      "type": "ORCHESTRATES",
+      "properties": {
+        "step_order": 5
+      }
+    },
+    {
       "from": "job:crisis-classifier-job",
       "to": "hash:job:crisis-classifier-job:5671054bd68b020786a465c8aac553d558f22291c00fde8edf9d1d3efb11b4fd",
       "type": "HAS_HASH",
@@ -769,12 +603,12 @@
       }
     },
     {
-      "from": "job:daily-data-processor",
-      "to": "hash:job:daily-data-processor:d19119fb12f9beda50f5929004c6688f896c457555bb0557663ff1ca307a64f5",
+      "from": "job:dvb-annotator-job",
+      "to": "hash:job:dvb-annotator-job:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "d19119fb12f9beda50f5929004c6688f896c457555bb0557663ff1ca307a64f5",
+        "hash_value": "dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
         "deployment_source": "local",
         "updater": "akt"
       }
@@ -791,6 +625,17 @@
       }
     },
     {
+      "from": "job:dvb-extractor-job",
+      "to": "hash:job:dvb-extractor-job:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+      "type": "HAS_HASH",
+      "properties": {
+        "hash_type": "content",
+        "hash_value": "b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+        "deployment_source": "local",
+        "updater": "akt"
+      }
+    },
+    {
       "from": "job:dvb-text-cleaner-job",
       "to": "hash:job:dvb-text-cleaner-job:91aa30272c57b3ea1641e8369773ee863518c2996f48cb0118c22df0a24052d1",
       "type": "HAS_HASH",
@@ -802,45 +647,12 @@
       }
     },
     {
-      "from": "job:gpu-batch-job",
-      "to": "hash:job:gpu-batch-job:27dd3114dfdbdf49b74415d427101371c6364f1ae7b8e860f9de5b297064ff3d",
-      "type": "HAS_HASH",
-      "properties": {
-        "hash_type": "content",
-        "hash_value": "27dd3114dfdbdf49b74415d427101371c6364f1ae7b8e860f9de5b297064ff3d",
-        "deployment_source": "local",
-        "updater": "akt"
-      }
-    },
-    {
       "from": "service:crisis-admin",
       "to": "hash:service:crisis-admin:8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
         "hash_value": "8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
-        "deployment_source": "local",
-        "updater": "akt"
-      }
-    },
-    {
-      "from": "service:dvb-annotator",
-      "to": "hash:service:dvb-annotator:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
-      "type": "HAS_HASH",
-      "properties": {
-        "hash_type": "content",
-        "hash_value": "dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
-        "deployment_source": "local",
-        "updater": "akt"
-      }
-    },
-    {
-      "from": "service:dvb-extractor",
-      "to": "hash:service:dvb-extractor:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
-      "type": "HAS_HASH",
-      "properties": {
-        "hash_type": "content",
-        "hash_value": "b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
         "deployment_source": "local",
         "updater": "akt"
       }
@@ -920,7 +732,7 @@
       }
     },
     {
-      "from": "hash:service:dvb-annotator:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
+      "from": "hash:job:dvb-annotator-job:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
       "to": "bucket:crisis-crawler-data",
       "type": "READS_FROM",
       "properties": {
@@ -929,7 +741,7 @@
       }
     },
     {
-      "from": "hash:service:dvb-annotator:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
+      "from": "hash:job:dvb-annotator-job:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
       "to": "bucket:crisis-crawler-data",
       "type": "WRITES_TO",
       "properties": {
@@ -938,7 +750,7 @@
       }
     },
     {
-      "from": "hash:service:dvb-extractor:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+      "from": "hash:job:dvb-extractor-job:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
       "to": "bucket:crisis-crawler-data",
       "type": "READS_FROM",
       "properties": {
@@ -947,7 +759,7 @@
       }
     },
     {
-      "from": "hash:service:dvb-extractor:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+      "from": "hash:job:dvb-extractor-job:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
       "to": "bucket:llm-extraction",
       "type": "WRITES_TO",
       "properties": {
@@ -958,14 +770,6 @@
     {
       "from": "hash:service:mlflow:533d840bd7b7fc9cc2c42de307397aad11b010606de6feff56984a994a8b485b",
       "to": "bucket:mlflow-artifacts",
-      "type": "WRITES_TO",
-      "properties": {
-        "source_relation": "content_hash"
-      }
-    },
-    {
-      "from": "hash:job:gpu-batch-job:27dd3114dfdbdf49b74415d427101371c6364f1ae7b8e860f9de5b297064ff3d",
-      "to": "bucket:gpu-job-outputs",
       "type": "WRITES_TO",
       "properties": {
         "source_relation": "content_hash"
@@ -1006,6 +810,40 @@
       }
     },
     {
+      "from": "job:dvb-annotator-job",
+      "to": "job:crisis-classifier-job",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:crisis-crawler-data"
+      }
+    },
+    {
+      "from": "hash:job:dvb-annotator-job:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
+      "to": "hash:job:crisis-classifier-job:5671054bd68b020786a465c8aac553d558f22291c00fde8edf9d1d3efb11b4fd",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:crisis-crawler-data",
+        "source_relation": "content_hash"
+      }
+    },
+    {
+      "from": "job:dvb-extractor-job",
+      "to": "job:crisis-classifier-job",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:crisis-crawler-data"
+      }
+    },
+    {
+      "from": "hash:job:dvb-extractor-job:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+      "to": "hash:job:crisis-classifier-job:5671054bd68b020786a465c8aac553d558f22291c00fde8edf9d1d3efb11b4fd",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:crisis-crawler-data",
+        "source_relation": "content_hash"
+      }
+    },
+    {
       "from": "service:crisis-admin",
       "to": "job:crisis-classifier-job",
       "type": "DEPENDS_ON_DATA_FROM",
@@ -1023,67 +861,16 @@
       }
     },
     {
-      "from": "service:dvb-annotator",
-      "to": "job:crisis-classifier-job",
+      "from": "job:dvb-extractor-job",
+      "to": "job:dvb-annotator-job",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "bucket": "bucket:crisis-crawler-data"
       }
     },
     {
-      "from": "hash:service:dvb-annotator:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
-      "to": "hash:job:crisis-classifier-job:5671054bd68b020786a465c8aac553d558f22291c00fde8edf9d1d3efb11b4fd",
-      "type": "DEPENDS_ON_DATA_FROM",
-      "properties": {
-        "bucket": "bucket:crisis-crawler-data",
-        "source_relation": "content_hash"
-      }
-    },
-    {
-      "from": "service:dvb-extractor",
-      "to": "job:crisis-classifier-job",
-      "type": "DEPENDS_ON_DATA_FROM",
-      "properties": {
-        "bucket": "bucket:crisis-crawler-data"
-      }
-    },
-    {
-      "from": "hash:service:dvb-extractor:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
-      "to": "hash:job:crisis-classifier-job:5671054bd68b020786a465c8aac553d558f22291c00fde8edf9d1d3efb11b4fd",
-      "type": "DEPENDS_ON_DATA_FROM",
-      "properties": {
-        "bucket": "bucket:crisis-crawler-data",
-        "source_relation": "content_hash"
-      }
-    },
-    {
-      "from": "service:dvb-annotator",
-      "to": "service:crisis-admin",
-      "type": "DEPENDS_ON_DATA_FROM",
-      "properties": {
-        "bucket": "bucket:crisis-crawler-data"
-      }
-    },
-    {
-      "from": "hash:service:dvb-annotator:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
-      "to": "hash:service:crisis-admin:8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
-      "type": "DEPENDS_ON_DATA_FROM",
-      "properties": {
-        "bucket": "bucket:crisis-crawler-data",
-        "source_relation": "content_hash"
-      }
-    },
-    {
-      "from": "service:dvb-extractor",
-      "to": "service:crisis-admin",
-      "type": "DEPENDS_ON_DATA_FROM",
-      "properties": {
-        "bucket": "bucket:crisis-crawler-data"
-      }
-    },
-    {
-      "from": "hash:service:dvb-extractor:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
-      "to": "hash:service:crisis-admin:8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
+      "from": "hash:job:dvb-extractor-job:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+      "to": "hash:job:dvb-annotator-job:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "bucket": "bucket:crisis-crawler-data",
@@ -1092,7 +879,7 @@
     },
     {
       "from": "service:crisis-admin",
-      "to": "service:dvb-annotator",
+      "to": "job:dvb-annotator-job",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "bucket": "bucket:crisis-crawler-data"
@@ -1100,7 +887,7 @@
     },
     {
       "from": "hash:service:crisis-admin:8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
-      "to": "hash:service:dvb-annotator:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
+      "to": "hash:job:dvb-annotator-job:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "bucket": "bucket:crisis-crawler-data",
@@ -1108,16 +895,33 @@
       }
     },
     {
-      "from": "service:dvb-extractor",
-      "to": "service:dvb-annotator",
+      "from": "job:dvb-annotator-job",
+      "to": "service:crisis-admin",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "bucket": "bucket:crisis-crawler-data"
       }
     },
     {
-      "from": "hash:service:dvb-extractor:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
-      "to": "hash:service:dvb-annotator:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
+      "from": "hash:job:dvb-annotator-job:dc8c39f0ed97f62e3863001f5156a6c5b7a02aa28741388bbf444c27d9df3807",
+      "to": "hash:service:crisis-admin:8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:crisis-crawler-data",
+        "source_relation": "content_hash"
+      }
+    },
+    {
+      "from": "job:dvb-extractor-job",
+      "to": "service:crisis-admin",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:crisis-crawler-data"
+      }
+    },
+    {
+      "from": "hash:job:dvb-extractor-job:b2d0b65c8e3c0f26ea3288284eda61b91c097c8e50f9f06a15b3c7177e709018",
+      "to": "hash:service:crisis-admin:8a70f2c13d029510a324a290b34c70c42a12c093b98e45c55a3d788f2ba1bbbc",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "bucket": "bucket:crisis-crawler-data",

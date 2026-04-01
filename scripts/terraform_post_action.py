@@ -179,7 +179,7 @@ def build_hash_node(component_key: str, component_name: str, component_kind: str
         "key": f"hash:{component_kind}:{component_name}:{sanitize_key_part(hash_value)}",
         "label": "DeploymentHash",
         "properties": {
-            "name": f"{component_name}:content",
+            "name": hash_value,
             "component_key": component_key,
             "component_name": component_name,
             "component_kind": component_kind,
@@ -189,6 +189,53 @@ def build_hash_node(component_key: str, component_name: str, component_kind: str
             "updater": deployment_metadata["updater"],
             "deployment_ref": deployment_metadata["deployment_ref"],
         },
+    }
+
+
+def filter_base_manifest_by_outputs(base_manifest: dict, outputs: dict) -> dict:
+    managed_prefixes = (
+        "project:",
+        "registry:",
+        "bucket:",
+        "workflow:",
+        "scheduler:",
+        "job:",
+        "service:",
+    )
+
+    active_graph_keys_raw = outputs.get("active_graph_keys") or []
+    active_graph_keys = set(active_graph_keys_raw)
+    use_global_pruning = len(active_graph_keys) > 0
+
+    # Backward-compatible fallback for older output sets.
+    if not use_global_pruning:
+        for name in (outputs.get("jobs") or {}).keys():
+            active_graph_keys.add(f"job:{name}")
+        for name in (outputs.get("services") or {}).keys():
+            active_graph_keys.add(f"service:{name}")
+
+    filtered_nodes = []
+    for node in base_manifest.get("nodes", []):
+        key = node.get("key", "")
+        if use_global_pruning:
+            if key.startswith(managed_prefixes) and key not in active_graph_keys:
+                continue
+        else:
+            if key.startswith(("job:", "service:")) and key not in active_graph_keys:
+                continue
+        filtered_nodes.append(node)
+
+    filtered_node_keys = {node.get("key", "") for node in filtered_nodes}
+    filtered_relationships = []
+    for relationship in base_manifest.get("relationships", []):
+        source = relationship.get("from", "")
+        target = relationship.get("to", "")
+        if source in filtered_node_keys and target in filtered_node_keys:
+            filtered_relationships.append(relationship)
+
+    return {
+        "nodes": filtered_nodes,
+        "relationships": filtered_relationships,
     }
 
 
@@ -556,10 +603,11 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
 
 def write_generated_graph(outputs: dict) -> Path:
     base_manifest = load_json_file(BASE_GRAPH_MANIFEST)
-    dynamic_graph = build_dynamic_hash_graph(outputs, base_manifest)
+    filtered_base_manifest = filter_base_manifest_by_outputs(base_manifest, outputs)
+    dynamic_graph = build_dynamic_hash_graph(outputs, filtered_base_manifest)
     merged_graph = {
-        "nodes": base_manifest.get("nodes", []) + dynamic_graph["nodes"],
-        "relationships": base_manifest.get("relationships", []) + dynamic_graph["relationships"],
+        "nodes": filtered_base_manifest.get("nodes", []) + dynamic_graph["nodes"],
+        "relationships": filtered_base_manifest.get("relationships", []) + dynamic_graph["relationships"],
     }
 
     GENERATED_GRAPH_DIR.mkdir(parents=True, exist_ok=True)

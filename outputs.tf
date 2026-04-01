@@ -84,3 +84,24 @@ output "mlflow_artifacts_bucket" {
   description = "GCS bucket for MLflow artifacts"
   value       = google_storage_bucket.mlflow_artifacts.name
 }
+
+output "active_graph_keys" {
+  description = "Graph node keys currently active in Terraform-managed infrastructure"
+  value = distinct(concat(
+    [
+      "project:${var.project_id}",
+      "registry:artifact-registry",
+      "bucket:gpu-job-outputs",
+      "bucket:mlflow-artifacts",
+      "bucket:crawler-data",
+      "bucket:cleaned-crawler-data",
+      "bucket:crisis-crawler-data",
+      "bucket:llm-extraction",
+      "workflow:daily-pipeline",
+      "scheduler:daily-pipeline-trigger"
+    ],
+    contains(keys(local.jobs), "daily-data-processor") ? ["scheduler:hourly-data-processor"] : [],
+    [for job_key in keys(local.jobs) : "job:${job_key}"],
+    [for svc_key in keys(local.services) : "service:${svc_key}"]
+  ))
+}
