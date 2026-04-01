@@ -1,0 +1,626 @@
+{
+  "nodes": [
+    {
+      "key": "project:cpe-final-project",
+      "label": "Project",
+      "properties": {
+        "name": "CPE Final Project",
+        "project_id": "cpe-final-project",
+        "provider": "gcp",
+        "region": "asia-southeast1"
+      }
+    },
+    {
+      "key": "repo:cpe-final-project",
+      "label": "Repository",
+      "properties": {
+        "name": "CPE_Final_Project",
+        "path": "/home/akt/D/workspace/CPE_Final_Project",
+        "vcs": "git"
+      }
+    },
+    {
+      "key": "workflow:terraform-deploy",
+      "label": "CiWorkflow",
+      "properties": {
+        "name": "terraform-deploy",
+        "file": ".github/workflows/terraform-deploy.yml",
+        "platform": "GitHub Actions"
+      }
+    },
+    {
+      "key": "build:cloud-build",
+      "label": "BuildSystem",
+      "properties": {
+        "name": "Cloud Build",
+        "provider": "gcp"
+      }
+    },
+    {
+      "key": "registry:artifact-registry",
+      "label": "ArtifactRegistry",
+      "properties": {
+        "name": "Artifact Registry",
+        "region": "asia-southeast1"
+      }
+    },
+    {
+      "key": "bucket:crawler-data",
+      "label": "StorageBucket",
+      "properties": {
+        "name": "crawler-data",
+        "retention_days": 90,
+        "purpose": "raw DVB articles"
+      }
+    },
+    {
+      "key": "bucket:cleaned-crawler-data",
+      "label": "StorageBucket",
+      "properties": {
+        "name": "cleaned-crawler-data",
+        "retention_days": 90,
+        "purpose": "cleaned articles"
+      }
+    },
+    {
+      "key": "bucket:crisis-crawler-data",
+      "label": "StorageBucket",
+      "properties": {
+        "name": "crisis-crawler-data",
+        "retention_days": 180,
+        "purpose": "pending, crisis, and annotated articles"
+      }
+    },
+    {
+      "key": "bucket:llm-extraction",
+      "label": "StorageBucket",
+      "properties": {
+        "name": "llm-extraction",
+        "retention_days": -1,
+        "purpose": "structured extracted crisis events"
+      }
+    },
+    {
+      "key": "bucket:gpu-job-outputs",
+      "label": "StorageBucket",
+      "properties": {
+        "name": "gpu-job-outputs",
+        "retention_days": 30,
+        "purpose": "GPU batch outputs"
+      }
+    },
+    {
+      "key": "bucket:mlflow-artifacts",
+      "label": "StorageBucket",
+      "properties": {
+        "name": "mlflow-artifacts",
+        "retention_days": 90,
+        "purpose": "MLflow artifacts"
+      }
+    },
+    {
+      "key": "bucket:terraform-state",
+      "label": "StorageBucket",
+      "properties": {
+        "name": "terraform-state",
+        "retention_days": -1,
+        "purpose": "Terraform remote state"
+      }
+    },
+    {
+      "key": "source:dvb-news",
+      "label": "ExternalSource",
+      "properties": {
+        "name": "DVB Burmese News",
+        "url": "https://dvb.no/category/8/news"
+      }
+    },
+    {
+      "key": "job:dvb-crawler-job",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "dvb-crawler-job",
+        "runtime": "Node.js",
+        "cpu": "1",
+        "memory": "512Mi",
+        "trigger": "manual_or_workflow"
+      }
+    },
+    {
+      "key": "job:dvb-text-cleaner-job",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "dvb-text-cleaner-job",
+        "runtime": "Python",
+        "cpu": "1",
+        "memory": "512Mi",
+        "trigger": "manual_or_workflow"
+      }
+    },
+    {
+      "key": "job:crisis-classifier-job",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "crisis-classifier-job",
+        "runtime": "Python + Hugging Face",
+        "cpu": "4",
+        "memory": "16Gi",
+        "trigger": "manual_or_workflow"
+      }
+    },
+    {
+      "key": "job:gpu-batch-job",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "gpu-batch-job",
+        "runtime": "Python + PyTorch",
+        "cpu": "4",
+        "memory": "16Gi",
+        "gpu": "nvidia-l4",
+        "trigger": "manual"
+      }
+    },
+    {
+      "key": "job:daily-data-processor",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "daily-data-processor",
+        "runtime": "Python",
+        "cpu": "1",
+        "memory": "512Mi",
+        "schedule": "0 * * * *"
+      }
+    },
+    {
+      "key": "service:mlflow",
+      "label": "CloudRunService",
+      "properties": {
+        "name": "mlflow",
+        "runtime": "MLflow",
+        "cpu": "2",
+        "memory": "4Gi",
+        "min_instances": 0,
+        "max_instances": 2
+      }
+    },
+    {
+      "key": "service:crisis-admin",
+      "label": "CloudRunService",
+      "properties": {
+        "name": "crisis-admin",
+        "runtime": "Python",
+        "cpu": "1",
+        "memory": "512Mi",
+        "min_instances": 0,
+        "max_instances": 1
+      }
+    },
+    {
+      "key": "service:dvb-annotator",
+      "label": "CloudRunService",
+      "properties": {
+        "name": "dvb-annotator",
+        "runtime": "Python + Gemini API",
+        "cpu": "1",
+        "memory": "512Mi",
+        "min_instances": 0,
+        "max_instances": 3
+      }
+    },
+    {
+      "key": "service:dvb-extractor",
+      "label": "CloudRunService",
+      "properties": {
+        "name": "dvb-extractor",
+        "runtime": "Python + Gemini API",
+        "cpu": "1",
+        "memory": "512Mi",
+        "min_instances": 0,
+        "max_instances": 3
+      }
+    },
+    {
+      "key": "eventarc:annotator-trigger",
+      "label": "EventTrigger",
+      "properties": {
+        "name": "annotator-trigger",
+        "type": "gcs.finalized",
+        "match_prefix": "crisis_articles/"
+      }
+    },
+    {
+      "key": "eventarc:extractor-trigger",
+      "label": "EventTrigger",
+      "properties": {
+        "name": "extractor-trigger",
+        "type": "gcs.finalized",
+        "match_prefix": "annotated_articles/"
+      }
+    },
+    {
+      "key": "workflow:daily-pipeline",
+      "label": "Workflow",
+      "properties": {
+        "name": "daily-pipeline",
+        "platform": "Cloud Workflows",
+        "schedule": "5 0 * * *"
+      }
+    },
+    {
+      "key": "scheduler:daily-pipeline-trigger",
+      "label": "Scheduler",
+      "properties": {
+        "name": "daily-pipeline-trigger",
+        "schedule": "5 0 * * *",
+        "timezone": "Asia/Bangkok"
+      }
+    },
+    {
+      "key": "scheduler:hourly-data-processor",
+      "label": "Scheduler",
+      "properties": {
+        "name": "hourly-data-processor",
+        "schedule": "0 * * * *",
+        "timezone": "UTC"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "from": "project:cpe-final-project",
+      "to": "repo:cpe-final-project",
+      "type": "DEFINED_BY",
+      "properties": {}
+    },
+    {
+      "from": "repo:cpe-final-project",
+      "to": "workflow:terraform-deploy",
+      "type": "USES_CI",
+      "properties": {}
+    },
+    {
+      "from": "workflow:terraform-deploy",
+      "to": "build:cloud-build",
+      "type": "TRIGGERS",
+      "properties": {}
+    },
+    {
+      "from": "build:cloud-build",
+      "to": "registry:artifact-registry",
+      "type": "PUSHES_TO",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "registry:artifact-registry",
+      "type": "USES_REGISTRY",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "bucket:crawler-data",
+      "type": "OWNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "bucket:cleaned-crawler-data",
+      "type": "OWNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "bucket:crisis-crawler-data",
+      "type": "OWNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "bucket:llm-extraction",
+      "type": "OWNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "bucket:gpu-job-outputs",
+      "type": "OWNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "bucket:mlflow-artifacts",
+      "type": "OWNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "bucket:terraform-state",
+      "type": "OWNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "job:dvb-crawler-job",
+      "type": "RUNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "job:dvb-text-cleaner-job",
+      "type": "RUNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "job:crisis-classifier-job",
+      "type": "RUNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "job:gpu-batch-job",
+      "type": "RUNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "job:daily-data-processor",
+      "type": "RUNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "service:mlflow",
+      "type": "SERVES",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "service:crisis-admin",
+      "type": "SERVES",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "service:dvb-annotator",
+      "type": "SERVES",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "service:dvb-extractor",
+      "type": "SERVES",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "job:dvb-crawler-job",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "job:dvb-text-cleaner-job",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "job:crisis-classifier-job",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "job:gpu-batch-job",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "job:daily-data-processor",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "service:mlflow",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "service:crisis-admin",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "service:dvb-annotator",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "service:dvb-extractor",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "source:dvb-news",
+      "to": "job:dvb-crawler-job",
+      "type": "FEEDS",
+      "properties": {}
+    },
+    {
+      "from": "job:dvb-crawler-job",
+      "to": "bucket:crawler-data",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "raw_articles/"
+      }
+    },
+    {
+      "from": "job:dvb-text-cleaner-job",
+      "to": "bucket:crawler-data",
+      "type": "READS_FROM",
+      "properties": {
+        "path": "raw_articles/"
+      }
+    },
+    {
+      "from": "job:dvb-text-cleaner-job",
+      "to": "bucket:cleaned-crawler-data",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "cleaned_articles/"
+      }
+    },
+    {
+      "from": "job:crisis-classifier-job",
+      "to": "bucket:cleaned-crawler-data",
+      "type": "READS_FROM",
+      "properties": {
+        "path": "cleaned_articles/"
+      }
+    },
+    {
+      "from": "job:crisis-classifier-job",
+      "to": "bucket:crisis-crawler-data",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "pending_articles/"
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "bucket:crisis-crawler-data",
+      "type": "READS_FROM",
+      "properties": {
+        "path": "pending_articles/"
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "bucket:crisis-crawler-data",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "crisis_articles/"
+      }
+    },
+    {
+      "from": "bucket:crisis-crawler-data",
+      "to": "eventarc:annotator-trigger",
+      "type": "EMITS_EVENT_TO",
+      "properties": {
+        "path": "crisis_articles/"
+      }
+    },
+    {
+      "from": "eventarc:annotator-trigger",
+      "to": "service:dvb-annotator",
+      "type": "INVOKES",
+      "properties": {}
+    },
+    {
+      "from": "service:dvb-annotator",
+      "to": "bucket:crisis-crawler-data",
+      "type": "READS_FROM",
+      "properties": {
+        "path": "crisis_articles/"
+      }
+    },
+    {
+      "from": "service:dvb-annotator",
+      "to": "bucket:crisis-crawler-data",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "annotated_articles/"
+      }
+    },
+    {
+      "from": "bucket:crisis-crawler-data",
+      "to": "eventarc:extractor-trigger",
+      "type": "EMITS_EVENT_TO",
+      "properties": {
+        "path": "annotated_articles/"
+      }
+    },
+    {
+      "from": "eventarc:extractor-trigger",
+      "to": "service:dvb-extractor",
+      "type": "INVOKES",
+      "properties": {}
+    },
+    {
+      "from": "service:dvb-extractor",
+      "to": "bucket:crisis-crawler-data",
+      "type": "READS_FROM",
+      "properties": {
+        "path": "annotated_articles/"
+      }
+    },
+    {
+      "from": "service:dvb-extractor",
+      "to": "bucket:llm-extraction",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "extracted_events/"
+      }
+    },
+    {
+      "from": "service:mlflow",
+      "to": "bucket:mlflow-artifacts",
+      "type": "WRITES_TO",
+      "properties": {}
+    },
+    {
+      "from": "job:crisis-classifier-job",
+      "to": "service:mlflow",
+      "type": "LOGS_TO",
+      "properties": {}
+    },
+    {
+      "from": "job:gpu-batch-job",
+      "to": "bucket:gpu-job-outputs",
+      "type": "WRITES_TO",
+      "properties": {}
+    },
+    {
+      "from": "scheduler:hourly-data-processor",
+      "to": "job:daily-data-processor",
+      "type": "TRIGGERS",
+      "properties": {}
+    },
+    {
+      "from": "scheduler:daily-pipeline-trigger",
+      "to": "workflow:daily-pipeline",
+      "type": "TRIGGERS",
+      "properties": {}
+    },
+    {
+      "from": "workflow:daily-pipeline",
+      "to": "job:dvb-crawler-job",
+      "type": "ORCHESTRATES",
+      "properties": {
+        "step_order": 1
+      }
+    },
+    {
+      "from": "workflow:daily-pipeline",
+      "to": "job:dvb-text-cleaner-job",
+      "type": "ORCHESTRATES",
+      "properties": {
+        "step_order": 2
+      }
+    },
+    {
+      "from": "workflow:daily-pipeline",
+      "to": "job:crisis-classifier-job",
+      "type": "ORCHESTRATES",
+      "properties": {
+        "step_order": 3
+      }
+    }
+  ]
+}

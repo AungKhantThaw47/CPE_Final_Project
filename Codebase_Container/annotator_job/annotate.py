@@ -79,6 +79,15 @@ def annotate_article(article_text: str, gemini_client) -> str:
     return response.text
 
 
+@app.route("/", methods=["GET"])
+def root():
+    return jsonify({
+        "service": "dvb-annotator",
+        "status": "ok",
+        "usage": "Send Eventarc-compatible POST requests to / and GET requests to /health for health checks."
+    }), 200
+
+
 @app.route("/", methods=["POST"])
 def handle_event():
     """Handle Eventarc GCS notification when a file lands in crisis_articles/."""

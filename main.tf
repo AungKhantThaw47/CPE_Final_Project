@@ -186,7 +186,7 @@ locals {
       min_instances   = 0
       max_instances   = 3
       port            = 8080
-      allow_public    = false
+      allow_public    = true
       environment_variables = {
         CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
         GEMINI_API_KEY = var.gemini_api_key
@@ -208,7 +208,7 @@ locals {
       min_instances   = 0
       max_instances   = 3
       port            = 8080
-      allow_public    = false
+      allow_public    = true
       environment_variables = {
         CRISIS_BUCKET     = google_storage_bucket.crisis_crawler_data.name
         EXTRACTION_BUCKET = google_storage_bucket.llm_extraction.name

@@ -6,7 +6,7 @@ TF_PLAN_FILE ?= tfplan
 AUTO_APPROVE ?= false
 ENV_FILE ?= .env
 
-.PHONY: help check-tools init fmt validate plan apply deploy destroy output clean
+.PHONY: help check-tools init fmt validate plan apply deploy destroy output clean post-apply
 
 help:
 	@echo "Terraform Make targets"
@@ -17,6 +17,7 @@ help:
 	@echo "  make plan      - Create execution plan"
 	@echo "  make apply     - Apply Terraform changes"
 	@echo "  make deploy    - init + plan + apply"
+	@echo "  make post-apply - Print deployment summary from Terraform outputs"
 	@echo "  make destroy   - Destroy Terraform-managed resources"
 	@echo "  make output    - Show Terraform outputs"
 	@echo "  make clean     - Remove local plan file"
@@ -74,6 +75,7 @@ ifeq ($(AUTO_APPROVE),true)
 		echo "Error: TF_VARS_FILE '$(TF_VARS_FILE)' does not exist."; \
 		exit 1; \
 	fi
+	@$(MAKE) post-apply TF="$(TF)"
 else
 	@set -a; [ ! -f "$(ENV_FILE)" ] || source "$(ENV_FILE)"; set +a; \
 	if [ -f "$(TF_VARS_FILE)" ]; then \
@@ -86,6 +88,7 @@ else
 		echo "Error: TF_VARS_FILE '$(TF_VARS_FILE)' does not exist."; \
 		exit 1; \
 	fi
+	@$(MAKE) post-apply TF="$(TF)"
 endif
 
 deploy: plan
@@ -94,6 +97,7 @@ ifeq ($(AUTO_APPROVE),true)
 else
 	@set -a; [ ! -f "$(ENV_FILE)" ] || source "$(ENV_FILE)"; set +a; $(TF) apply $(TF_PLAN_FILE)
 endif
+	@$(MAKE) post-apply TF="$(TF)"
 
 destroy: init
 ifeq ($(AUTO_APPROVE),true)
@@ -127,3 +131,6 @@ output:
 
 clean:
 	rm -f $(TF_PLAN_FILE)
+
+post-apply:
+	@bash scripts/terraform_post_action.sh

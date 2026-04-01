@@ -11,6 +11,7 @@ This project provides a complete cloud infrastructure setup with:
 - **MLflow Tracking Server**: Experiment tracking and model registry
 - **Web Crawler**: Automated DVB Burmese news scraper with GCS storage
 - **Scheduled Jobs**: Automated data processing pipelines
+- **Neo4j Dependency Graph**: Auto-synced system graph with content-hash dependency nodes after deploy
 
 ## Quick Start (Simplified Deployment)
 
@@ -34,7 +35,8 @@ terraform apply
 - ✅ **Content hash** computed from each codebase directory
 - ✅ **Username** detected for deployment tracking
 - ✅ **Hash comparison** - only deploys if code changed
-- ✅ **No wrapper scripts needed**
+- ✅ **Neo4j graph manifest** generated after apply
+- ✅ **Neo4j graph sync** updates the external database automatically when configured
 
 **Documentation:**
 - 📘 [CONTENT_HASH_AUTOMATED.md](CONTENT_HASH_AUTOMATED.md) - How content hashing works
@@ -65,6 +67,13 @@ CPE_Final_Project/
 │   ├── gcs_utils.py               # Python GCS utilities
 │   ├── gcs_utils.js               # JavaScript GCS utilities
 │   └── README.md                  # Utils documentation
+│
+├── bootstrap/
+│   └── neo4j/                     # External Neo4j graph bootstrap + loader
+│       ├── graph_manifest.json    # Base system graph definition
+│       ├── generated/             # Generated graph with deployment hash nodes
+│       ├── load_graph.py          # Neo4j sync loader
+│       └── README.md              # Neo4j bootstrap docs
 │
 ├── Codebase_Container/            # Application code
 │   ├── mlflow/                    # MLflow service container assets
@@ -176,6 +185,32 @@ This will:
 - ✅ Deploy Cloud Run jobs and services
 - ✅ Set up Cloud Scheduler for automated runs
 - ✅ Configure IAM permissions
+- ✅ Generate a hash-aware dependency graph manifest
+- ✅ Sync the generated graph to Neo4j when `NEO4J_AUTO_LOAD=true`
+
+### Neo4j Graph Sync
+
+Terraform post-action automation now exports the deployed system topology into Neo4j.
+
+The generated graph includes:
+- one `DeploymentHash` node per job or service content hash
+- `HAS_HASH` edges from jobs and services to their content hash nodes
+- `deployment_source`, `updater`, and `deployment_ref` properties on each hash node
+- direct `READS_FROM` and `WRITES_TO` lineage edges between content-hash nodes and storage buckets
+- `DEPENDS_ON_DATA_FROM` edges between content-hash nodes based on bucket-level data flow
+
+To enable automatic sync after `make apply` or `make deploy`, configure these values in `.env`:
+
+```dotenv
+NEO4J_URI=neo4j+s://your-instance.databases.neo4j.io
+NEO4J_USER=your-neo4j-user
+NEO4J_PASSWORD=your-neo4j-password
+NEO4J_DATABASE=neo4j
+NEO4J_MANIFEST_PATH=bootstrap/neo4j/generated/terraform_post_action_graph.json
+NEO4J_AUTO_LOAD=true
+```
+
+If you want to skip the Neo4j update but still generate the manifest, set `NEO4J_AUTO_LOAD=false`.
 
 ### 3. Verify Deployment
 

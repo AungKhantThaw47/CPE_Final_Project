@@ -16,6 +16,7 @@ graph TD
         R_SERVICES["locals.services\nService definitions map"]
         R_EA["google_eventarc_trigger\n(annotator + extractor)"]
         R_WF["google_workflows_workflow\n(orchestration)"]
+        R_OUT["outputs.tf\njobs + services + hashes"]
     end
 
     subgraph ModScheduler["modules/cloud-scheduler"]
@@ -30,6 +31,12 @@ graph TD
         MV_SA["google_service_account"]
         MV_IAM["google_cloud_run_v2_service_iam_member\n(public access)"]
         MV_BUILD["null_resource\nCloud Build trigger"]
+    end
+
+    subgraph PostApply["Post-Apply Automation"]
+        PA_SUM["scripts/terraform_post_action.py\nsummary + graph generation"]
+        PA_GRAPH["bootstrap/neo4j/generated/\nterraform_post_action_graph.json"]
+        PA_LOAD["bootstrap/neo4j/load_graph.py\nNeo4j sync"]
     end
 
     subgraph ModMLflow["Codebase_Container/mlflow"]
@@ -56,6 +63,8 @@ graph TD
 
     R_BUCKETS --> R_EA
     R_EA -->|"triggers"| MV_SVC
+    R_JOBS --> R_OUT
+    R_SERVICES --> R_OUT
 
     ModMLflow -->|"uses"| ModService
 
@@ -71,6 +80,10 @@ graph TD
 
     Utils -.->|"imported by"| ModScheduler
     Utils -.->|"imported by"| ModService
+
+    R_OUT --> PA_SUM
+    PA_SUM -->|"writes merged graph"| PA_GRAPH
+    PA_GRAPH -->|"auto-sync when enabled"| PA_LOAD
 ```
 
 ## Module Input/Output Summary
@@ -114,6 +127,17 @@ Provisions a **Cloud Run Service** (always-on HTTP) with optional public access 
 
 Contains the MLflow Cloud Run container assets used by the root module's `mlflow` service entry.
 
+### Post-Apply Graph Sync
+
+The Terraform post-action uses `terraform output -json` and the root module outputs to build a graph manifest for Neo4j.
+
+The generated graph contains:
+- base system nodes from `bootstrap/neo4j/graph_manifest.json`
+- one `DeploymentHash` node per job or service content hash
+- `HAS_HASH` edges from components to content hashes
+- direct `READS_FROM` and `WRITES_TO` edges between content hashes and storage buckets
+- hash-to-hash `DEPENDS_ON_DATA_FROM` edges derived from bucket readers and writers
+
 ## Directory Structure
 
 ```
@@ -146,5 +170,6 @@ CPE_Final_Project/
     ├── get_username.sh               # Unix username lookup
     ├── get_username.ps1              # Windows username lookup
     ├── hash_module.sh                # Shared Unix hash helpers
-    └── Hash-Module.psm1              # Shared PowerShell hash helpers
+    ├── Hash-Module.psm1              # Shared PowerShell hash helpers
+    └── terraform_post_action.py      # Post-apply summary + Neo4j graph sync
 ```

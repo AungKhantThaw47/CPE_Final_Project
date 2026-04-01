@@ -9,6 +9,7 @@ graph TD
     subgraph Developer["👨‍💻 Developer / CI-CD"]
         GH["GitHub Repository"]
         GHA[".github/workflows\nterraform-deploy.yml"]
+        POST["terraform_post_action.py\npost-apply summary + graph sync"]
     end
 
     subgraph GCP["☁️ Google Cloud Platform (asia-southeast1)"]
@@ -55,8 +56,14 @@ graph TD
         CB["Cloud Build\n(Docker image builds)"]
     end
 
+    subgraph Graph["External Graph Database"]
+        NEO["Neo4j\nsystem dependency graph"]
+        HASH["DeploymentHash nodes\ncontent hash + updater"]
+    end
+
     GH --> GHA
     GHA --> CB
+    GHA --> POST
     CB --> AR
     AR --> J1 & J2 & J3 & J4 & J5
     AR --> S1 & S2 & S3 & S4
@@ -81,6 +88,18 @@ graph TD
 
     IAM -.->|grants roles| J1 & J2 & J3 & J4 & J5
     IAM -.->|grants roles| S1 & S2 & S3 & S4
+
+    J1 -.->|content hash node| HASH
+    J2 -.->|content hash node| HASH
+    J3 -.->|content hash node| HASH
+    J4 -.->|content hash node| HASH
+    J5 -.->|content hash node| HASH
+    S1 -.->|content hash node| HASH
+    S2 -.->|content hash node| HASH
+    S3 -.->|content hash node| HASH
+    S4 -.->|content hash node| HASH
+    POST -->|updates generated graph| NEO
+    HASH --> NEO
 ```
 
 ## Component Summary
@@ -96,3 +115,13 @@ graph TD
 | `crisis-admin` | Cloud Run Service | Python | 1 CPU, 512 MB, 0–1 instances |
 | `dvb-annotator` | Cloud Run Service | Python + Gemini API | 1 CPU, 512 MB, 0–3 instances |
 | `dvb-extractor` | Cloud Run Service | Python + Gemini API | 1 CPU, 512 MB, 0–3 instances |
+
+## Graph Sync Notes
+
+After Terraform apply, `scripts/terraform_post_action.py` generates a Neo4j graph manifest and can auto-sync it to the configured external Neo4j database.
+
+The graph tracks:
+- system topology
+- bucket-based data dependencies
+- one `DeploymentHash` node per service or job content hash
+- deployment metadata such as `deployment_source` and `updater`

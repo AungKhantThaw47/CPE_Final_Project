@@ -101,6 +101,15 @@ def extract_events(article_text: str, api_key: str) -> str:
         raise RuntimeError(f"Gemini API error: {response.status_code} - {response.text}")
 
 
+@app.route("/", methods=["GET"])
+def root():
+    return jsonify({
+        "service": "dvb-extractor",
+        "status": "ok",
+        "usage": "Send Eventarc-compatible POST requests to / and GET requests to /health for health checks."
+    }), 200
+
+
 @app.route("/", methods=["POST"])
 def handle_event():
     """Handle Eventarc GCS notification when a file lands in annotated_articles/."""

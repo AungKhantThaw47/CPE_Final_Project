@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 
+@app.route("/", methods=["GET"])
+def root():
+    return redirect("/admin")
+
+
 def read_article_from_gcs(bucket_name: str, blob_name: str) -> Optional[str]:
     """Read a single article text from GCS."""
     try:
