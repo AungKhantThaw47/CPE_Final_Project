@@ -6,9 +6,17 @@ Fetches articles from crawler bucket, cleans them, and stores in cleaned bucket.
 
 import os
 import re
+import sys
+import hashlib
 from datetime import datetime, timedelta
 from google.cloud import storage
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+
+
+if "/workspace" not in sys.path:
+    sys.path.append("/workspace")
+
+from utils.neo4j_utils import query_latest_hash_from_neo4j_env
 
 # Common Myanmar author name patterns
 AUTHOR_NAME_PATTERN = re.compile(r'^[\u1000-\u109F\u200B-\u200D\uAA60-\uAA7F]{2,20}$')
@@ -96,8 +104,40 @@ def clean_text_content(content: str) -> tuple:
     return content, False
 
 
-def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None, 
-                            prefix_path: str = "dvb") -> List[Dict]:
+def resolve_latest_hash_for_date(bucket, prefix_path: str, date_str: str) -> Optional[str]:
+    """Resolve latest hash folder under prefix/date by blob update time."""
+    pattern = re.compile(rf"^{re.escape(prefix_path)}/([^/]+)/{re.escape(date_str)}/")
+    latest_by_hash = {}
+
+    for blob in bucket.list_blobs(prefix=f"{prefix_path}/"):
+        match = pattern.match(blob.name)
+        if not match:
+            continue
+        hash_value = match.group(1)
+        current = latest_by_hash.get(hash_value)
+        updated = blob.updated or datetime.min
+        if current is None or updated > current:
+            latest_by_hash[hash_value] = updated
+
+    if not latest_by_hash:
+        return None
+
+    return max(latest_by_hash.items(), key=lambda item: item[1])[0]
+
+
+def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
+    """Build deterministic folder hash from upstream hash + current content hash."""
+    content_hash = (content_hash or "unknown-hash").strip()
+    source_hash = (source_hash or "").strip()
+
+    if not source_hash:
+        return content_hash
+
+    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
+
+
+def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None,
+                            prefix_path: str = "dvb") -> Tuple[List[Dict], str]:
     """Fetch all articles from GCS bucket for a specific date."""
     if not date_str:
         # Use 2 days ago to ensure crawler has finished
@@ -109,14 +149,26 @@ def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None,
     print("=" * 60)
     print(f"📦 Bucket: gs://{bucket_name}")
     print(f"📅 Date: {date_str}")
-    print(f"📂 Prefix: {prefix_path}/{date_str}/")
+    print(f"📂 Prefix root: {prefix_path}/")
     print()
     
     try:
         client = storage.Client()
         bucket = client.bucket(bucket_name)
         
-        prefix = f"{prefix_path}/{date_str}/"
+        source_hash = os.environ.get("SOURCE_CONTENT_HASH", "").strip()
+        if not source_hash:
+            source_hash = query_latest_hash_from_neo4j_env("job:dvb-crawler-job") or ""
+        if not source_hash:
+            source_hash = resolve_latest_hash_for_date(bucket, prefix_path, date_str) or ""
+
+        if source_hash:
+            prefix = f"{prefix_path}/{source_hash}/{date_str}/"
+        else:
+            # Legacy fallback for older layout without hash folders.
+            prefix = f"{prefix_path}/{date_str}/"
+
+        print(f"📂 Resolved source path: {prefix}")
         blobs = list(bucket.list_blobs(prefix=prefix))
         
         txt_blobs = [b for b in blobs if b.name.endswith('.txt')]
@@ -129,7 +181,7 @@ def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None,
         
         if not txt_blobs:
             print("⚠️  No text articles found!")
-            return []
+            return [], source_hash
         
         articles = []
         for blob in txt_blobs:
@@ -142,7 +194,7 @@ def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None,
             })
         
         print(f"✅ Successfully fetched {len(articles)} article references")
-        return articles
+        return articles, source_hash
         
     except Exception as e:
         print(f"❌ Error fetching articles: {e}")
@@ -192,11 +244,22 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
     print("=" * 60)
     print("Processing and Cleaning Articles")
     print("=" * 60)
-    print(f"📥 Source: gs://{source_bucket}/{prefix_path}/{date_str}/")
-    print(f"📤 Target: gs://{target_bucket}/dvb_cleaned/{date_str}/")
+    print(f"📥 Source root: gs://{source_bucket}/{prefix_path}/")
     print()
     
-    articles = fetch_articles_from_gcs(source_bucket, date_str, prefix_path)
+    articles, source_hash = fetch_articles_from_gcs(source_bucket, date_str, prefix_path)
+    output_hash = build_pipeline_output_hash(
+        source_hash,
+        os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
+    )
+
+    print(f"🧬 Output hash: {output_hash}")
+    print(f"📤 Target: gs://{target_bucket}/dvb_cleaned/{output_hash}/{date_str}/")
+
+    if source_hash:
+        print(f"🔎 Source hash: {source_hash}")
+    else:
+        print("🔎 Source hash: legacy/non-hash path")
     
     if not articles:
         return {"total": 0, "cleaned": 0, "unchanged": 0, "errors": 0}
@@ -219,7 +282,7 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
         
         cleaned_content, was_modified = clean_text_content(content)
         
-        destination_path = f"dvb_cleaned/{date_str}/{filename}"
+        destination_path = f"dvb_cleaned/{output_hash}/{date_str}/{filename}"
         success = upload_cleaned_article(cleaned_content, target_bucket, destination_path)
         
         if success:
@@ -280,12 +343,16 @@ if __name__ == "__main__":
     else:
         print("✅ All articles processed successfully!")
         final_date = date_str or (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-        print(f"   Cleaned data: gs://{target_bucket}/dvb_cleaned/{final_date}/")
+        output_hash = build_pipeline_output_hash(
+            os.environ.get('SOURCE_CONTENT_HASH', '').strip(),
+            os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
+        )
+        print(f"   Cleaned data: gs://{target_bucket}/dvb_cleaned/{output_hash}/{final_date}/")
 
         # Create completion marker file to trigger classifier
         try:
             client = storage.Client()
-            marker_path = f"dvb_cleaned/{final_date}/_COMPLETE"
+            marker_path = f"dvb_cleaned/{output_hash}/{final_date}/_COMPLETE"
             marker_blob = client.bucket(target_bucket).blob(marker_path)
             marker_blob.upload_from_string("", content_type='text/plain')
             print(f"   Completion marker: gs://{target_bucket}/{marker_path}")

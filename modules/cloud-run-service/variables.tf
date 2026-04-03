@@ -87,7 +87,7 @@ variable "cloud_sql_instances" {
 variable "execution_environment" {
   description = "Cloud Run execution environment"
   type        = string
-  default     = null
+  default     = "EXECUTION_ENVIRONMENT_GEN2"
 }
 
 variable "service_account_roles" {

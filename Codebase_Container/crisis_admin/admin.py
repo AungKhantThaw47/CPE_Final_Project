@@ -1,10 +1,18 @@
 import os
 import logging
 import sys
+import re
 from collections import defaultdict
+from datetime import datetime
 from flask import Flask, request, jsonify, redirect
 from google.cloud import storage
 from typing import List, Dict, Optional
+
+
+if "/workspace" not in sys.path:
+    sys.path.append("/workspace")
+
+from utils.neo4j_utils import query_latest_hash_from_neo4j_env
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,20 +41,65 @@ def read_article_from_gcs(bucket_name: str, blob_name: str) -> Optional[str]:
         return None
 
 
+def resolve_latest_hash(bucket, prefix: str) -> Optional[str]:
+    """Resolve latest hash folder under prefix/ by blob update time."""
+    pattern = re.compile(rf"^{re.escape(prefix)}/([^/]+)/")
+    latest_by_hash = {}
+
+    for blob in bucket.list_blobs(prefix=f"{prefix}/"):
+        match = pattern.match(blob.name)
+        if not match:
+            continue
+        hash_value = match.group(1)
+        current = latest_by_hash.get(hash_value)
+        updated = blob.updated or datetime.min
+        if current is None or updated > current:
+            latest_by_hash[hash_value] = updated
+
+    if not latest_by_hash:
+        return None
+
+    return max(latest_by_hash.items(), key=lambda item: item[1])[0]
+
+
 def list_pending_articles(crisis_bucket: str) -> List[Dict]:
-    """List all articles in pending_review/ across all dates."""
+    """List pending articles from latest hash folder (with legacy fallback)."""
     client = storage.Client()
     bucket = client.bucket(crisis_bucket)
-    blobs = list(bucket.list_blobs(prefix="pending_review/"))
+    latest_hash = (
+        os.environ.get("SOURCE_CONTENT_HASH", "").strip()
+        or query_latest_hash_from_neo4j_env("job:crisis-classifier-job")
+        or resolve_latest_hash(bucket, "pending_review")
+    )
+    if latest_hash:
+        blobs = list(bucket.list_blobs(prefix=f"pending_review/{latest_hash}/"))
+    else:
+        blobs = list(bucket.list_blobs(prefix="pending_review/"))
+
     articles = []
     for blob in blobs:
         if blob.name.endswith('.txt'):
-            parts = blob.name.split('/')  # pending_review/{date}/{filename}
-            date = parts[1] if len(parts) >= 3 else 'unknown'
+            # hashed: pending_review/{hash}/{date}/{filename}
+            # legacy: pending_review/{date}/{filename}
+            hash_match = re.match(r"^pending_review/([^/]+)/([0-9]{4}-[0-9]{2}-[0-9]{2})/(.+\.txt)$", blob.name)
+            legacy_match = re.match(r"^pending_review/([0-9]{4}-[0-9]{2}-[0-9]{2})/(.+\.txt)$", blob.name)
+
+            if hash_match:
+                hash_value = hash_match.group(1)
+                date = hash_match.group(2)
+                filename = hash_match.group(3)
+            elif legacy_match:
+                hash_value = "legacy"
+                date = legacy_match.group(1)
+                filename = legacy_match.group(2)
+            else:
+                continue
+
             articles.append({
                 'blob_name': blob.name,
-                'filename': os.path.basename(blob.name),
+                'filename': filename,
                 'date': date,
+                'hash': hash_value,
                 'size': blob.size,
             })
     return articles
@@ -75,6 +128,7 @@ def admin_page():
             rows += f"""
         <tr>
             <td>{a['filename']}</td>
+            <td>{a['hash']}</td>
             <td>{a['size']} bytes</td>
             <td>
                 <form method="POST" action="/admin/confirm" style="display:inline">
@@ -91,7 +145,7 @@ def admin_page():
         sections += f"""
     <h2 class="date-header">{date} <span class="date-count">({len(date_articles)} articles)</span></h2>
     <table>
-        <thead><tr><th>Filename</th><th>Size</th><th>Action</th></tr></thead>
+        <thead><tr><th>Filename</th><th>Hash</th><th>Size</th><th>Action</th></tr></thead>
         <tbody>{rows}</tbody>
     </table>"""
 

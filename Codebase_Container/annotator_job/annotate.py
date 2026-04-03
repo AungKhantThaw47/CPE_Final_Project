@@ -2,6 +2,7 @@ import os
 import re
 import logging
 import time
+import hashlib
 from flask import Flask, request, jsonify
 from google.cloud import storage
 from google import genai
@@ -69,6 +70,17 @@ ANNOTATION_PROMPT = """
 """
 
 
+def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
+    """Build deterministic folder hash from upstream hash + current content hash."""
+    content_hash = (content_hash or "unknown-hash").strip()
+    source_hash = (source_hash or "").strip()
+
+    if not source_hash:
+        return content_hash
+
+    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
+
+
 def annotate_article(article_text: str, gemini_client) -> str:
     """Annotate a single article using Gemini."""
     full_prompt = ANNOTATION_PROMPT + "\n\nArticle:\n" + article_text
@@ -114,15 +126,31 @@ def handle_event():
             logger.info(f"⏭️  Ignoring: {object_name}")
             return jsonify({"status": "ignored"}), 200
 
-        # Extract date and filename: crisis_articles/{date}/{filename}
-        match = re.match(r'crisis_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
-        if not match:
+        # Parse source path
+        # hashed: crisis_articles/{hash}/{date}/{filename}
+        # legacy: crisis_articles/{date}/{filename}
+        hash_match = re.match(r'crisis_articles/([^/]+)/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
+        legacy_match = re.match(r'crisis_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
+
+        if hash_match:
+            source_hash = hash_match.group(1)
+            date_str = hash_match.group(2)
+            filename = hash_match.group(3)
+        elif legacy_match:
+            source_hash = "legacy"
+            date_str = legacy_match.group(1)
+            filename = legacy_match.group(2)
+        else:
             logger.warning(f"⚠️  Could not parse path: {object_name}")
             return jsonify({"status": "error", "reason": "invalid path"}), 400
 
-        date_str = match.group(1)
-        filename = match.group(2)
+        output_hash = build_pipeline_output_hash(
+            source_hash,
+            os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
+        )
         logger.info(f"📅 Date: {date_str}")
+        logger.info(f"🔎 Source hash: {source_hash}")
+        logger.info(f"🧬 Output hash: {output_hash}")
         logger.info(f"📝 File: {filename}")
 
         crisis_bucket = os.environ.get('CRISIS_BUCKET')
@@ -135,7 +163,7 @@ def handle_event():
         # Check if already annotated
         storage_client = storage.Client()
         bucket = storage_client.bucket(crisis_bucket)
-        annotated_blob_name = f"annotated_articles/{date_str}/{filename}"
+        annotated_blob_name = f"annotated_articles/{output_hash}/{date_str}/{filename}"
         annotated_blob = bucket.blob(annotated_blob_name)
         if annotated_blob.exists():
             logger.info(f"⏭️  Already annotated: {annotated_blob_name}")

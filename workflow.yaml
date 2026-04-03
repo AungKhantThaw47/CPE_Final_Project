@@ -1,9 +1,42 @@
 main:
+  params: [args]
   steps:
     - init:
         assign:
           - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
           - region: "asia-southeast1"
+          - crawl_start_date: ""
+          - crawl_end_date: ""
+
+    - maybe_set_start_date:
+        switch:
+          - condition: ${args != null and map.get(args, "crawl_start_date") != null}
+            next: set_start_date
+        next: maybe_set_end_date
+
+    - set_start_date:
+        assign:
+          - crawl_start_date: ${args.crawl_start_date}
+
+    - maybe_set_end_date:
+        switch:
+          - condition: ${args != null and map.get(args, "crawl_end_date") != null}
+            next: set_end_date
+        next: set_crawler_overrides
+
+    - set_end_date:
+        assign:
+          - crawl_end_date: ${args.crawl_end_date}
+
+    - set_crawler_overrides:
+        assign:
+          - crawler_overrides:
+              containerOverrides:
+                - env:
+                    - name: "START_DATE"
+                      value: ${crawl_start_date}
+                    - name: "END_DATE"
+                      value: ${crawl_end_date}
 
     - log_start:
         call: sys.log
@@ -17,6 +50,7 @@ main:
           project_id: ${project_id}
           region: ${region}
           job_name: "dvb-crawler-job"
+          overrides: ${crawler_overrides}
         result: crawler_status
 
     - log_crawler_done:
@@ -31,6 +65,7 @@ main:
           project_id: ${project_id}
           region: ${region}
           job_name: "dvb-text-cleaner-job"
+          overrides: null
         result: cleaner_status
 
     - log_cleaner_done:
@@ -45,6 +80,7 @@ main:
           project_id: ${project_id}
           region: ${region}
           job_name: "crisis-classifier-job"
+          overrides: null
         result: classifier_status
 
     - log_classifier_done:
@@ -59,6 +95,7 @@ main:
           project_id: ${project_id}
           region: ${region}
           job_name: "dvb-annotator-job"
+          overrides: null
         result: annotator_status
 
     - log_annotator_done:
@@ -73,6 +110,7 @@ main:
           project_id: ${project_id}
           region: ${region}
           job_name: "dvb-extractor-job"
+          overrides: null
         result: extractor_status
 
     - log_extractor_done:
@@ -98,9 +136,25 @@ main:
 
 # Subworkflow: run a Cloud Run Job and wait for completion
 run_job:
-  params: [project_id, region, job_name]
+  params: [project_id, region, job_name, overrides]
   steps:
-    - trigger:
+    - choose_trigger_mode:
+        switch:
+          - condition: ${overrides != null}
+            next: trigger_with_overrides
+        next: trigger_without_overrides
+
+    - trigger_with_overrides:
+        call: http.post
+        args:
+          url: '${"https://" + region + "-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/" + project_id + "/jobs/" + job_name + ":run"}'
+          auth:
+            type: OAuth2
+          body: ${overrides}
+        result: trigger_response
+        next: get_execution_name
+
+    - trigger_without_overrides:
         call: http.post
         args:
           url: '${"https://" + region + "-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/" + project_id + "/jobs/" + job_name + ":run"}'

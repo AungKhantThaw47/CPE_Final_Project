@@ -13,9 +13,17 @@ import os
 import pickle
 import logging
 import sys
+import re
+import hashlib
 from datetime import datetime, timedelta
 from google.cloud import storage
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+
+
+if "/workspace" not in sys.path:
+    sys.path.append("/workspace")
+
+from utils.neo4j_utils import query_latest_hash_from_neo4j_env
 
 # Heavy ML imports — required for model loading
 try:
@@ -98,8 +106,40 @@ def load_crisis_model(model_path: str):
         raise
 
 
+def resolve_latest_hash_for_date(bucket, prefix_path: str, date_str: str) -> Optional[str]:
+    """Resolve latest hash folder under prefix/date by blob update time."""
+    pattern = re.compile(rf"^{re.escape(prefix_path)}/([^/]+)/{re.escape(date_str)}/")
+    latest_by_hash = {}
+
+    for blob in bucket.list_blobs(prefix=f"{prefix_path}/"):
+        match = pattern.match(blob.name)
+        if not match:
+            continue
+        hash_value = match.group(1)
+        current = latest_by_hash.get(hash_value)
+        updated = blob.updated or datetime.min
+        if current is None or updated > current:
+            latest_by_hash[hash_value] = updated
+
+    if not latest_by_hash:
+        return None
+
+    return max(latest_by_hash.items(), key=lambda item: item[1])[0]
+
+
+def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
+    """Build deterministic folder hash from upstream hash + current content hash."""
+    content_hash = (content_hash or "unknown-hash").strip()
+    source_hash = (source_hash or "").strip()
+
+    if not source_hash:
+        return content_hash
+
+    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
+
+
 def fetch_cleaned_articles(bucket_name: str, date_str: str,
-                           prefix_path: str = "dvb_cleaned") -> List[Dict]:
+                           prefix_path: str = "dvb_cleaned") -> Tuple[List[Dict], str]:
     """Fetch cleaned articles from GCS bucket for a specific date."""
     logger.info("")
     logger.info("=" * 60)
@@ -107,14 +147,26 @@ def fetch_cleaned_articles(bucket_name: str, date_str: str,
     logger.info("=" * 60)
     logger.info(f"📦 Bucket: gs://{bucket_name}")
     logger.info(f"📅 Date: {date_str}")
-    logger.info(f"📂 Prefix: {prefix_path}/{date_str}/")
+    logger.info(f"📂 Prefix root: {prefix_path}/")
     logger.info("")
 
     try:
         client = storage.Client()
         bucket = client.bucket(bucket_name)
 
-        prefix = f"{prefix_path}/{date_str}/"
+        source_hash = os.environ.get("SOURCE_CONTENT_HASH", "").strip()
+        if not source_hash:
+            source_hash = query_latest_hash_from_neo4j_env("job:dvb-text-cleaner-job") or ""
+        if not source_hash:
+            source_hash = resolve_latest_hash_for_date(bucket, prefix_path, date_str) or ""
+
+        if source_hash:
+            prefix = f"{prefix_path}/{source_hash}/{date_str}/"
+        else:
+            # Legacy fallback for older layout without hash folders.
+            prefix = f"{prefix_path}/{date_str}/"
+
+        logger.info(f"📂 Resolved source path: {prefix}")
         blobs = list(bucket.list_blobs(prefix=prefix))
 
         txt_blobs = [b for b in blobs
@@ -126,7 +178,7 @@ def fetch_cleaned_articles(bucket_name: str, date_str: str,
 
         if not txt_blobs:
             logger.warning("⚠️  No cleaned articles found!")
-            return []
+            return [], source_hash
 
         articles = []
         for blob in txt_blobs:
@@ -139,7 +191,7 @@ def fetch_cleaned_articles(bucket_name: str, date_str: str,
             })
 
         logger.info(f"✅ Successfully fetched {len(articles)} article references")
-        return articles
+        return articles, source_hash
 
     except Exception as e:
         logger.error(f"❌ Error fetching articles: {e}")
@@ -195,11 +247,22 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
     logger.info("=" * 60)
     logger.info("CLASSIFYING ARTICLES")
     logger.info("=" * 60)
-    logger.info(f"📥 Source:  gs://{source_bucket}/{prefix_path}/{date_str}/")
-    logger.info(f"⏳ Pending: gs://{crisis_bucket}/pending_review/{date_str}/")
+    logger.info(f"📥 Source root:  gs://{source_bucket}/{prefix_path}/")
     logger.info("")
 
-    articles = fetch_cleaned_articles(source_bucket, date_str, prefix_path)
+    articles, source_hash = fetch_cleaned_articles(source_bucket, date_str, prefix_path)
+    output_hash = build_pipeline_output_hash(
+        source_hash,
+        os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
+    )
+
+    if source_hash:
+        logger.info(f"🔎 Source hash: {source_hash}")
+    else:
+        logger.info("🔎 Source hash: legacy/non-hash path")
+
+    logger.info(f"🧬 Output hash: {output_hash}")
+    logger.info(f"⏳ Pending: gs://{crisis_bucket}/pending_review/{output_hash}/{date_str}/")
 
     if not articles:
         return {"total": 0, "crisis": 0, "errors": 0}
@@ -224,7 +287,7 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
             is_crisis, confidence = classify_text(model, content)
 
             if is_crisis:
-                destination_path = f"pending_review/{date_str}/{filename}"
+                destination_path = f"pending_review/{output_hash}/{date_str}/{filename}"
                 success = upload_article(content, crisis_bucket, destination_path)
 
                 if success:
@@ -269,6 +332,10 @@ if __name__ == "__main__":
     storage_client = storage.Client()
     crisis_bkt = storage_client.bucket(crisis_bucket)
     already_classified = (
+        any(True for _ in crisis_bkt.list_blobs(prefix="pending_review/")
+            if re.match(rf"^pending_review/[^/]+/{re.escape(date_str)}/", _.name)) or
+        any(True for _ in crisis_bkt.list_blobs(prefix="crisis_articles/")
+            if re.match(rf"^crisis_articles/[^/]+/{re.escape(date_str)}/", _.name)) or
         any(True for _ in crisis_bkt.list_blobs(prefix=f"pending_review/{date_str}/", max_results=1)) or
         any(True for _ in crisis_bkt.list_blobs(prefix=f"crisis_articles/{date_str}/", max_results=1))
     )
@@ -290,4 +357,8 @@ if __name__ == "__main__":
     if stats['total'] > 0:
         crisis_rate = stats['crisis'] / stats['total'] * 100
         logger.info(f"   Crisis rate: {stats['crisis']}/{stats['total']} ({crisis_rate:.1f}%)")
-        logger.info(f"   Pending review: gs://{crisis_bucket}/pending_review/{date_str}/")
+        output_hash = build_pipeline_output_hash(
+            os.environ.get('SOURCE_CONTENT_HASH', '').strip(),
+            os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
+        )
+        logger.info(f"   Pending review: gs://{crisis_bucket}/pending_review/{output_hash}/{date_str}/")

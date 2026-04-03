@@ -167,7 +167,7 @@ async function saveAndUploadGroupedMetadata(posts, sourceUrl) {
         fs.writeFileSync(localFilePath, JSON.stringify(resultsData, null, 2), "utf8");
         console.log(`Saved JSON locally: ${localFilePath}`);
 
-        const gcsPath = `${CONTENT_HASH}/dvb/${dateStr}/DVB_Burmese_${dateStr}.json`;
+        const gcsPath = `dvb/${CONTENT_HASH}/${dateStr}/DVB_Burmese_${dateStr}.json`;
         await uploadJSONToGCS(resultsData, gcsPath);
         console.log(`Uploaded metadata to GCS: ${gcsPath}`);
 
@@ -331,7 +331,7 @@ async function fetchPostContents() {
 
             const contentHash = createHash("md5").update(full_content).digest("hex");
             const dateStr = post.date.split("T")[0];
-            const gcsPath = `${process.env.CONTENT_HASH}/dvb/${dateStr}/DVB_${dateStr}_${contentHash}.txt`;
+            const gcsPath = `dvb/${CONTENT_HASH}/${dateStr}/DVB_${dateStr}_${contentHash}.txt`;
 
             // Upload to GCS
             const uploadResult = await uploadTextToGCS(full_content, gcsPath);

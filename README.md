@@ -42,6 +42,7 @@ terraform apply
 - 📘 [CONTENT_HASH_AUTOMATED.md](CONTENT_HASH_AUTOMATED.md) - How content hashing works
 - 📘 [DEPLOYMENT_SIMPLIFIED.md](DEPLOYMENT_SIMPLIFIED.md) - Deployment details
 - 📘 [MIGRATION_COMPLETE.md](MIGRATION_COMPLETE.md) - What changed
+- 📘 [MANUAL_PIPELINE_COMMANDS.md](MANUAL_PIPELINE_COMMANDS.md) - Manual workflow/job invocation commands
 
 **Helper scripts** in `scripts/` are now optional utilities.
 
@@ -199,6 +200,14 @@ The generated graph includes:
 - direct `READS_FROM` and `WRITES_TO` lineage edges between content-hash nodes and storage buckets
 - `DEPENDS_ON_DATA_FROM` edges between content-hash nodes based on bucket-level data flow
 
+Runtime hash contract used by jobs/services:
+- producer writes output under `prefix/<CONTENT_HASH>/<YYYY-MM-DD>/...`
+- consumer writes output under its own `prefix/<CONTENT_HASH>/<YYYY-MM-DD>/...`
+- consumer reads upstream hash in this priority order:
+  1) `SOURCE_CONTENT_HASH` env var override
+  2) Neo4j query on upstream component `HAS_HASH` -> `DeploymentHash.hash_value`
+  3) GCS fallback scan (latest blob `updated` time)
+
 To enable automatic sync after `make apply` or `make deploy`, configure these values in `.env`:
 
 ```dotenv
@@ -228,6 +237,8 @@ gcloud scheduler jobs list --location=asia-southeast1
 ## Usage
 
 ### Running Jobs Manually
+
+For a complete command reference (full workflow execution, job-by-job execution, and monitoring), see [MANUAL_PIPELINE_COMMANDS.md](MANUAL_PIPELINE_COMMANDS.md).
 
 **GPU Batch Job:**
 ```bash
@@ -326,9 +337,9 @@ Provides:
 ### DVB Crawler Pipeline
 1. **Scheduler**: Triggers job daily at midnight (Asia/Bangkok)
 2. **Scraper**: Collects yesterday's articles from DVB Burmese news
-3. **Storage**: Uploads to GCS organized by date
-   - Articles: `gs://bucket/dvb/YYYY-MM-DD/DVB_YYYY-MM-DD_hash.txt`
-   - Metadata: `gs://bucket/dvb/YYYY-MM-DD/DVB_Burmese_YYYY-MM-DD.json`
+3. **Storage**: Uploads to GCS organized by hash + date
+  - Articles: `gs://bucket/dvb/<CONTENT_HASH>/YYYY-MM-DD/DVB_YYYY-MM-DD_hash.txt`
+  - Metadata: `gs://bucket/dvb/<CONTENT_HASH>/YYYY-MM-DD/DVB_Burmese_YYYY-MM-DD.json`
 
 ### GPU Processing
 - **GPU Type**: NVIDIA L4 (24GB VRAM)

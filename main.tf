@@ -98,7 +98,11 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        GCS_BUCKET = google_storage_bucket.crawler_data.name
+        GCS_BUCKET    = google_storage_bucket.crawler_data.name
+        NEO4J_URI     = var.neo4j_uri
+        NEO4J_USER    = var.neo4j_user
+        NEO4J_PASSWORD = var.neo4j_password
+        NEO4J_DATABASE = var.neo4j_database
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -118,9 +122,13 @@ locals {
       memory_limit     = "16Gi"
       timeout          = "3600s" # 1 hour max for large batches
       environment_variables = {
-        GCS_BUCKET    = google_storage_bucket.cleaned_crawler_data.name
-        CRISIS_BUCKET = google_storage_bucket.crisis_crawler_data.name
-        HF_TOKEN      = var.hf_token
+        GCS_BUCKET     = google_storage_bucket.cleaned_crawler_data.name
+        CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
+        HF_TOKEN       = var.hf_token
+        NEO4J_URI      = var.neo4j_uri
+        NEO4J_USER     = var.neo4j_user
+        NEO4J_PASSWORD = var.neo4j_password
+        NEO4J_DATABASE = var.neo4j_database
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -211,7 +219,11 @@ locals {
       port            = 8080
       allow_public    = true
       environment_variables = {
-        CRISIS_BUCKET = google_storage_bucket.crisis_crawler_data.name
+        CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
+        NEO4J_URI      = var.neo4j_uri
+        NEO4J_USER     = var.neo4j_user
+        NEO4J_PASSWORD = var.neo4j_password
+        NEO4J_DATABASE = var.neo4j_database
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -488,9 +500,8 @@ module "services" {
   memory_limit = each.value.memory_limit
 
   # Scaling
-  min_instances         = lookup(each.value, "min_instances", 0)
-  max_instances         = lookup(each.value, "max_instances", 10)
-  execution_environment = lookup(each.value, "execution_environment", null)
+  min_instances = lookup(each.value, "min_instances", 0)
+  max_instances = lookup(each.value, "max_instances", 10)
 
   # Networking
   port         = lookup(each.value, "port", 8080)

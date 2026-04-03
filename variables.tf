@@ -62,6 +62,12 @@ variable "gpu_type" {
   default     = "nvidia-l4"
 }
 
+variable "execution_environment" {
+  description = "Cloud Run execution environment generation (EXECUTION_ENVIRONMENT_GEN1 or EXECUTION_ENVIRONMENT_GEN2)."
+  type        = string
+  default     = "EXECUTION_ENVIRONMENT_GEN2"
+}
+
 # ============================================
 # MLflow Configuration
 # ============================================
@@ -119,4 +125,29 @@ variable "gemini_api_key" {
   type        = string
   sensitive   = true
   default     = ""
+}
+
+variable "neo4j_uri" {
+  description = "Neo4j connection URI used by runtime services/jobs for hash lookup."
+  type        = string
+  default     = ""
+}
+
+variable "neo4j_user" {
+  description = "Neo4j username used by runtime services/jobs for hash lookup."
+  type        = string
+  default     = ""
+}
+
+variable "neo4j_password" {
+  description = "Neo4j password used by runtime services/jobs for hash lookup."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "neo4j_database" {
+  description = "Neo4j database used by runtime services/jobs for hash lookup."
+  type        = string
+  default     = "neo4j"
 }

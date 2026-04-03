@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import hashlib
 import requests
 from flask import Flask, request, jsonify
 from google.cloud import storage
@@ -83,6 +84,17 @@ Article:
 '''
 
 
+def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
+    """Build deterministic folder hash from upstream hash + current content hash."""
+    content_hash = (content_hash or "unknown-hash").strip()
+    source_hash = (source_hash or "").strip()
+
+    if not source_hash:
+        return content_hash
+
+    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
+
+
 def extract_events(article_text: str, api_key: str) -> str:
     """Extract crisis events from annotated article using Gemini REST API."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={api_key}"
@@ -136,15 +148,31 @@ def handle_event():
             logger.info(f"⏭️  Ignoring: {object_name}")
             return jsonify({"status": "ignored"}), 200
 
-        # Extract date and filename: annotated_articles/{date}/{filename}
-        match = re.match(r'annotated_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
-        if not match:
+        # Parse source path
+        # hashed: annotated_articles/{hash}/{date}/{filename}
+        # legacy: annotated_articles/{date}/{filename}
+        hash_match = re.match(r'annotated_articles/([^/]+)/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
+        legacy_match = re.match(r'annotated_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
+
+        if hash_match:
+            source_hash = hash_match.group(1)
+            date_str = hash_match.group(2)
+            filename = hash_match.group(3)
+        elif legacy_match:
+            source_hash = "legacy"
+            date_str = legacy_match.group(1)
+            filename = legacy_match.group(2)
+        else:
             logger.warning(f"⚠️  Could not parse path: {object_name}")
             return jsonify({"status": "error", "reason": "invalid path"}), 400
 
-        date_str = match.group(1)
-        filename = match.group(2)
+        output_hash = build_pipeline_output_hash(
+            source_hash,
+            os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
+        )
         logger.info(f"📅 Date: {date_str}")
+        logger.info(f"🔎 Source hash: {source_hash}")
+        logger.info(f"🧬 Output hash: {output_hash}")
         logger.info(f"📝 File: {filename}")
 
         crisis_bucket = os.environ.get('CRISIS_BUCKET')
@@ -160,7 +188,7 @@ def handle_event():
         source_bucket = storage_client.bucket(crisis_bucket)
         output_bucket = storage_client.bucket(extraction_bucket)
         output_filename = filename.replace('.txt', '.json')
-        extracted_blob_name = f"extracted_events/{date_str}/{output_filename}"
+        extracted_blob_name = f"extracted_events/{output_hash}/{date_str}/{output_filename}"
         extracted_blob = output_bucket.blob(extracted_blob_name)
         if extracted_blob.exists():
             logger.info(f"⏭️  Already extracted: {extracted_blob_name}")

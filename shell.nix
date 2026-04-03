@@ -50,7 +50,7 @@ pkgs.mkShell {
 
     # JS package managers
     yarn
-    nodePackages.pnpm
+    pnpm
 
     # Shell + prompt + helpers
     zsh
@@ -180,12 +180,45 @@ pkgs.mkShell {
 
     export PYTHONOPTIMIZE=1
 
-    # Version info
-    echo "Node:   $(node -v 2>/dev/null || echo 'missing')"
-    echo "Go:     $(go version 2>/dev/null | awk '{print $3}' || echo 'missing')"
-    echo "Py:     $(python --version 2>&1 || echo 'missing')"
-    echo "TF:     $(terraform version 2>/dev/null | head -n1 | awk '{print $2}' || echo 'missing')"
-    echo "gcloud: $(gcloud version 2>/dev/null | grep 'Google Cloud SDK' | awk '{print $4}' || echo 'missing')"
+    # Version info (avoid pipeline/pipefail false negatives)
+    if command -v node >/dev/null 2>&1; then
+      NODE_VERSION="$(node -v 2>/dev/null)"
+    else
+      NODE_VERSION="missing"
+    fi
+
+    if command -v go >/dev/null 2>&1; then
+      GO_VERSION="$(go version 2>/dev/null | awk '{print $3}')"
+    else
+      GO_VERSION="missing"
+    fi
+
+    if command -v python >/dev/null 2>&1; then
+      PY_VERSION="$(python --version 2>&1)"
+    else
+      PY_VERSION="missing"
+    fi
+
+    if command -v terraform >/dev/null 2>&1; then
+      TF_VERSION="$(terraform version -json 2>/dev/null | jq -r '.terraform_version' 2>/dev/null)"
+      [ -z "$TF_VERSION" ] && TF_VERSION="missing"
+      [ "$TF_VERSION" != "missing" ] && TF_VERSION="v$TF_VERSION"
+    else
+      TF_VERSION="missing"
+    fi
+
+    if command -v gcloud >/dev/null 2>&1; then
+      GCLOUD_VERSION="$(gcloud version --format='value(core.version)' 2>/dev/null)"
+      [ -z "$GCLOUD_VERSION" ] && GCLOUD_VERSION="missing"
+    else
+      GCLOUD_VERSION="missing"
+    fi
+
+    echo "Node:   $NODE_VERSION"
+    echo "Go:     $GO_VERSION"
+    echo "Py:     $PY_VERSION"
+    echo "TF:     $TF_VERSION"
+    echo "gcloud: $GCLOUD_VERSION"
 
     # Zsh config
     export ZDOTDIR="$PWD/.zsh"

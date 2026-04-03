@@ -2,6 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+ENV PYTHONPATH="/workspace:${PYTHONPATH}"
+
 # Copy requirements FIRST (least frequently changed)
 # This layer is cached unless requirements.txt changes
 # Build context is project root, so specify full path

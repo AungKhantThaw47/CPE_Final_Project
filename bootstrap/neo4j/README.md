@@ -20,6 +20,7 @@ The graph includes:
 - `load_graph.py`: loads the manifest into Neo4j
 - `requirements.txt`: Python dependency for the Neo4j driver
 - `queries/*.cypher`: reusable Cypher queries for pipeline and hash analysis
+	- includes `14_upstream_latest_hash_lookup.cypher` for runtime latest-hash resolution
 
 ## Setup
 
@@ -68,6 +69,33 @@ That generated file extends the base system graph with:
 - `deployment_source`, `updater`, and `deployment_ref` stored on the hash node
 - direct `READS_FROM` and `WRITES_TO` edges between content-hash nodes and storage buckets
 - `DEPENDS_ON_DATA_FROM` edges between content-hash nodes using the existing bucket-based data flow
+
+## Runtime Hash Contract
+
+The data pipeline uses hash-versioned storage paths:
+
+- Producers write to `prefix/<CONTENT_HASH>/<YYYY-MM-DD>/...`
+- Consumers read upstream data using Neo4j first, then fallback if needed
+
+Recommended lookup order in jobs/services:
+
+1. `SOURCE_CONTENT_HASH` override env var
+2. Neo4j latest hash via `HAS_HASH`
+3. GCS scan fallback by blob `updated` time
+
+Example Neo4j lookup query used by downstream consumers:
+
+```cypher
+MATCH (c {key: "job:dvb-text-cleaner-job"})-[:HAS_HASH]->(h:DeploymentHash)
+RETURN h.hash_value AS hash_value
+LIMIT 1
+```
+
+Typical component keys:
+
+- `job:dvb-crawler-job`
+- `job:dvb-text-cleaner-job`
+- `job:crisis-classifier-job`
 
 If you want Neo4j to ingest the hash-aware graph, point `NEO4J_MANIFEST_PATH` at that generated file as shown above.
 

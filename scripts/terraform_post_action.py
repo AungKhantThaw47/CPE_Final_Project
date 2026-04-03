@@ -192,6 +192,20 @@ def build_hash_node(component_key: str, component_name: str, component_kind: str
     }
 
 
+def build_bucket_hash_node(bucket_key: str, bucket_name: str, hash_value: str) -> dict:
+    return {
+        "key": f"hash:bucket:{sanitize_key_part(bucket_name)}:{sanitize_key_part(hash_value)}",
+        "label": "BucketHash",
+        "properties": {
+            "name": f"{bucket_name}:{hash_value}",
+            "bucket_key": bucket_key,
+            "bucket_name": bucket_name,
+            "hash_value": hash_value,
+            "hash_type": "content",
+        },
+    }
+
+
 def filter_base_manifest_by_outputs(base_manifest: dict, outputs: dict) -> dict:
     managed_prefixes = (
         "project:",
@@ -243,6 +257,14 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
     nodes = []
     relationships = []
     hash_node_keys = {}
+    component_hash_values = {}
+    bucket_hash_keys = {}
+
+    bucket_name_by_key = {}
+    for node in base_manifest.get("nodes", []):
+        key = node.get("key", "")
+        if key.startswith("bucket:"):
+            bucket_name_by_key[key] = node.get("properties", {}).get("name", key.split(":", 1)[1])
 
     component_sets = [
         ("job", outputs.get("jobs") or {}),
@@ -269,6 +291,7 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
             )
             nodes.append(node)
             hash_node_keys[component_key] = node["key"]
+            component_hash_values[component_key] = content_hash
 
             relationships.append(
                 {
@@ -304,10 +327,34 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
 
         source_hash_key = hash_node_keys.get(source)
         if source_hash_key and rel_type in {"WRITES_TO", "READS_FROM"}:
+            source_hash_value = component_hash_values.get(source, "")
+            bucket_hash_key = target
+
+            if source_hash_value:
+                bucket_name = bucket_name_by_key.get(target, target.split(":", 1)[1])
+                bucket_hash_node_id = f"{target}|{source_hash_value}"
+                bucket_hash_key = bucket_hash_keys.get(bucket_hash_node_id, "")
+                if not bucket_hash_key:
+                    bucket_hash_node = build_bucket_hash_node(target, bucket_name, source_hash_value)
+                    nodes.append(bucket_hash_node)
+                    bucket_hash_key = bucket_hash_node["key"]
+                    bucket_hash_keys[bucket_hash_node_id] = bucket_hash_key
+                    relationships.append(
+                        {
+                            "from": target,
+                            "to": bucket_hash_key,
+                            "type": "HAS_HASH",
+                            "properties": {
+                                "hash_type": "content",
+                                "hash_value": source_hash_value,
+                            },
+                        }
+                    )
+
             relationships.append(
                 {
                     "from": source_hash_key,
-                    "to": target,
+                    "to": bucket_hash_key,
                     "type": rel_type,
                     "properties": {
                         **relationship.get("properties", {}),
@@ -504,7 +551,11 @@ def collapse_legacy_hash_graph(manifest: dict) -> dict:
 def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manifest: dict) -> dict:
     collapsed_existing = collapse_legacy_hash_graph(existing_manifest)
 
-    hash_nodes = [node for node in collapsed_existing.get("nodes", []) if node.get("label") == "DeploymentHash"]
+    hash_nodes = [
+        node
+        for node in collapsed_existing.get("nodes", [])
+        if node.get("label") in {"DeploymentHash", "BucketHash"}
+    ]
     hash_relationships = []
     for relationship in collapsed_existing.get("relationships", []):
         source = relationship.get("from", "")
@@ -517,14 +568,27 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
             hash_relationships.append(relationship)
 
     component_hash_keys = {}
+    component_hash_values = {}
     for node in hash_nodes:
-        component_key = node.get("properties", {}).get("component_key")
+        if node.get("label") != "DeploymentHash":
+            continue
+        props = node.get("properties", {})
+        component_key = props.get("component_key")
         if component_key:
             component_hash_keys[component_key] = node["key"]
+            component_hash_values[component_key] = props.get("hash_value", "")
 
+    dynamic_nodes = []
     dynamic_relationships = []
     writers_by_bucket = {}
     readers_by_bucket = {}
+    bucket_hash_keys = {}
+
+    bucket_name_by_key = {}
+    for node in current_base_manifest.get("nodes", []):
+        key = node.get("key", "")
+        if key.startswith("bucket:"):
+            bucket_name_by_key[key] = node.get("properties", {}).get("name", key.split(":", 1)[1])
 
     for relationship in current_base_manifest.get("relationships", []):
         source = relationship.get("from", "")
@@ -539,10 +603,34 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
 
             source_hash_key = component_hash_keys.get(source)
             if source_hash_key and rel_type in {"WRITES_TO", "READS_FROM"}:
+                source_hash_value = component_hash_values.get(source, "")
+                bucket_hash_key = target
+
+                if source_hash_value:
+                    bucket_name = bucket_name_by_key.get(target, target.split(":", 1)[1])
+                    bucket_hash_node_id = f"{target}|{source_hash_value}"
+                    bucket_hash_key = bucket_hash_keys.get(bucket_hash_node_id, "")
+                    if not bucket_hash_key:
+                        bucket_hash_node = build_bucket_hash_node(target, bucket_name, source_hash_value)
+                        dynamic_nodes.append(bucket_hash_node)
+                        bucket_hash_key = bucket_hash_node["key"]
+                        bucket_hash_keys[bucket_hash_node_id] = bucket_hash_key
+                        dynamic_relationships.append(
+                            {
+                                "from": target,
+                                "to": bucket_hash_key,
+                                "type": "HAS_HASH",
+                                "properties": {
+                                    "hash_type": "content",
+                                    "hash_value": source_hash_value,
+                                },
+                            }
+                        )
+
                 dynamic_relationships.append(
                     {
                         "from": source_hash_key,
-                        "to": target,
+                        "to": bucket_hash_key,
                         "type": rel_type,
                         "properties": {
                             **relationship.get("properties", {}),
@@ -596,7 +684,7 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
                     )
 
     return {
-        "nodes": current_base_manifest.get("nodes", []) + hash_nodes,
+        "nodes": current_base_manifest.get("nodes", []) + hash_nodes + dynamic_nodes,
         "relationships": current_base_manifest.get("relationships", []) + hash_relationships + dynamic_relationships,
     }
 
