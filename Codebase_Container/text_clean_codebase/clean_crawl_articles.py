@@ -302,6 +302,7 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
 if __name__ == "__main__":
     # Pipeline mode - reads from GCS_BUCKET environment variable
     # Uses same bucket by default (single-bucket layout), with optional override.
+    print("Test")
     source_bucket = os.environ.get('GCS_BUCKET')
     date_str = os.environ.get('PROCESS_DATE')
     prefix_path = os.environ.get('GCS_PREFIX', 'dvb')

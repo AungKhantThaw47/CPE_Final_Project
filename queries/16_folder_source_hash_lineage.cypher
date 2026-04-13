@@ -3,8 +3,9 @@
 MATCH p_out=(out:FolderHash)-[pb:PRODUCED_BY]->(dep:DeploymentHash)
 OPTIONAL MATCH p_src=(out)-[fh:DEPENDS_ON_DATA_FROM {source_relation: "folder_hash_lineage"}]->(src:FolderHash)
 OPTIONAL MATCH p_prev=(out)-[:PREVIOUS_FOLDER_HASH]->(prev:FolderHash)
+OPTIONAL MATCH p_dep_prev=(dep)-[:PREVIOUS_HASH]->(dep_prev:DeploymentHash)
 OPTIONAL MATCH p_bucket=(bucket:StorageBucket)-[:HAS_HASH]->(out)
-RETURN p_src, p_prev, p_out, p_bucket, out, dep, src, prev, bucket
+RETURN p_src, p_prev, p_dep_prev, p_out, p_bucket, out, dep, dep_prev, src, prev, bucket
 ORDER BY out.bucket_name, out.folder_path, dep.component_name;
 
 // Tabular version (optional): link status and source/content hash metadata.
@@ -12,6 +13,7 @@ MATCH (bucket:StorageBucket)-[:HAS_HASH]->(out:FolderHash)
 MATCH (out)-[pb:PRODUCED_BY]->(dep:DeploymentHash)
 OPTIONAL MATCH (out)-[fh:DEPENDS_ON_DATA_FROM {source_relation: "folder_hash_lineage"}]->(src:FolderHash)
 OPTIONAL MATCH (out)-[:PREVIOUS_FOLDER_HASH]->(prev:FolderHash)
+OPTIONAL MATCH (dep)-[:PREVIOUS_HASH]->(dep_prev:DeploymentHash)
 RETURN bucket.name AS bucket_name,
        out.folder_path AS output_folder,
        out.hash_value AS output_hash,
@@ -21,6 +23,7 @@ RETURN bucket.name AS bucket_name,
        dep.component_kind AS producer_kind,
        dep.component_name AS producer_name,
        dep.hash_value AS producer_deployment_hash,
+  dep_prev.hash_value AS previous_deployment_hash,
        fh.source_hash AS linked_source_hash,
        CASE
          WHEN coalesce(pb.source_hash, "") = "" THEN "root_stage_no_source"
