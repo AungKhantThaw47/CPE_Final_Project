@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -174,17 +175,61 @@ def get_deployment_metadata(component: dict) -> dict:
     }
 
 
-def build_hash_node(component_key: str, component_name: str, component_kind: str, hash_value: str, deployment_metadata: dict) -> dict:
+def resolve_component_hash(component: dict) -> tuple[str, str]:
+    content_hash = (component.get("content_hash") or "").strip()
+    if content_hash:
+        return "content", content_hash
+
+    active_hash_type = get_active_hash_type(component, fallback="")
+    if active_hash_type == "local":
+        local_hash = (component.get("local_hash") or "").strip()
+        if local_hash:
+            return "local", local_hash
+    if active_hash_type == "github":
+        github_hash = (component.get("github_hash") or "").strip()
+        if github_hash:
+            return "github", github_hash
+
+    local_hash = (component.get("local_hash") or "").strip()
+    if local_hash:
+        return "local", local_hash
+
+    github_hash = (component.get("github_hash") or "").strip()
+    if github_hash:
+        return "github", github_hash
+
+    return "", ""
+
+
+def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
+    content_hash = (content_hash or "unknown-hash").strip()
+    source_hash = (source_hash or "").strip()
+
+    if not source_hash:
+        return content_hash
+
+    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
+
+
+def build_hash_node(
+    component_key: str,
+    component_name: str,
+    component_kind: str,
+    hash_value: str,
+    hash_type: str,
+    deployment_metadata: dict,
+) -> dict:
+    node_key = f"hash:{component_kind}:{component_name}:{sanitize_key_part(hash_value)}"
     return {
-        "key": f"hash:{component_kind}:{component_name}:{sanitize_key_part(hash_value)}",
+        "key": node_key,
         "label": "DeploymentHash",
         "properties": {
-            "name": hash_value,
+            "name": node_key,
             "component_key": component_key,
             "component_name": component_name,
             "component_kind": component_kind,
             "hash_value": hash_value,
-            "hash_type": "content",
+            "hash_type": hash_type,
             "deployment_source": deployment_metadata["deployment_source"],
             "updater": deployment_metadata["updater"],
             "deployment_ref": deployment_metadata["deployment_ref"],
@@ -192,16 +237,23 @@ def build_hash_node(component_key: str, component_name: str, component_kind: str
     }
 
 
-def build_bucket_hash_node(bucket_key: str, bucket_name: str, hash_value: str) -> dict:
+def build_folder_hash_node(bucket_key: str, bucket_name: str, folder_path: str, hash_value: str, hash_type: str) -> dict:
+    folder_name = folder_path.strip("/") or "root"
+    node_key = (
+        f"hash:folder:{sanitize_key_part(bucket_name)}:"
+        f"{sanitize_key_part(folder_name)}:{sanitize_key_part(hash_value)}"
+    )
     return {
-        "key": f"hash:bucket:{sanitize_key_part(bucket_name)}:{sanitize_key_part(hash_value)}",
-        "label": "BucketHash",
+        "key": node_key,
+        "label": "FolderHash",
         "properties": {
-            "name": f"{bucket_name}:{hash_value}",
+            "name": node_key,
             "bucket_key": bucket_key,
             "bucket_name": bucket_name,
+            "folder_path": folder_path,
+            "folder_name": folder_name,
             "hash_value": hash_value,
-            "hash_type": "content",
+            "hash_type": hash_type,
         },
     }
 
@@ -258,7 +310,12 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
     relationships = []
     hash_node_keys = {}
     component_hash_values = {}
-    bucket_hash_keys = {}
+    component_hash_types = {}
+    folder_hash_keys = {}
+    folder_hashes_by_component = {}
+    folder_hashes_by_component_path = {}
+    folder_hash_producer_edges = set()
+    folder_source_edges = set()
 
     bucket_name_by_key = {}
     for node in base_manifest.get("nodes", []):
@@ -277,8 +334,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                 continue
 
             component_key = f"{component_kind}:{component_name}"
-            content_hash = (component.get("content_hash") or "").strip()
-            if not content_hash:
+            hash_type, hash_value = resolve_component_hash(component)
+            if not hash_value:
                 continue
 
             deployment_metadata = get_deployment_metadata(component)
@@ -286,12 +343,14 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                 component_key,
                 component_name,
                 component_kind,
-                content_hash,
+                hash_value,
+                hash_type,
                 deployment_metadata,
             )
             nodes.append(node)
             hash_node_keys[component_key] = node["key"]
-            component_hash_values[component_key] = content_hash
+            component_hash_values[component_key] = hash_value
+            component_hash_types[component_key] = hash_type
 
             relationships.append(
                 {
@@ -299,8 +358,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                     "to": node["key"],
                     "type": "HAS_HASH",
                     "properties": {
-                        "hash_type": "content",
-                        "hash_value": content_hash,
+                        "hash_type": hash_type,
+                        "hash_value": hash_value,
                         "deployment_source": deployment_metadata["deployment_source"],
                         "updater": deployment_metadata["updater"],
                     },
@@ -309,59 +368,142 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
 
     writers_by_bucket = {}
     readers_by_bucket = {}
+    writers_by_bucket_path = {}
+    reader_inputs_by_component = {}
+    component_input_lineage = {}
 
     for relationship in base_manifest.get("relationships", []):
         source = relationship.get("from", "")
         target = relationship.get("to", "")
         rel_type = relationship.get("type")
+        rel_path = (relationship.get("properties", {}) or {}).get("path", "")
 
-        if not source.startswith(("job:", "service:")):
-            continue
-        if not target.startswith("bucket:"):
+        if not source.startswith(("job:", "service:")) or not target.startswith("bucket:"):
             continue
 
         if rel_type == "WRITES_TO":
             writers_by_bucket.setdefault(target, set()).add(source)
+            writers_by_bucket_path.setdefault((target, rel_path), set()).add(source)
         elif rel_type == "READS_FROM":
             readers_by_bucket.setdefault(target, set()).add(source)
+            reader_inputs_by_component.setdefault(source, []).append((target, rel_path))
+
+    for reader, inputs in sorted(reader_inputs_by_component.items()):
+        for input_bucket, input_path in sorted(inputs):
+            candidate_writers = [
+                writer
+                for writer in sorted(writers_by_bucket_path.get((input_bucket, input_path), set()))
+                if component_hash_values.get(writer, "")
+            ]
+            if not candidate_writers:
+                candidate_writers = [
+                    writer
+                    for writer in sorted(writers_by_bucket.get(input_bucket, set()))
+                    if component_hash_values.get(writer, "")
+                ]
+            if not candidate_writers:
+                continue
+
+            upstream_source_component = candidate_writers[0]
+            upstream_hash = component_hash_values.get(upstream_source_component, "")
+            component_input_lineage.setdefault(
+                reader,
+                {
+                    "hash": upstream_hash,
+                    "source_component": upstream_source_component,
+                    "source_bucket": input_bucket,
+                    "source_path": input_path,
+                },
+            )
+            break
+
+    for relationship in base_manifest.get("relationships", []):
+        source = relationship.get("from", "")
+        target = relationship.get("to", "")
+        rel_type = relationship.get("type")
+        rel_path = (relationship.get("properties", {}) or {}).get("path", "")
+
+        if rel_type != "WRITES_TO":
+            continue
+        if not source.startswith(("job:", "service:")) or not target.startswith("bucket:"):
+            continue
 
         source_hash_key = hash_node_keys.get(source)
-        if source_hash_key and rel_type in {"WRITES_TO", "READS_FROM"}:
-            source_hash_value = component_hash_values.get(source, "")
-            bucket_hash_key = target
+        source_hash_value = component_hash_values.get(source, "")
+        if not source_hash_key or not source_hash_value:
+            continue
 
-            if source_hash_value:
-                bucket_name = bucket_name_by_key.get(target, target.split(":", 1)[1])
-                bucket_hash_node_id = f"{target}|{source_hash_value}"
-                bucket_hash_key = bucket_hash_keys.get(bucket_hash_node_id, "")
-                if not bucket_hash_key:
-                    bucket_hash_node = build_bucket_hash_node(target, bucket_name, source_hash_value)
-                    nodes.append(bucket_hash_node)
-                    bucket_hash_key = bucket_hash_node["key"]
-                    bucket_hash_keys[bucket_hash_node_id] = bucket_hash_key
-                    relationships.append(
-                        {
-                            "from": target,
-                            "to": bucket_hash_key,
-                            "type": "HAS_HASH",
-                            "properties": {
-                                "hash_type": "content",
-                                "hash_value": source_hash_value,
-                            },
-                        }
-                    )
-
+        input_lineage = component_input_lineage.get(source, {})
+        input_hash = input_lineage.get("hash", "")
+        folder_hash_value = build_pipeline_output_hash(input_hash, source_hash_value)
+        bucket_name = bucket_name_by_key.get(target, target.split(":", 1)[1])
+        folder_hash_node_id = f"{target}|{rel_path}|{folder_hash_value}"
+        folder_hash_key = folder_hash_keys.get(folder_hash_node_id, "")
+        if not folder_hash_key:
+            folder_hash_node = build_folder_hash_node(target, bucket_name, rel_path, folder_hash_value, "pipeline")
+            nodes.append(folder_hash_node)
+            folder_hash_key = folder_hash_node["key"]
+            folder_hash_keys[folder_hash_node_id] = folder_hash_key
+            folder_hashes_by_component.setdefault(source, set()).add(folder_hash_key)
+            folder_hashes_by_component_path.setdefault((source, target, rel_path), set()).add(folder_hash_key)
             relationships.append(
                 {
-                    "from": source_hash_key,
-                    "to": bucket_hash_key,
-                    "type": rel_type,
+                    "from": target,
+                    "to": folder_hash_key,
+                    "type": "HAS_HASH",
                     "properties": {
-                        **relationship.get("properties", {}),
-                        "source_relation": "content_hash",
+                        "hash_type": "pipeline",
+                        "hash_value": folder_hash_value,
+                        "path": rel_path,
                     },
                 }
             )
+
+        producer_edge_key = (folder_hash_key, source_hash_key)
+        if producer_edge_key not in folder_hash_producer_edges:
+            folder_hash_producer_edges.add(producer_edge_key)
+            relationships.append(
+                {
+                    "from": folder_hash_key,
+                    "to": source_hash_key,
+                    "type": "PRODUCED_BY",
+                    "properties": {
+                        "bucket": target,
+                        "path": rel_path,
+                        "source_hash": input_hash,
+                        "content_hash": source_hash_value,
+                        "source_relation": "pipeline_output_hash",
+                    },
+                }
+            )
+
+        source_component = input_lineage.get("source_component", "")
+        source_bucket = input_lineage.get("source_bucket", "")
+        source_path = input_lineage.get("source_path", "")
+        if input_hash and source_component:
+            upstream_folder_hashes = sorted(
+                folder_hashes_by_component_path.get((source_component, source_bucket, source_path), set())
+            )
+            if not upstream_folder_hashes:
+                upstream_folder_hashes = sorted(folder_hashes_by_component.get(source_component, set()))
+            for upstream_folder_hash_key in upstream_folder_hashes:
+                lineage_edge_key = (folder_hash_key, upstream_folder_hash_key)
+                if lineage_edge_key in folder_source_edges:
+                    continue
+                folder_source_edges.add(lineage_edge_key)
+                relationships.append(
+                    {
+                        "from": folder_hash_key,
+                        "to": upstream_folder_hash_key,
+                        "type": "DEPENDS_ON_DATA_FROM",
+                        "properties": {
+                            "source_relation": "folder_hash_lineage",
+                            "source_hash": input_hash,
+                            "source_bucket": source_bucket,
+                            "source_path": source_path,
+                        },
+                    }
+                )
 
     all_buckets = set(writers_by_bucket) | set(readers_by_bucket)
     for bucket_key in sorted(all_buckets):
@@ -380,22 +522,6 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                         },
                     }
                 )
-
-                reader_hash_key = hash_node_keys.get(reader)
-                writer_hash_key = hash_node_keys.get(writer)
-
-                if reader_hash_key and writer_hash_key:
-                    relationships.append(
-                        {
-                            "from": reader_hash_key,
-                            "to": writer_hash_key,
-                            "type": "DEPENDS_ON_DATA_FROM",
-                            "properties": {
-                                "bucket": bucket_key,
-                                "source_relation": "content_hash",
-                            },
-                        }
-                    )
 
     return {
         "nodes": nodes,
@@ -465,6 +591,7 @@ def collapse_legacy_hash_graph(manifest: dict) -> dict:
             component_name,
             component_kind,
             hash_value,
+            "content",
             deployment_metadata,
         )
         new_hash_nodes.append(new_node)
@@ -550,12 +677,16 @@ def collapse_legacy_hash_graph(manifest: dict) -> dict:
 
 def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manifest: dict) -> dict:
     collapsed_existing = collapse_legacy_hash_graph(existing_manifest)
+    current_base_keys = {node.get("key", "") for node in current_base_manifest.get("nodes", [])}
 
     hash_nodes = [
         node
         for node in collapsed_existing.get("nodes", [])
-        if node.get("label") in {"DeploymentHash", "BucketHash"}
+        if node.get("label") in {"DeploymentHash", "FolderHash"}
     ]
+    hash_node_keys = {node.get("key", "") for node in hash_nodes}
+    allowed_node_keys = current_base_keys | hash_node_keys
+
     hash_relationships = []
     for relationship in collapsed_existing.get("relationships", []):
         source = relationship.get("from", "")
@@ -564,11 +695,12 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
             relationship.get("type") == "HAS_HASH"
             or source.startswith("hash:")
             or target.startswith("hash:")
-        ):
+        ) and source in allowed_node_keys and target in allowed_node_keys:
             hash_relationships.append(relationship)
 
     component_hash_keys = {}
     component_hash_values = {}
+    component_hash_types = {}
     for node in hash_nodes:
         if node.get("label") != "DeploymentHash":
             continue
@@ -577,12 +709,20 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
         if component_key:
             component_hash_keys[component_key] = node["key"]
             component_hash_values[component_key] = props.get("hash_value", "")
+            component_hash_types[component_key] = props.get("hash_type", "content")
 
     dynamic_nodes = []
     dynamic_relationships = []
     writers_by_bucket = {}
     readers_by_bucket = {}
-    bucket_hash_keys = {}
+    writers_by_bucket_path = {}
+    reader_inputs_by_component = {}
+    component_input_lineage = {}
+    folder_hash_keys = {}
+    folder_hashes_by_component = {}
+    folder_hashes_by_component_path = {}
+    folder_hash_producer_edges = set()
+    folder_source_edges = set()
 
     bucket_name_by_key = {}
     for node in current_base_manifest.get("nodes", []):
@@ -594,94 +734,134 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
         source = relationship.get("from", "")
         target = relationship.get("to", "")
         rel_type = relationship.get("type")
+        rel_path = (relationship.get("properties", {}) or {}).get("path", "")
 
-        if source.startswith(("job:", "service:")) and target.startswith("bucket:"):
-            if rel_type == "WRITES_TO":
-                writers_by_bucket.setdefault(target, set()).add(source)
-            elif rel_type == "READS_FROM":
-                readers_by_bucket.setdefault(target, set()).add(source)
+        if not source.startswith(("job:", "service:")) or not target.startswith("bucket:"):
+            continue
 
-            source_hash_key = component_hash_keys.get(source)
-            if source_hash_key and rel_type in {"WRITES_TO", "READS_FROM"}:
-                source_hash_value = component_hash_values.get(source, "")
-                bucket_hash_key = target
+        if rel_type == "WRITES_TO":
+            writers_by_bucket.setdefault(target, set()).add(source)
+            writers_by_bucket_path.setdefault((target, rel_path), set()).add(source)
+        elif rel_type == "READS_FROM":
+            readers_by_bucket.setdefault(target, set()).add(source)
+            reader_inputs_by_component.setdefault(source, []).append((target, rel_path))
 
-                if source_hash_value:
-                    bucket_name = bucket_name_by_key.get(target, target.split(":", 1)[1])
-                    bucket_hash_node_id = f"{target}|{source_hash_value}"
-                    bucket_hash_key = bucket_hash_keys.get(bucket_hash_node_id, "")
-                    if not bucket_hash_key:
-                        bucket_hash_node = build_bucket_hash_node(target, bucket_name, source_hash_value)
-                        dynamic_nodes.append(bucket_hash_node)
-                        bucket_hash_key = bucket_hash_node["key"]
-                        bucket_hash_keys[bucket_hash_node_id] = bucket_hash_key
-                        dynamic_relationships.append(
-                            {
-                                "from": target,
-                                "to": bucket_hash_key,
-                                "type": "HAS_HASH",
-                                "properties": {
-                                    "hash_type": "content",
-                                    "hash_value": source_hash_value,
-                                },
-                            }
-                        )
+    for reader, inputs in sorted(reader_inputs_by_component.items()):
+        for input_bucket, input_path in sorted(inputs):
+            candidate_writers = [
+                writer
+                for writer in sorted(writers_by_bucket_path.get((input_bucket, input_path), set()))
+                if component_hash_values.get(writer, "")
+            ]
+            if not candidate_writers:
+                candidate_writers = [
+                    writer
+                    for writer in sorted(writers_by_bucket.get(input_bucket, set()))
+                    if component_hash_values.get(writer, "")
+                ]
+            if not candidate_writers:
+                continue
 
+            upstream_source_component = candidate_writers[0]
+            upstream_hash = component_hash_values.get(upstream_source_component, "")
+            component_input_lineage.setdefault(
+                reader,
+                {
+                    "hash": upstream_hash,
+                    "source_component": upstream_source_component,
+                    "source_bucket": input_bucket,
+                    "source_path": input_path,
+                },
+            )
+            break
+
+    for relationship in current_base_manifest.get("relationships", []):
+        source = relationship.get("from", "")
+        target = relationship.get("to", "")
+        rel_type = relationship.get("type")
+        rel_path = (relationship.get("properties", {}) or {}).get("path", "")
+
+        if rel_type != "WRITES_TO":
+            continue
+        if not source.startswith(("job:", "service:")) or not target.startswith("bucket:"):
+            continue
+
+        source_hash_key = component_hash_keys.get(source)
+        source_hash_value = component_hash_values.get(source, "")
+        if not source_hash_key or not source_hash_value:
+            continue
+
+        input_lineage = component_input_lineage.get(source, {})
+        input_hash = input_lineage.get("hash", "")
+        folder_hash_value = build_pipeline_output_hash(input_hash, source_hash_value)
+        bucket_name = bucket_name_by_key.get(target, target.split(":", 1)[1])
+        folder_hash_node_id = f"{target}|{rel_path}|{folder_hash_value}"
+        folder_hash_key = folder_hash_keys.get(folder_hash_node_id, "")
+        if not folder_hash_key:
+            folder_hash_node = build_folder_hash_node(target, bucket_name, rel_path, folder_hash_value, "pipeline")
+            dynamic_nodes.append(folder_hash_node)
+            folder_hash_key = folder_hash_node["key"]
+            folder_hash_keys[folder_hash_node_id] = folder_hash_key
+            folder_hashes_by_component.setdefault(source, set()).add(folder_hash_key)
+            folder_hashes_by_component_path.setdefault((source, target, rel_path), set()).add(folder_hash_key)
+            dynamic_relationships.append(
+                {
+                    "from": target,
+                    "to": folder_hash_key,
+                    "type": "HAS_HASH",
+                    "properties": {
+                        "hash_type": "pipeline",
+                        "hash_value": folder_hash_value,
+                        "path": rel_path,
+                    },
+                }
+            )
+
+        producer_edge_key = (folder_hash_key, source_hash_key)
+        if producer_edge_key not in folder_hash_producer_edges:
+            folder_hash_producer_edges.add(producer_edge_key)
+            dynamic_relationships.append(
+                {
+                    "from": folder_hash_key,
+                    "to": source_hash_key,
+                    "type": "PRODUCED_BY",
+                    "properties": {
+                        "bucket": target,
+                        "path": rel_path,
+                        "source_hash": input_hash,
+                        "content_hash": source_hash_value,
+                        "source_relation": "pipeline_output_hash",
+                    },
+                }
+            )
+
+        source_component = input_lineage.get("source_component", "")
+        source_bucket = input_lineage.get("source_bucket", "")
+        source_path = input_lineage.get("source_path", "")
+        if input_hash and source_component:
+            upstream_folder_hashes = sorted(
+                folder_hashes_by_component_path.get((source_component, source_bucket, source_path), set())
+            )
+            if not upstream_folder_hashes:
+                upstream_folder_hashes = sorted(folder_hashes_by_component.get(source_component, set()))
+            for upstream_folder_hash_key in upstream_folder_hashes:
+                lineage_edge_key = (folder_hash_key, upstream_folder_hash_key)
+                if lineage_edge_key in folder_source_edges:
+                    continue
+                folder_source_edges.add(lineage_edge_key)
                 dynamic_relationships.append(
                     {
-                        "from": source_hash_key,
-                        "to": bucket_hash_key,
-                        "type": rel_type,
+                        "from": folder_hash_key,
+                        "to": upstream_folder_hash_key,
+                        "type": "DEPENDS_ON_DATA_FROM",
                         "properties": {
-                            **relationship.get("properties", {}),
-                            "source_relation": "content_hash",
+                            "source_relation": "folder_hash_lineage",
+                            "source_hash": input_hash,
+                            "source_bucket": source_bucket,
+                            "source_path": source_path,
                         },
                     }
                 )
-
-    for bucket_key in sorted(set(writers_by_bucket) | set(readers_by_bucket)):
-        for writer in sorted(writers_by_bucket.get(bucket_key, set())):
-            writer_hash_key = component_hash_keys.get(writer)
-            if writer_hash_key:
-                dynamic_relationships.append(
-                    {
-                        "from": writer_hash_key,
-                        "to": bucket_key,
-                        "type": "WRITES_TO",
-                        "properties": {
-                            "source_relation": "content_hash",
-                        },
-                    }
-                )
-        for reader in sorted(readers_by_bucket.get(bucket_key, set())):
-            reader_hash_key = component_hash_keys.get(reader)
-            if reader_hash_key:
-                dynamic_relationships.append(
-                    {
-                        "from": reader_hash_key,
-                        "to": bucket_key,
-                        "type": "READS_FROM",
-                        "properties": {
-                            "source_relation": "content_hash",
-                        },
-                    }
-                )
-        for writer in sorted(writers_by_bucket.get(bucket_key, set())):
-            for reader in sorted(readers_by_bucket.get(bucket_key, set())):
-                writer_hash_key = component_hash_keys.get(writer)
-                reader_hash_key = component_hash_keys.get(reader)
-                if reader_hash_key and writer_hash_key and reader_hash_key != writer_hash_key:
-                    dynamic_relationships.append(
-                        {
-                            "from": reader_hash_key,
-                            "to": writer_hash_key,
-                            "type": "DEPENDS_ON_DATA_FROM",
-                            "properties": {
-                                "bucket": bucket_key,
-                                "source_relation": "content_hash",
-                            },
-                        }
-                    )
 
     return {
         "nodes": current_base_manifest.get("nodes", []) + hash_nodes + dynamic_nodes,

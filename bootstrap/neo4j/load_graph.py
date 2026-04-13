@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import ssl
 from pathlib import Path
 import sys
 from urllib import error, parse, request
@@ -41,6 +42,12 @@ def env_flag(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def build_ssl_context() -> ssl.SSLContext | None:
+    if env_flag("NEO4J_SKIP_SSL_VERIFY", default=False):
+        return ssl._create_unverified_context()
+    return None
 
 
 def load_config() -> dict:
@@ -161,9 +168,10 @@ def run_cypher(base_uri: str, user: str, password: str, database: str, statement
             "Accept": "application/json",
         },
     )
+    ssl_context = build_ssl_context()
 
     try:
-        with request.urlopen(req, timeout=30) as response:
+        with request.urlopen(req, timeout=30, context=ssl_context) as response:
             raw = response.read().decode("utf-8")
     except error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
@@ -228,6 +236,15 @@ def load_graph(config: dict, manifest: dict) -> None:
             },
         )
 
+        # FolderHash nodes are dynamic and should always reflect the current manifest.
+        run_cypher(
+            base_uri,
+            config["user"],
+            config["password"],
+            config["database"],
+            "MATCH (n:BucketHash) DETACH DELETE n",
+        )
+
     for node in manifest.get("nodes", []):
         run_cypher(
             base_uri,
@@ -264,9 +281,16 @@ def load_graph(config: dict, manifest: dict) -> None:
                 config["password"],
                 config["database"],
                 """
-                MATCH (component {key: $component_key})-[r:HAS_HASH]->(old:DeploymentHash)
                 MATCH (new:DeploymentHash {key: $new_key})
+                MATCH (component {key: $component_key})-[:HAS_HASH]->(old:DeploymentHash)
                 WHERE old.key <> new.key
+                  AND old.component_key = $component_key
+                  AND NOT EXISTS {
+                    MATCH (:DeploymentHash {component_key: $component_key})-[:PREVIOUS_HASH]->(old)
+                  }
+                WITH new, old
+                ORDER BY old.updated_at DESC
+                LIMIT 1
                 MERGE (new)-[prev:PREVIOUS_HASH]->(old)
                 SET prev.updated_at = datetime()
                 """,
@@ -276,23 +300,47 @@ def load_graph(config: dict, manifest: dict) -> None:
                 },
             )
 
-        # Remove stale hash relationships so only manifest-current links remain,
-        # while preserving PREVIOUS_HASH lineage edges.
-        run_cypher(
-            base_uri,
-            config["user"],
-            config["password"],
-            config["database"],
-            """
-            MATCH (a)-[r]->(b)
-            WHERE (a:DeploymentHash OR b:DeploymentHash)
-              AND type(r) <> 'PREVIOUS_HASH'
-            DELETE r
-            """,
-        )
+        # Preserve FolderHash lineage: when a folder path receives a new hash,
+        # link new -> previous and keep historical relationships intact.
+        for node in manifest.get("nodes", []):
+            if node.get("label") != "FolderHash":
+                continue
+
+            props = node.get("properties", {})
+            new_key = node.get("key")
+            bucket_key = props.get("bucket_key")
+            folder_path = props.get("folder_path")
+            if not new_key or not bucket_key:
+                continue
+
+            run_cypher(
+                base_uri,
+                config["user"],
+                config["password"],
+                config["database"],
+                """
+                MATCH (new:FolderHash {key: $new_key})
+                MATCH (old:FolderHash {bucket_key: $bucket_key, folder_path: $folder_path})
+                WHERE old.key <> new.key
+                  AND NOT EXISTS {
+                    MATCH (:FolderHash {bucket_key: $bucket_key, folder_path: $folder_path})
+                          -[:PREVIOUS_FOLDER_HASH]->(old)
+                  }
+                WITH new, old
+                ORDER BY old.updated_at DESC
+                LIMIT 1
+                MERGE (new)-[prev:PREVIOUS_FOLDER_HASH]->(old)
+                SET prev.updated_at = datetime()
+                """,
+                {
+                    "new_key": new_key,
+                    "bucket_key": bucket_key,
+                    "folder_path": folder_path,
+                },
+            )
 
     # Enforce latest component -> hash links for all current DeploymentHash nodes.
-    # If hash already exists, this relinks to it; if hash is new, node was created above.
+    # If hash already exists, this ensures the link exists. Historical links are preserved.
     for node in manifest.get("nodes", []):
         if node.get("label") != "DeploymentHash":
             continue
@@ -301,6 +349,7 @@ def load_graph(config: dict, manifest: dict) -> None:
         component_key = props.get("component_key")
         hash_key = node.get("key")
         hash_value = props.get("hash_value", "")
+        hash_type = props.get("hash_type", "content")
         if not component_key or not hash_key:
             continue
 
@@ -312,16 +361,15 @@ def load_graph(config: dict, manifest: dict) -> None:
             """
             MATCH (component {key: $component_key})
             MATCH (hash:DeploymentHash {key: $hash_key})
-            OPTIONAL MATCH (component)-[old_rel:HAS_HASH]->(:DeploymentHash)
-            DELETE old_rel
             MERGE (component)-[r:HAS_HASH]->(hash)
-            SET r.hash_type = 'content'
+            SET r.hash_type = $hash_type
             SET r.hash_value = $hash_value
             SET r.updated_at = datetime()
             """,
             {
                 "component_key": component_key,
                 "hash_key": hash_key,
+                "hash_type": hash_type,
                 "hash_value": hash_value,
             },
         )
@@ -349,8 +397,9 @@ def load_graph(config: dict, manifest: dict) -> None:
     )
 
     for relationship in manifest.get("relationships", []):
-        # HAS_HASH is managed explicitly above to guarantee one latest hash per component.
-        if relationship.get("type") == "HAS_HASH":
+        # Component HAS_HASH is managed explicitly above to guarantee one latest hash per component.
+        # Keep other HAS_HASH relationships (e.g. bucket -> FolderHash) from the manifest.
+        if relationship.get("type") == "HAS_HASH" and relationship.get("from", "").startswith(("job:", "service:")):
             continue
 
         run_cypher(

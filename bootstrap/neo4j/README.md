@@ -21,6 +21,9 @@ The graph includes:
 - `requirements.txt`: Python dependency for the Neo4j driver
 - `queries/*.cypher`: reusable Cypher queries for pipeline and hash analysis
 	- includes `14_upstream_latest_hash_lookup.cypher` for runtime latest-hash resolution
+	- includes `15_bucket_hash_producer_lookup.cypher` for folder hash to deployment hash lookup
+	- includes `17_deployment_and_folder_history_linkage.cypher` for combined deployment/folder hash history linkage view
+	- includes `18_jobs_services_connections.cypher` for job-service connectivity via direct and bucket dataflow links
 
 ## Setup
 
@@ -47,13 +50,32 @@ NEO4J_DATABASE=neo4j
 NEO4J_CLEAN=true
 NEO4J_MANIFEST_PATH=bootstrap/neo4j/generated/terraform_post_action_graph.json
 NEO4J_AUTO_LOAD=true
+NEO4J_SKIP_SSL_VERIFY=false
 ```
+
+If your Neo4j endpoint uses a self-signed certificate, set `NEO4J_SKIP_SSL_VERIFY=true` for local bootstrap runs or use a `neo4j+ssc://` / `bolt+ssc://` URI.
 
 Then run:
 
 ```bash
 python3 load_graph.py
 ```
+
+## Restart The Graph (Clean DB)
+
+Use this when you want to reset the Neo4j database and remove all previous graph history before loading the current manifest.
+
+```bash
+python3 restart_graph.py
+```
+
+From repository root, you can also run:
+
+```bash
+make restart-graph
+```
+
+This forces `NEO4J_CLEAN=true` for the run and then reloads the manifest configured by `NEO4J_MANIFEST_PATH`.
 
 The loader reads the repository `.env` file by default. To use a different env file, set `BOOTSTRAP_ENV_FILE=/path/to/.env` before running it.
 
@@ -68,6 +90,7 @@ That generated file extends the base system graph with:
 - `PREVIOUS_HASH` edges from each new hash node to the prior active hash node
 - `deployment_source`, `updater`, and `deployment_ref` stored on the hash node
 - direct `READS_FROM` and `WRITES_TO` edges between content-hash nodes and storage buckets
+- `PRODUCED_BY` edges from each folder hash back to the deployment hash that generated it
 - `DEPENDS_ON_DATA_FROM` edges between content-hash nodes using the existing bucket-based data flow
 
 ## Runtime Hash Contract

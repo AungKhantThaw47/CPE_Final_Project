@@ -6,7 +6,7 @@ TF_PLAN_FILE ?= tfplan
 AUTO_APPROVE ?= false
 ENV_FILE ?= .env
 
-.PHONY: help check-tools init fmt validate plan apply deploy destroy output clean post-apply
+.PHONY: help check-tools init fmt validate plan apply deploy destroy output clean post-apply restart-graph
 
 help:
 	@echo "Terraform Make targets"
@@ -21,6 +21,7 @@ help:
 	@echo "  make destroy   - Destroy Terraform-managed resources"
 	@echo "  make output    - Show Terraform outputs"
 	@echo "  make clean     - Remove local plan file"
+	@echo "  make restart-graph - Clean and reload Neo4j graph from manifest"
 	@echo ""
 	@echo "Variables:"
 	@echo "  TF=<binary>                (default: terraform)"
@@ -134,3 +135,7 @@ clean:
 
 post-apply:
 	@bash scripts/terraform_post_action.sh
+
+restart-graph: check-tools
+	@set -a; [ ! -f "$(ENV_FILE)" ] || source "$(ENV_FILE)"; set +a; \
+	python3 bootstrap/neo4j/restart_graph.py

@@ -6,7 +6,7 @@ const fs = require("fs");
 const { uploadTextToGCS, uploadJSONToGCS } = require("./utils/gcs_utils");
 
 const CONTENT_HASH = process.env.CONTENT_HASH || "content_hash_placeholder";
-const url = "https://www.dvb.no/category/8/news?page=1";
+const url = "https://burmese.dvb.no/categories/media-news?page=2";
 const defaultTargetDate = new Date();
 defaultTargetDate.setDate(defaultTargetDate.getDate() - 1); // yesterday
 defaultTargetDate.setHours(0, 0, 0, 0);

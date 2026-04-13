@@ -1,7 +1,13 @@
 { pkgs ? import (builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz") { config.allowUnfree = true; } }:
 
 let
-  python = pkgs.python312;
+  python = pkgs.python312.override {
+    packageOverrides = self: super: {
+      twisted = super.twisted.overridePythonAttrs (old: {
+        doCheck = false;
+      });
+    };
+  };
 
   # Base Python environment
   pythonEnv = python.withPackages (ps: with ps; [
@@ -10,8 +16,6 @@ let
     wheel
     virtualenv
     huggingface-hub
-    jupyterlab
-    ipykernel
   ]);
 
   themeFile = "${pkgs.oh-my-posh}/share/oh-my-posh/themes/agnoster.omp.json";

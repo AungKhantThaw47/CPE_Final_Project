@@ -314,7 +314,7 @@ if __name__ == "__main__":
     target_bucket = source_bucket.replace('-crawler-data', '-cleaned-crawler-data')
     
     print("=" * 60)
-    print("DVB Article Cleaner - Pipeline Mode")
+    print("DVB Article Cleaner - Pipeline Mode Test")
     print("=" * 60)
     print(f"Configuration:")
     print(f"  Source bucket: {source_bucket}")

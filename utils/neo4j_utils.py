@@ -1,6 +1,7 @@
 """Shared Neo4j utility helpers for runtime hash resolution."""
 
 import os
+import ssl
 from typing import Optional
 
 from neo4j import GraphDatabase
@@ -20,7 +21,11 @@ def query_latest_hash_from_neo4j(
     LIMIT 1
     """
 
-    with GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password)) as driver:
+    driver_kwargs = {"auth": (neo4j_user, neo4j_password)}
+    if os.environ.get("NEO4J_SKIP_SSL_VERIFY", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        driver_kwargs["ssl_context"] = ssl._create_unverified_context()
+
+    with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
         with driver.session(database=neo4j_database) as session:
             record = session.run(query, component_key=component_key).single()
             if not record:
