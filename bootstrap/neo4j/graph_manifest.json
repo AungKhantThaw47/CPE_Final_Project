@@ -45,48 +45,12 @@
       }
     },
     {
-      "key": "bucket:crawler-data",
+      "key": "bucket:pipeline-data",
       "label": "StorageBucket",
       "properties": {
-        "name": "crawler-data",
-        "retention_days": 90,
-        "purpose": "raw DVB articles"
-      }
-    },
-    {
-      "key": "bucket:cleaned-crawler-data",
-      "label": "StorageBucket",
-      "properties": {
-        "name": "cleaned-crawler-data",
-        "retention_days": 90,
-        "purpose": "cleaned articles"
-      }
-    },
-    {
-      "key": "bucket:crisis-crawler-data",
-      "label": "StorageBucket",
-      "properties": {
-        "name": "crisis-crawler-data",
+        "name": "pipeline-data",
         "retention_days": 180,
-        "purpose": "pending, crisis, and annotated articles"
-      }
-    },
-    {
-      "key": "bucket:llm-extraction",
-      "label": "StorageBucket",
-      "properties": {
-        "name": "llm-extraction",
-        "retention_days": -1,
-        "purpose": "structured extracted crisis events"
-      }
-    },
-    {
-      "key": "bucket:gpu-job-outputs",
-      "label": "StorageBucket",
-      "properties": {
-        "name": "gpu-job-outputs",
-        "retention_days": 30,
-        "purpose": "GPU batch outputs"
+        "purpose": "shared pipeline data with folder-separated stages"
       }
     },
     {
@@ -278,31 +242,7 @@
     },
     {
       "from": "project:cpe-final-project",
-      "to": "bucket:crawler-data",
-      "type": "OWNS",
-      "properties": {}
-    },
-    {
-      "from": "project:cpe-final-project",
-      "to": "bucket:cleaned-crawler-data",
-      "type": "OWNS",
-      "properties": {}
-    },
-    {
-      "from": "project:cpe-final-project",
-      "to": "bucket:crisis-crawler-data",
-      "type": "OWNS",
-      "properties": {}
-    },
-    {
-      "from": "project:cpe-final-project",
-      "to": "bucket:llm-extraction",
-      "type": "OWNS",
-      "properties": {}
-    },
-    {
-      "from": "project:cpe-final-project",
-      "to": "bucket:gpu-job-outputs",
+      "to": "bucket:pipeline-data",
       "type": "OWNS",
       "properties": {}
     },
@@ -434,55 +374,55 @@
     },
     {
       "from": "job:dvb-crawler-job",
-      "to": "bucket:crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
-        "path": "raw_articles/"
+        "path": "dvb/"
       }
     },
     {
       "from": "job:dvb-text-cleaner-job",
-      "to": "bucket:crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "READS_FROM",
       "properties": {
-        "path": "raw_articles/"
+        "path": "dvb/"
       }
     },
     {
       "from": "job:dvb-text-cleaner-job",
-      "to": "bucket:cleaned-crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
-        "path": "cleaned_articles/"
+        "path": "dvb_cleaned/"
       }
     },
     {
       "from": "job:crisis-classifier-job",
-      "to": "bucket:cleaned-crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "READS_FROM",
       "properties": {
-        "path": "cleaned_articles/"
+        "path": "dvb_cleaned/"
       }
     },
     {
       "from": "job:crisis-classifier-job",
-      "to": "bucket:crisis-crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
-        "path": "pending_articles/"
+        "path": "pending_review/"
       }
     },
     {
       "from": "service:crisis-admin",
-      "to": "bucket:crisis-crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "READS_FROM",
       "properties": {
-        "path": "pending_articles/"
+        "path": "pending_review/"
       }
     },
     {
       "from": "service:crisis-admin",
-      "to": "bucket:crisis-crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
         "path": "crisis_articles/"
@@ -490,7 +430,7 @@
     },
     {
       "from": "job:dvb-annotator-job",
-      "to": "bucket:crisis-crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "READS_FROM",
       "properties": {
         "path": "crisis_articles/"
@@ -498,7 +438,7 @@
     },
     {
       "from": "job:dvb-annotator-job",
-      "to": "bucket:crisis-crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
         "path": "annotated_articles/"
@@ -506,7 +446,7 @@
     },
     {
       "from": "job:dvb-extractor-job",
-      "to": "bucket:crisis-crawler-data",
+      "to": "bucket:pipeline-data",
       "type": "READS_FROM",
       "properties": {
         "path": "annotated_articles/"
@@ -514,7 +454,7 @@
     },
     {
       "from": "job:dvb-extractor-job",
-      "to": "bucket:llm-extraction",
+      "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
         "path": "extracted_events/"
@@ -534,9 +474,11 @@
     },
     {
       "from": "job:gpu-batch-job",
-      "to": "bucket:gpu-job-outputs",
+      "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
-      "properties": {}
+      "properties": {
+        "path": "gpu_outputs/"
+      }
     },
     {
       "from": "scheduler:hourly-data-processor",

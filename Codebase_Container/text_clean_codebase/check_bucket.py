@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Quick script to check what's in the crawler bucket."""
 
+import os
 from google.cloud import storage
 
-bucket_name = "cpe-final-project-crawler-data"
+project_id = os.environ.get("PROJECT_ID", "cpe-final-project")
+bucket_name = os.environ.get("BUCKET_NAME", f"{project_id}-pipeline-data")
 
 client = storage.Client()
 bucket = client.bucket(bucket_name)

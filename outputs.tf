@@ -76,8 +76,8 @@ output "docker_repository" {
 }
 
 output "gcs_output_bucket" {
-  description = "GCS bucket for job outputs"
-  value       = google_storage_bucket.job_outputs.name
+  description = "Shared GCS bucket for pipeline data"
+  value       = google_storage_bucket.pipeline_data.name
 }
 
 output "mlflow_artifacts_bucket" {
@@ -91,12 +91,8 @@ output "active_graph_keys" {
     [
       "project:${var.project_id}",
       "registry:artifact-registry",
-      "bucket:gpu-job-outputs",
+      "bucket:pipeline-data",
       "bucket:mlflow-artifacts",
-      "bucket:crawler-data",
-      "bucket:cleaned-crawler-data",
-      "bucket:crisis-crawler-data",
-      "bucket:llm-extraction",
       "workflow:daily-pipeline",
       "scheduler:daily-pipeline-trigger"
     ],

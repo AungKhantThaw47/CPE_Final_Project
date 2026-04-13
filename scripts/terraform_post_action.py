@@ -314,6 +314,7 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
     folder_hash_keys = {}
     folder_hashes_by_component = {}
     folder_hashes_by_component_path = {}
+    folder_hash_value_by_key = {}
     folder_hash_producer_edges = set()
     folder_source_edges = set()
 
@@ -405,11 +406,9 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                 continue
 
             upstream_source_component = candidate_writers[0]
-            upstream_hash = component_hash_values.get(upstream_source_component, "")
             component_input_lineage.setdefault(
                 reader,
                 {
-                    "hash": upstream_hash,
                     "source_component": upstream_source_component,
                     "source_bucket": input_bucket,
                     "source_path": input_path,
@@ -434,7 +433,24 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
             continue
 
         input_lineage = component_input_lineage.get(source, {})
-        input_hash = input_lineage.get("hash", "")
+        source_component = input_lineage.get("source_component", "")
+        source_bucket = input_lineage.get("source_bucket", "")
+        source_path = input_lineage.get("source_path", "")
+
+        upstream_folder_hashes = []
+        input_hash = ""
+        if source_component:
+            upstream_folder_hashes = sorted(
+                folder_hashes_by_component_path.get((source_component, source_bucket, source_path), set())
+            )
+            if not upstream_folder_hashes:
+                upstream_folder_hashes = sorted(folder_hashes_by_component.get(source_component, set()))
+            if upstream_folder_hashes:
+                input_hash = folder_hash_value_by_key.get(upstream_folder_hashes[-1], "")
+
+        if not input_hash and source_component:
+            input_hash = component_hash_values.get(source_component, "")
+
         folder_hash_value = build_pipeline_output_hash(input_hash, source_hash_value)
         bucket_name = bucket_name_by_key.get(target, target.split(":", 1)[1])
         folder_hash_node_id = f"{target}|{rel_path}|{folder_hash_value}"
@@ -444,6 +460,7 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
             nodes.append(folder_hash_node)
             folder_hash_key = folder_hash_node["key"]
             folder_hash_keys[folder_hash_node_id] = folder_hash_key
+            folder_hash_value_by_key[folder_hash_key] = folder_hash_value
             folder_hashes_by_component.setdefault(source, set()).add(folder_hash_key)
             folder_hashes_by_component_path.setdefault((source, target, rel_path), set()).add(folder_hash_key)
             relationships.append(
@@ -477,9 +494,6 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                 }
             )
 
-        source_component = input_lineage.get("source_component", "")
-        source_bucket = input_lineage.get("source_bucket", "")
-        source_path = input_lineage.get("source_path", "")
         if input_hash and source_component:
             upstream_folder_hashes = sorted(
                 folder_hashes_by_component_path.get((source_component, source_bucket, source_path), set())
@@ -721,6 +735,7 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
     folder_hash_keys = {}
     folder_hashes_by_component = {}
     folder_hashes_by_component_path = {}
+    folder_hash_value_by_key = {}
     folder_hash_producer_edges = set()
     folder_source_edges = set()
 
@@ -763,11 +778,9 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
                 continue
 
             upstream_source_component = candidate_writers[0]
-            upstream_hash = component_hash_values.get(upstream_source_component, "")
             component_input_lineage.setdefault(
                 reader,
                 {
-                    "hash": upstream_hash,
                     "source_component": upstream_source_component,
                     "source_bucket": input_bucket,
                     "source_path": input_path,
@@ -792,7 +805,24 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
             continue
 
         input_lineage = component_input_lineage.get(source, {})
-        input_hash = input_lineage.get("hash", "")
+        source_component = input_lineage.get("source_component", "")
+        source_bucket = input_lineage.get("source_bucket", "")
+        source_path = input_lineage.get("source_path", "")
+
+        upstream_folder_hashes = []
+        input_hash = ""
+        if source_component:
+            upstream_folder_hashes = sorted(
+                folder_hashes_by_component_path.get((source_component, source_bucket, source_path), set())
+            )
+            if not upstream_folder_hashes:
+                upstream_folder_hashes = sorted(folder_hashes_by_component.get(source_component, set()))
+            if upstream_folder_hashes:
+                input_hash = folder_hash_value_by_key.get(upstream_folder_hashes[-1], "")
+
+        if not input_hash and source_component:
+            input_hash = component_hash_values.get(source_component, "")
+
         folder_hash_value = build_pipeline_output_hash(input_hash, source_hash_value)
         bucket_name = bucket_name_by_key.get(target, target.split(":", 1)[1])
         folder_hash_node_id = f"{target}|{rel_path}|{folder_hash_value}"
@@ -802,6 +832,7 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
             dynamic_nodes.append(folder_hash_node)
             folder_hash_key = folder_hash_node["key"]
             folder_hash_keys[folder_hash_node_id] = folder_hash_key
+            folder_hash_value_by_key[folder_hash_key] = folder_hash_value
             folder_hashes_by_component.setdefault(source, set()).add(folder_hash_key)
             folder_hashes_by_component_path.setdefault((source, target, rel_path), set()).add(folder_hash_key)
             dynamic_relationships.append(
@@ -835,9 +866,6 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
                 }
             )
 
-        source_component = input_lineage.get("source_component", "")
-        source_bucket = input_lineage.get("source_bucket", "")
-        source_path = input_lineage.get("source_path", "")
         if input_hash and source_component:
             upstream_folder_hashes = sorted(
                 folder_hashes_by_component_path.get((source_component, source_bucket, source_path), set())

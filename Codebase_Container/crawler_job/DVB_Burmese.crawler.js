@@ -360,3 +360,4 @@ if (fs.existsSync("DVB_Burmese.json")) {
 
 console.log(`Starting crawl for date range: ${startDateStr} to ${endDateStr}`);
 scrapePage(url, url, 1);
+console.log("Test");

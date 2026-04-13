@@ -301,7 +301,7 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
 
 if __name__ == "__main__":
     # Pipeline mode - reads from GCS_BUCKET environment variable
-    # Automatically derives cleaned bucket name
+    # Uses same bucket by default (single-bucket layout), with optional override.
     source_bucket = os.environ.get('GCS_BUCKET')
     date_str = os.environ.get('PROCESS_DATE')
     prefix_path = os.environ.get('GCS_PREFIX', 'dvb')
@@ -310,8 +310,7 @@ if __name__ == "__main__":
         print("❌ Error: GCS_BUCKET environment variable not set")
         exit(1)
     
-    # Derive target bucket: crawler-data -> cleaned-crawler-data
-    target_bucket = source_bucket.replace('-crawler-data', '-cleaned-crawler-data')
+    target_bucket = os.environ.get('GCS_CLEANED_BUCKET', source_bucket)
     
     print("=" * 60)
     print("DVB Article Cleaner - Pipeline Mode Test")

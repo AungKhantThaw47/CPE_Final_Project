@@ -17,7 +17,7 @@ locals {
   is_windows_env = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
   is_windows     = local.is_windows_env
   image_path     = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
-  bucket_name    = "${var.project_id}-gpu-job-outputs"
+  pipeline_data_bucket_name = "${var.project_id}-pipeline-data"
 
   # Auto-computed deployment context (use var overrides if provided, otherwise auto-detect)
   actual_local_username  = var.local_username != "" ? var.local_username : data.external.username.result.username
@@ -39,7 +39,7 @@ locals {
     #   memory_limit     = "16Gi"
     #   timeout          = "900s"
     #   environment_variables = {
-    #     GCS_BUCKET = google_storage_bucket.job_outputs.name
+    #     GCS_BUCKET = google_storage_bucket.pipeline_data.name
     #     JOB_NAME   = var.job_name
     #   }
     #   service_account_roles = [
@@ -77,7 +77,7 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        GCS_BUCKET = google_storage_bucket.crawler_data.name
+        GCS_BUCKET = google_storage_bucket.pipeline_data.name
         GCP_REGION = var.region
       }
       service_account_roles = [
@@ -98,7 +98,7 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        GCS_BUCKET    = google_storage_bucket.crawler_data.name
+        GCS_BUCKET    = google_storage_bucket.pipeline_data.name
         NEO4J_URI     = var.neo4j_uri
         NEO4J_USER    = var.neo4j_user
         NEO4J_PASSWORD = var.neo4j_password
@@ -122,8 +122,8 @@ locals {
       memory_limit     = "16Gi"
       timeout          = "3600s" # 1 hour max for large batches
       environment_variables = {
-        GCS_BUCKET     = google_storage_bucket.cleaned_crawler_data.name
-        CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
+        GCS_BUCKET     = google_storage_bucket.pipeline_data.name
+        CRISIS_BUCKET  = google_storage_bucket.pipeline_data.name
         HF_TOKEN       = var.hf_token
         NEO4J_URI      = var.neo4j_uri
         NEO4J_USER     = var.neo4j_user
@@ -148,7 +148,7 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
+        CRISIS_BUCKET  = google_storage_bucket.pipeline_data.name
         GEMINI_API_KEY = var.gemini_api_key
       }
       service_account_roles = [
@@ -169,8 +169,8 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        CRISIS_BUCKET     = google_storage_bucket.crisis_crawler_data.name
-        EXTRACTION_BUCKET = google_storage_bucket.llm_extraction.name
+        CRISIS_BUCKET     = google_storage_bucket.pipeline_data.name
+        EXTRACTION_BUCKET = google_storage_bucket.pipeline_data.name
         GEMINI_API_KEY    = var.gemini_api_key
       }
       service_account_roles = [
@@ -219,7 +219,7 @@ locals {
       port            = 8080
       allow_public    = true
       environment_variables = {
-        CRISIS_BUCKET  = google_storage_bucket.crisis_crawler_data.name
+        CRISIS_BUCKET  = google_storage_bucket.pipeline_data.name
         NEO4J_URI      = var.neo4j_uri
         NEO4J_USER     = var.neo4j_user
         NEO4J_PASSWORD = var.neo4j_password
@@ -268,17 +268,17 @@ resource "google_artifact_registry_repository" "docker_repo" {
 }
 
 # ============================================
-# GCS Bucket for Job Outputs
+# Shared GCS Bucket for Pipeline Data
 # ============================================
-resource "google_storage_bucket" "job_outputs" {
-  name                        = local.bucket_name
+resource "google_storage_bucket" "pipeline_data" {
+  name                        = local.pipeline_data_bucket_name
   location                    = var.region
   force_destroy               = true
   uniform_bucket_level_access = true
 
   lifecycle_rule {
     condition {
-      age = 30
+      age = 180
     }
     action {
       type = "Delete"
@@ -305,81 +305,6 @@ resource "google_storage_bucket" "mlflow_artifacts" {
   }
 }
 
-# ============================================
-# GCS Bucket for Crawler Data
-# ============================================
-resource "google_storage_bucket" "crawler_data" {
-  name                        = "${var.project_id}-crawler-data"
-  location                    = var.region
-  force_destroy               = true
-  uniform_bucket_level_access = true
-
-  lifecycle_rule {
-    condition {
-      age = 90 # Keep crawler data for 90 days
-    }
-    action {
-      type = "Delete"
-    }
-  }
-}
-
-# ============================================
-# GCS Bucket for Cleaned Crawler Data
-# ============================================
-resource "google_storage_bucket" "cleaned_crawler_data" {
-  name                        = "${var.project_id}-cleaned-crawler-data"
-  location                    = var.region
-  force_destroy               = true
-  uniform_bucket_level_access = true
-
-  lifecycle_rule {
-    condition {
-      age = 90 # Keep cleaned data for 90 days
-    }
-    action {
-      type = "Delete"
-    }
-  }
-}
-
-# ============================================
-# GCS Bucket for Crisis Articles
-# ============================================
-resource "google_storage_bucket" "crisis_crawler_data" {
-  name                        = "${var.project_id}-crisis-crawler-data"
-  location                    = var.region
-  force_destroy               = true
-  uniform_bucket_level_access = true
-
-  lifecycle_rule {
-    condition {
-      age = 180 # Keep crisis articles longer (6 months)
-    }
-    action {
-      type = "Delete"
-    }
-  }
-}
-
-# ============================================
-# GCS Bucket for LLM Extraction Output
-# ============================================
-resource "google_storage_bucket" "llm_extraction" {
-  name                        = "${var.project_id}-llm-extraction"
-  location                    = var.region
-  force_destroy               = true
-  uniform_bucket_level_access = true
-
-  lifecycle_rule {
-    condition {
-      age = 180
-    }
-    action {
-      type = "Delete"
-    }
-  }
-}
 
 # ============================================
 # Service Accounts
@@ -434,8 +359,7 @@ module "jobs" {
   depends_on = [
     google_project_service.apis,
     google_artifact_registry_repository.docker_repo,
-    google_storage_bucket.job_outputs,
-    google_storage_bucket.crawler_data
+    google_storage_bucket.pipeline_data
   ]
 }
 

@@ -6,9 +6,9 @@ from google import genai
 # ===============================
 # PUT YOUR VALUES HERE
 # ===============================
-PROJECT_ID = "cpe-final-project"
-BUCKET_NAME = "cpe-final-project-crisis-crawler-data"
-PREFIX = "crisis_articles/2026-02-26/"
+PROJECT_ID = os.environ.get("PROJECT_ID", "cpe-final-project")
+BUCKET_NAME = os.environ.get("BUCKET_NAME", f"{PROJECT_ID}-pipeline-data")
+PREFIX = os.environ.get("PREFIX", "crisis_articles/")
 
 
 # ===============================
