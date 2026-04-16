@@ -31,12 +31,13 @@ main:
     - set_crawler_overrides:
         assign:
           - crawler_overrides:
-              containerOverrides:
-                - env:
-                    - name: "START_DATE"
-                      value: ${crawl_start_date}
-                    - name: "END_DATE"
-                      value: ${crawl_end_date}
+              overrides:
+                containerOverrides:
+                  - env:
+                      - name: "START_DATE"
+                        value: ${crawl_start_date}
+                      - name: "END_DATE"
+                        value: ${crawl_end_date}
 
     - log_start:
         call: sys.log
