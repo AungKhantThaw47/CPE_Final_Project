@@ -6,7 +6,7 @@ const fs = require("fs");
 const { uploadTextToGCS, uploadJSONToGCS } = require("./utils/gcs_utils");
 
 const CONTENT_HASH = process.env.CONTENT_HASH || "content_hash_placeholder";
-const url = "https://burmese.dvb.no/categories/media-news?page=2";
+const url = "https://burmese.dvb.no/categories/news?page=1";
 const defaultTargetDate = new Date();
 defaultTargetDate.setDate(defaultTargetDate.getDate() - 1); // yesterday
 defaultTargetDate.setHours(0, 0, 0, 0);
@@ -202,7 +202,7 @@ async function scrapePage(baseUrl, url, page) {
         let pagePostCount = 0;
         $("a.block.hover\\:text-blue-600").each((i, el) => {
             const title = $(el).find("div.text-sm").first().text().trim();
-            const dateStr = $(el).find("div.text-gray-500 div").first().text().trim();
+            const dateStr = $(el).find("div.text-gray-500").first().text().trim();
             const link = $(el).attr("href");
 
             if (title && dateStr && link) {
@@ -214,7 +214,7 @@ async function scrapePage(baseUrl, url, page) {
                     postdata.push({
                         title,
                         date: new Date(dateFormat).toISOString(),
-                        link: link.startsWith('http') ? link : `https://www.dvb.no${link}`
+                        link: link.startsWith('http') ? link : `https://burmese.dvb.no${link}`
                     });
                     pagePostCount++;
                 } else if (postDate < startDate) {
@@ -227,8 +227,8 @@ async function scrapePage(baseUrl, url, page) {
         console.log(`   Found ${pagePostCount} in-range articles on page ${page}`);
         console.log(`   Total collected so far: ${postdata.length} articles`);
 
-        // Get the next page URL
-        const nextPageLink = $('div.pagination div.cursor-pointer').last();
+        // Get the next page URL — look for an anchor pointing to the next page number
+        const nextPageLink = $(`a[href*="?page=${page + 1}"]`);
         let nextUrl = null;
 
         // Continue if we haven't found old posts yet
@@ -322,7 +322,7 @@ async function fetchPostContents() {
             const $ = cheerio.load(data);
 
             let full_content = "";
-            $("div.full_content div p").each((j, el) => {
+            $("div.full_content p").each((j, el) => {
                 const paragraph = $(el).text().trim();
                 if (paragraph.length > 0) {
                     full_content += paragraph + "\n";
