@@ -16,7 +16,7 @@ from typing import List, Dict, Optional, Tuple
 if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
-from utils.neo4j_utils import query_latest_hash_from_neo4j_env
+from utils.neo4j_utils import query_latest_hash_from_neo4j_env, write_output_hash_to_neo4j_env
 
 # Common Myanmar author name patterns
 AUTHOR_NAME_PATTERN = re.compile(r'^[\u1000-\u109F\u200B-\u200D\uAA60-\uAA7F]{2,20}$')
@@ -358,5 +358,12 @@ if __name__ == "__main__":
             print(f"   Completion marker: gs://{target_bucket}/{marker_path}")
         except Exception as e:
             print(f"   ⚠️  Failed to create completion marker: {e}")
+
+        # Write output hash to Neo4j so the classifier can resolve the exact path
+        neo4j_key = f"dvb_cleaned_output:{final_date}"
+        if write_output_hash_to_neo4j_env(neo4j_key, output_hash):
+            print(f"   ✅ Output hash saved to Neo4j: {neo4j_key} → {output_hash}")
+        else:
+            print(f"   ⚠️  Neo4j write skipped (not configured or failed) — bucket scan fallback will be used")
 
         exit(0)

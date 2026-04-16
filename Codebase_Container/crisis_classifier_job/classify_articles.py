@@ -23,7 +23,7 @@ from typing import List, Dict, Optional, Tuple
 if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
-from utils.neo4j_utils import query_latest_hash_from_neo4j_env
+from utils.neo4j_utils import query_latest_hash_from_neo4j_env, query_output_hash_from_neo4j_env
 
 # Heavy ML imports — required for model loading
 try:
@@ -156,8 +156,10 @@ def fetch_cleaned_articles(bucket_name: str, date_str: str,
 
         source_hash = os.environ.get("SOURCE_CONTENT_HASH", "").strip()
         if not source_hash:
-            source_hash = query_latest_hash_from_neo4j_env("job:dvb-text-cleaner-job") or ""
+            # Query the exact output hash the cleaner wrote for this date
+            source_hash = query_output_hash_from_neo4j_env(f"dvb_cleaned_output:{date_str}") or ""
         if not source_hash:
+            # Fallback: scan bucket for most recently updated hash folder
             source_hash = resolve_latest_hash_for_date(bucket, prefix_path, date_str) or ""
 
         if source_hash:
