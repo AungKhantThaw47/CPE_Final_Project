@@ -7,6 +7,7 @@ main:
           - region: "asia-southeast1"
           - crawl_start_date: ""
           - crawl_end_date: ""
+          - process_date: ""
 
     - maybe_set_start_date:
         switch:
@@ -28,6 +29,28 @@ main:
         assign:
           - crawl_end_date: ${args.crawl_end_date}
 
+    - maybe_set_process_date_from_end:
+        switch:
+          - condition: ${crawl_end_date != ""}
+            next: set_process_date_from_end
+        next: maybe_set_process_date_from_start
+
+    - set_process_date_from_end:
+        assign:
+          - end_parts: ${text.split(crawl_end_date, "-")}
+          - process_date: ${end_parts[2] + "-" + end_parts[1] + "-" + end_parts[0]}
+
+    - maybe_set_process_date_from_start:
+        switch:
+          - condition: ${process_date == "" and crawl_start_date != ""}
+            next: set_process_date_from_start
+        next: set_crawler_overrides
+
+    - set_process_date_from_start:
+        assign:
+          - start_parts: ${text.split(crawl_start_date, "-")}
+          - process_date: ${start_parts[2] + "-" + start_parts[1] + "-" + start_parts[0]}
+
     - set_crawler_overrides:
         assign:
           - crawler_overrides:
@@ -38,6 +61,12 @@ main:
                         value: ${crawl_start_date}
                       - name: "END_DATE"
                         value: ${crawl_end_date}
+          - process_date_overrides:
+              overrides:
+                containerOverrides:
+                  - env:
+                      - name: "PROCESS_DATE"
+                        value: ${process_date}
 
     - log_start:
         call: sys.log
@@ -66,7 +95,7 @@ main:
           project_id: ${project_id}
           region: ${region}
           job_name: "dvb-text-cleaner-job"
-          overrides: null
+          overrides: ${process_date_overrides}
         result: cleaner_status
 
     - log_cleaner_done:
@@ -81,7 +110,7 @@ main:
           project_id: ${project_id}
           region: ${region}
           job_name: "crisis-classifier-job"
-          overrides: null
+          overrides: ${process_date_overrides}
         result: classifier_status
 
     - log_classifier_done:

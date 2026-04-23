@@ -140,9 +140,9 @@ def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None,
                             prefix_path: str = "dvb") -> Tuple[List[Dict], str]:
     """Fetch all articles from GCS bucket for a specific date."""
     if not date_str:
-        # Use 2 days ago to ensure crawler has finished
-        two_days_ago = datetime.now() - timedelta(days=2)
-        date_str = two_days_ago.strftime('%Y-%m-%d')
+        # Default to yesterday to align with crawler/classifier date windows.
+        yesterday = datetime.now() - timedelta(days=1)
+        date_str = yesterday.strftime('%Y-%m-%d')
     
     print("=" * 60)
     print("Fetching Articles from GCS Bucket")
@@ -236,9 +236,8 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
                                prefix_path: str = "dvb") -> Dict[str, int]:
     """Process all articles: fetch, clean, and upload to target bucket."""
     if not date_str:
-        # Use 2 days ago to ensure crawler has finished
-        two_days_ago = datetime.now() - timedelta(days=2)
-        date_str = two_days_ago.strftime('%Y-%m-%d')
+        yesterday = datetime.now() - timedelta(days=1)
+        date_str = yesterday.strftime('%Y-%m-%d')
     
     print()
     print("=" * 60)
@@ -248,6 +247,7 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
     print()
     
     articles, source_hash = fetch_articles_from_gcs(source_bucket, date_str, prefix_path)
+    os.environ["SOURCE_CONTENT_HASH"] = source_hash
     output_hash = build_pipeline_output_hash(
         source_hash,
         os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
@@ -319,7 +319,7 @@ if __name__ == "__main__":
     print(f"Configuration:")
     print(f"  Source bucket: {source_bucket}")
     print(f"  Target bucket: {target_bucket}")
-    print(f"  Process date: {date_str or '2 days ago (default)'}")
+    print(f"  Process date: {date_str or 'yesterday (default)'}")
     print(f"  Prefix: {prefix_path}")
     print()
     
@@ -342,7 +342,7 @@ if __name__ == "__main__":
         exit(1)
     else:
         print("✅ All articles processed successfully!")
-        final_date = date_str or (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+        final_date = date_str or (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
         output_hash = build_pipeline_output_hash(
             os.environ.get('SOURCE_CONTENT_HASH', '').strip(),
             os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
