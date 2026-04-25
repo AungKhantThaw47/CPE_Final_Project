@@ -3,14 +3,12 @@ import re
 import logging
 import time
 import hashlib
-from flask import Flask, request, jsonify
+import sys
 from google.cloud import storage
 from google import genai
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
 
 ANNOTATION_PROMPT = """
 1. Wrap each disaster event in the article with `<event>` and `</event>` tags.
@@ -91,117 +89,101 @@ def annotate_article(article_text: str, gemini_client) -> str:
     return response.text
 
 
-@app.route("/", methods=["GET"])
-def root():
-    return jsonify({
-        "service": "dvb-annotator",
-        "status": "ok",
-        "usage": "Send Eventarc-compatible POST requests to / and GET requests to /health for health checks."
-    }), 200
-
-
-@app.route("/", methods=["POST"])
-def handle_event():
-    """Handle Eventarc GCS notification when a file lands in crisis_articles/."""
+def process_crisis_articles():
+    """Batch process all files in crisis_articles/ folder and save annotated output."""
+    logger.info("=" * 60)
+    logger.info("BATCH ANNOTATION JOB STARTED")
+    logger.info("=" * 60)
+    
+    crisis_bucket = os.environ.get('CRISIS_BUCKET')
+    gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    
+    if not crisis_bucket or not gemini_api_key:
+        logger.error("❌ Missing env vars: CRISIS_BUCKET, GEMINI_API_KEY")
+        return False
+    
+    content_hash = os.environ.get('CONTENT_HASH', 'unknown-hash').strip()
+    
     try:
-        event_data = request.get_json()
-
-        logger.info("=" * 60)
-        logger.info("RECEIVED EVENTARC WEBHOOK - ANNOTATOR")
-        logger.info("=" * 60)
-
-        # Extract object name from event
-        if 'data' in event_data:
-            object_name = event_data['data'].get('name', '')
-            bucket_name = event_data['data'].get('bucket', '')
-        else:
-            object_name = event_data.get('name', '')
-            bucket_name = event_data.get('bucket', '')
-
-        logger.info(f"📄 Object: {object_name}")
-        logger.info(f"📦 Bucket: {bucket_name}")
-
-        # Only process .txt files in crisis_articles/
-        if not object_name.startswith('crisis_articles/') or not object_name.endswith('.txt'):
-            logger.info(f"⏭️  Ignoring: {object_name}")
-            return jsonify({"status": "ignored"}), 200
-
-        # Parse source path
-        # hashed: crisis_articles/{hash}/{date}/{filename}
-        # legacy: crisis_articles/{date}/{filename}
-        hash_match = re.match(r'crisis_articles/([^/]+)/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
-        legacy_match = re.match(r'crisis_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
-
-        if hash_match:
-            source_hash = hash_match.group(1)
-            date_str = hash_match.group(2)
-            filename = hash_match.group(3)
-        elif legacy_match:
-            source_hash = "legacy"
-            date_str = legacy_match.group(1)
-            filename = legacy_match.group(2)
-        else:
-            logger.warning(f"⚠️  Could not parse path: {object_name}")
-            return jsonify({"status": "error", "reason": "invalid path"}), 400
-
-        output_hash = build_pipeline_output_hash(
-            source_hash,
-            os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
-        )
-        logger.info(f"📅 Date: {date_str}")
-        logger.info(f"🔎 Source hash: {source_hash}")
-        logger.info(f"🧬 Output hash: {output_hash}")
-        logger.info(f"📝 File: {filename}")
-
-        crisis_bucket = os.environ.get('CRISIS_BUCKET')
-        gemini_api_key = os.environ.get('GEMINI_API_KEY')
-
-        if not crisis_bucket or not gemini_api_key:
-            logger.error("❌ Missing env vars: CRISIS_BUCKET, GEMINI_API_KEY")
-            return jsonify({"status": "error", "reason": "missing env vars"}), 500
-
-        # Check if already annotated
         storage_client = storage.Client()
         bucket = storage_client.bucket(crisis_bucket)
-        annotated_blob_name = f"annotated_articles/{output_hash}/{date_str}/{filename}"
-        annotated_blob = bucket.blob(annotated_blob_name)
-        if annotated_blob.exists():
-            logger.info(f"⏭️  Already annotated: {annotated_blob_name}")
-            return jsonify({"status": "skipped", "reason": "already annotated"}), 200
-
-        # Download article
-        source_blob = bucket.blob(object_name)
-        article_text = source_blob.download_as_text(encoding='utf-8')
-        logger.info(f"✅ Downloaded article ({len(article_text)} chars)")
-
-        # Annotate with Gemini
         gemini_client = genai.Client(api_key=gemini_api_key)
-        logger.info("🤖 Annotating with Gemini...")
-        annotated_text = annotate_article(article_text, gemini_client)
-        logger.info("✅ Annotation complete")
-
-        # Save annotated output
-        annotated_blob.upload_from_string(annotated_text, content_type='text/plain; charset=utf-8')
-        logger.info(f"✅ Saved to gs://{crisis_bucket}/{annotated_blob_name}")
-
-        return jsonify({
-            "status": "success",
-            "date": date_str,
-            "filename": filename,
-            "annotated_path": annotated_blob_name
-        }), 200
-
+        
+        # List all files in crisis_articles/
+        blobs = bucket.list_blobs(prefix='crisis_articles/')
+        
+        processed_count = 0
+        skipped_count = 0
+        error_count = 0
+        
+        for blob in blobs:
+            # Skip directories and non-txt files
+            if blob.name.endswith('/') or not blob.name.endswith('.txt'):
+                continue
+            
+            try:
+                # Parse source path
+                # hashed: crisis_articles/{hash}/{date}/{filename}
+                # legacy: crisis_articles/{date}/{filename}
+                hash_match = re.match(r'crisis_articles/([^/]+)/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
+                legacy_match = re.match(r'crisis_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
+                
+                if hash_match:
+                    source_hash = hash_match.group(1)
+                    date_str = hash_match.group(2)
+                    filename = hash_match.group(3)
+                elif legacy_match:
+                    source_hash = "legacy"
+                    date_str = legacy_match.group(1)
+                    filename = legacy_match.group(2)
+                else:
+                    logger.warning(f"⏭️  Could not parse path: {blob.name}")
+                    skipped_count += 1
+                    continue
+                
+                output_hash = build_pipeline_output_hash(source_hash, content_hash)
+                annotated_blob_name = f"pending_review_annotation/{output_hash}/{date_str}/{filename}"
+                
+                # Check if already annotated
+                annotated_blob = bucket.blob(annotated_blob_name)
+                if annotated_blob.exists():
+                    logger.info(f"⏭️  Already annotated: {annotated_blob_name}")
+                    skipped_count += 1
+                    continue
+                
+                # Download and annotate
+                logger.info(f"📄 Processing: {blob.name}")
+                article_text = blob.download_as_text(encoding='utf-8')
+                logger.info(f"✅ Downloaded ({len(article_text)} chars)")
+                
+                logger.info("🤖 Annotating with Gemini...")
+                annotated_text = annotate_article(article_text, gemini_client)
+                logger.info("✅ Annotation complete")
+                
+                # Save annotated output
+                annotated_blob.upload_from_string(annotated_text, content_type='text/plain; charset=utf-8')
+                logger.info(f"✅ Saved to gs://{crisis_bucket}/{annotated_blob_name}")
+                
+                processed_count += 1
+                
+            except Exception as e:
+                logger.error(f"❌ Error processing {blob.name}: {e}")
+                error_count += 1
+                continue
+        
+        logger.info("=" * 60)
+        logger.info(f"BATCH COMPLETE: {processed_count} processed, {skipped_count} skipped, {error_count} errors")
+        logger.info("=" * 60)
+        
+        return error_count == 0
+    
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"❌ Fatal error: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok"}), 200
+        return False
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=False)
+    success = process_crisis_articles()
+    sys.exit(0 if success else 1)

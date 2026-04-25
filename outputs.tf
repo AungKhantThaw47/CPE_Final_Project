@@ -94,6 +94,7 @@ output "active_graph_keys" {
       "bucket:pipeline-data",
       "bucket:mlflow-artifacts",
       "workflow:daily-pipeline",
+      "workflow:manual-pipeline",
       "scheduler:daily-pipeline-trigger"
     ],
     contains(keys(local.jobs), "daily-data-processor") ? ["scheduler:hourly-data-processor"] : [],

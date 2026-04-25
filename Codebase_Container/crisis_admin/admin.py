@@ -2,10 +2,13 @@ import os
 import logging
 import sys
 import re
+from html import escape
 from collections import defaultdict
 from datetime import datetime
 from flask import Flask, request, jsonify, redirect
 from google.cloud import storage
+import google.auth
+from google.auth.transport.requests import AuthorizedSession
 from typing import List, Dict, Optional
 
 
@@ -41,6 +44,30 @@ def read_article_from_gcs(bucket_name: str, blob_name: str) -> Optional[str]:
         return None
 
 
+def trigger_cloud_run_job(job_name: str) -> None:
+    """Trigger a Cloud Run job asynchronously from admin actions."""
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT_ID", "")
+    region = os.environ.get("GCP_REGION", "asia-southeast1")
+    if not project_id:
+        logger.warning("⚠️  GOOGLE_CLOUD_PROJECT(_ID) not set; skipping job trigger for %s", job_name)
+        return
+
+    try:
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        authed_session = AuthorizedSession(credentials)
+        url = (
+            f"https://{region}-run.googleapis.com/apis/run.googleapis.com/v1/"
+            f"namespaces/{project_id}/jobs/{job_name}:run"
+        )
+        response = authed_session.post(url, json={})
+        if 200 <= response.status_code < 300:
+            logger.info("🚀 Triggered Cloud Run job: %s", job_name)
+        else:
+            logger.error("❌ Failed to trigger job %s: %s %s", job_name, response.status_code, response.text)
+    except Exception as exc:
+        logger.error("❌ Error triggering job %s: %s", job_name, exc)
+
+
 def resolve_latest_hash(bucket, prefix: str) -> Optional[str]:
     """Resolve latest hash folder under prefix/ by blob update time."""
     pattern = re.compile(rf"^{re.escape(prefix)}/([^/]+)/")
@@ -62,27 +89,27 @@ def resolve_latest_hash(bucket, prefix: str) -> Optional[str]:
     return max(latest_by_hash.items(), key=lambda item: item[1])[0]
 
 
-def list_pending_articles(crisis_bucket: str) -> List[Dict]:
-    """List pending articles from latest hash folder (with legacy fallback)."""
+def list_stage_articles(crisis_bucket: str, stage_prefix: str, latest_hash_key: str) -> List[Dict]:
+    """List stage articles from latest hash folder (with legacy fallback)."""
     client = storage.Client()
     bucket = client.bucket(crisis_bucket)
     latest_hash = (
         os.environ.get("SOURCE_CONTENT_HASH", "").strip()
-        or query_latest_hash_from_neo4j_env("job:crisis-classifier-job")
-        or resolve_latest_hash(bucket, "pending_review")
+        or query_latest_hash_from_neo4j_env(latest_hash_key)
+        or resolve_latest_hash(bucket, stage_prefix)
     )
     if latest_hash:
-        blobs = list(bucket.list_blobs(prefix=f"pending_review/{latest_hash}/"))
+        blobs = list(bucket.list_blobs(prefix=f"{stage_prefix}/{latest_hash}/"))
     else:
-        blobs = list(bucket.list_blobs(prefix="pending_review/"))
+        blobs = list(bucket.list_blobs(prefix=f"{stage_prefix}/"))
 
     articles = []
     for blob in blobs:
         if blob.name.endswith('.txt'):
-            # hashed: pending_review/{hash}/{date}/{filename}
-            # legacy: pending_review/{date}/{filename}
-            hash_match = re.match(r"^pending_review/([^/]+)/([0-9]{4}-[0-9]{2}-[0-9]{2})/(.+\.txt)$", blob.name)
-            legacy_match = re.match(r"^pending_review/([0-9]{4}-[0-9]{2}-[0-9]{2})/(.+\.txt)$", blob.name)
+            # hashed: {stage_prefix}/{hash}/{date}/{filename}
+            # legacy: {stage_prefix}/{date}/{filename}
+            hash_match = re.match(rf"^{re.escape(stage_prefix)}/([^/]+)/([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}})/(.+\.txt)$", blob.name)
+            legacy_match = re.match(rf"^{re.escape(stage_prefix)}/([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}})/(.+\.txt)$", blob.name)
 
             if hash_match:
                 hash_value = hash_match.group(1)
@@ -105,49 +132,88 @@ def list_pending_articles(crisis_bucket: str) -> List[Dict]:
     return articles
 
 
-@app.route("/admin", methods=["GET"])
-def admin_page():
-    """Admin HTML page for reviewing pending crisis articles."""
-    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
-    try:
-        articles = list_pending_articles(crisis_bucket) if crisis_bucket else []
-    except Exception as e:
-        articles = []
-        logger.error(f"Error listing pending articles: {e}")
+def list_pending_articles(crisis_bucket: str) -> List[Dict]:
+    return list_stage_articles(crisis_bucket, "pending_review", "job:crisis-classifier-job")
 
+
+def list_pending_annotation_articles(crisis_bucket: str) -> List[Dict]:
+    return list_stage_articles(crisis_bucket, "pending_review_annotation", "job:dvb-annotator-job")
+
+
+def render_stage_tables(
+    articles: List[Dict],
+    section_title: str,
+    confirm_action: str,
+    reject_action: str,
+    empty_text: str,
+) -> str:
     by_date = defaultdict(list)
-    for a in articles:
-        by_date[a['date']].append(a)
-    sorted_dates = sorted(by_date.keys())
+    for article in articles:
+        by_date[article['date']].append(article)
 
-    sections = ""
+    sorted_dates = sorted(by_date.keys())
+    if not sorted_dates:
+        return f"<h2 class='stage-header'>{escape(section_title)}</h2><p class='empty'>{escape(empty_text)}</p>"
+
+    sections = f"<h2 class='stage-header'>{escape(section_title)}</h2>"
     for date in sorted_dates:
         date_articles = by_date[date]
         rows = ""
-        for a in date_articles:
+        for article in date_articles:
             rows += f"""
         <tr>
-            <td>{a['filename']}</td>
-            <td>{a['hash']}</td>
-            <td>{a['size']} bytes</td>
+            <td>{escape(article['filename'])}</td>
+            <td>{escape(article['hash'])}</td>
+            <td>{article['size']} bytes</td>
             <td>
-                <form method="POST" action="/admin/confirm" style="display:inline">
-                    <input type="hidden" name="blob_name" value="{a['blob_name']}">
+                <form method="POST" action="{escape(confirm_action)}" style="display:inline">
+                    <input type="hidden" name="blob_name" value="{escape(article['blob_name'])}">
                     <button type="submit" class="btn confirm">Confirm</button>
                 </form>
-                <form method="POST" action="/admin/reject" style="display:inline">
-                    <input type="hidden" name="blob_name" value="{a['blob_name']}">
+                <form method="POST" action="{escape(reject_action)}" style="display:inline">
+                    <input type="hidden" name="blob_name" value="{escape(article['blob_name'])}">
                     <button type="submit" class="btn reject">Reject</button>
                 </form>
-                <a href="/admin/view?blob={a['blob_name']}" target="_blank" class="btn view">View</a>
+                <a href="/admin/view?blob={escape(article['blob_name'])}" target="_blank" class="btn view">View</a>
             </td>
         </tr>"""
+
         sections += f"""
-    <h2 class="date-header">{date} <span class="date-count">({len(date_articles)} articles)</span></h2>
+    <h3 class="date-header">{escape(date)} <span class="date-count">({len(date_articles)} articles)</span></h3>
     <table>
         <thead><tr><th>Filename</th><th>Hash</th><th>Size</th><th>Action</th></tr></thead>
         <tbody>{rows}</tbody>
     </table>"""
+
+    return sections
+
+
+@app.route("/admin", methods=["GET"])
+def admin_page():
+    """Admin HTML page for reviewing pending and annotated crisis queues."""
+    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
+    try:
+        pending_articles = list_pending_articles(crisis_bucket) if crisis_bucket else []
+        pending_annotation_articles = list_pending_annotation_articles(crisis_bucket) if crisis_bucket else []
+    except Exception as e:
+        pending_articles = []
+        pending_annotation_articles = []
+        logger.error(f"Error listing pending articles: {e}")
+
+    pending_section = render_stage_tables(
+        pending_articles,
+        "Pending Classification Review",
+        "/admin/confirm",
+        "/admin/reject",
+        "No pending classification articles."
+    )
+    annotation_section = render_stage_tables(
+        pending_annotation_articles,
+        "Pending Annotation Review",
+        "/admin/confirm_annotation",
+        "/admin/reject_annotation",
+        "No pending annotation articles."
+    )
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -156,7 +222,8 @@ def admin_page():
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
         h1 {{ color: #c0392b; }}
-        h2.date-header {{ color: #2c3e50; margin-top: 32px; margin-bottom: 8px; font-size: 18px; }}
+        h2.stage-header {{ color: #2c3e50; margin-top: 32px; margin-bottom: 8px; font-size: 20px; }}
+        h3.date-header {{ color: #2c3e50; margin-top: 24px; margin-bottom: 8px; font-size: 16px; }}
         .date-count {{ color: #888; font-size: 14px; font-weight: normal; }}
         table {{ border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.1); margin-bottom: 24px; }}
         th, td {{ padding: 12px 16px; text-align: left; border-bottom: 1px solid #eee; }}
@@ -172,8 +239,10 @@ def admin_page():
 </head>
 <body>
     <h1>Crisis Article Review</h1>
-    <p class="count">Pending articles: <strong>{len(articles)}</strong></p>
-    {sections if articles else '<p class="empty">No pending articles.</p>'}
+    <p class="count">Pending classification: <strong>{len(pending_articles)}</strong></p>
+    <p class="count">Pending annotation review: <strong>{len(pending_annotation_articles)}</strong></p>
+    {pending_section}
+    {annotation_section}
 </body>
 </html>"""
     return html
@@ -197,7 +266,7 @@ def admin_view_article():
 
 @app.route("/admin/confirm", methods=["POST"])
 def admin_confirm():
-    """Move a pending article to crisis_articles/."""
+    """Move a pending article to crisis_articles/ and trigger annotation job."""
     blob_name = request.form.get('blob_name', '')
     crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
     if not blob_name or not crisis_bucket:
@@ -208,10 +277,11 @@ def admin_confirm():
         bucket = client.bucket(crisis_bucket)
         source_blob = bucket.blob(blob_name)
 
-        # pending_review/{date}/{filename} -> crisis_articles/{date}/{filename}
+        # pending_review/{hash}/{date}/{filename} -> crisis_articles/{hash}/{date}/{filename}
         destination_name = blob_name.replace('pending_review/', 'crisis_articles/', 1)
         bucket.copy_blob(source_blob, bucket, destination_name)
         source_blob.delete()
+        trigger_cloud_run_job("dvb-annotator-job")
 
         logger.info(f"✅ Confirmed: {blob_name} -> {destination_name}")
     except Exception as e:
@@ -236,6 +306,53 @@ def admin_reject():
         logger.info(f"🗑️  Rejected: {blob_name}")
     except Exception as e:
         logger.error(f"❌ Reject failed: {e}")
+        return f"Error: {e}", 500
+
+    return redirect('/admin')
+
+
+@app.route("/admin/confirm_annotation", methods=["POST"])
+def admin_confirm_annotation():
+    """Move a pending annotated article to annotated_articles/ and trigger extractor job."""
+    blob_name = request.form.get('blob_name', '')
+    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
+    if not blob_name or not crisis_bucket:
+        return "Missing parameters", 400
+
+    try:
+        client = storage.Client()
+        bucket = client.bucket(crisis_bucket)
+        source_blob = bucket.blob(blob_name)
+
+        # pending_review_annotation/{hash}/{date}/{filename} -> annotated_articles/{hash}/{date}/{filename}
+        destination_name = blob_name.replace('pending_review_annotation/', 'annotated_articles/', 1)
+        bucket.copy_blob(source_blob, bucket, destination_name)
+        source_blob.delete()
+        trigger_cloud_run_job("dvb-extractor-job")
+
+        logger.info(f"✅ Confirmed annotation: {blob_name} -> {destination_name}")
+    except Exception as e:
+        logger.error(f"❌ Annotation confirm failed: {e}")
+        return f"Error: {e}", 500
+
+    return redirect('/admin')
+
+
+@app.route("/admin/reject_annotation", methods=["POST"])
+def admin_reject_annotation():
+    """Delete a pending annotated article (reject it)."""
+    blob_name = request.form.get('blob_name', '')
+    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
+    if not blob_name or not crisis_bucket:
+        return "Missing parameters", 400
+
+    try:
+        client = storage.Client()
+        bucket = client.bucket(crisis_bucket)
+        bucket.blob(blob_name).delete()
+        logger.info(f"🗑️  Rejected annotation: {blob_name}")
+    except Exception as e:
+        logger.error(f"❌ Annotation reject failed: {e}")
         return f"Error: {e}", 500
 
     return redirect('/admin')

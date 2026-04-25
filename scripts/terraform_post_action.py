@@ -258,6 +258,23 @@ def build_folder_hash_node(bucket_key: str, bucket_name: str, folder_path: str, 
     }
 
 
+COMPONENT_KEY_ALIASES = {
+    "service:dvb-annotator": "job:dvb-annotator-job",
+    "job:dvb-annotator-job": "service:dvb-annotator",
+    "service:dvb-extractor": "job:dvb-extractor-job",
+    "job:dvb-extractor-job": "service:dvb-extractor",
+}
+
+
+def normalize_component_key(component_key: str, available_keys) -> str:
+    if component_key in available_keys:
+        return component_key
+    alias_key = COMPONENT_KEY_ALIASES.get(component_key, "")
+    if alias_key and alias_key in available_keys:
+        return alias_key
+    return component_key
+
+
 def filter_base_manifest_by_outputs(base_manifest: dict, outputs: dict) -> dict:
     managed_prefixes = (
         "project:",
@@ -271,6 +288,14 @@ def filter_base_manifest_by_outputs(base_manifest: dict, outputs: dict) -> dict:
 
     active_graph_keys_raw = outputs.get("active_graph_keys") or []
     active_graph_keys = set(active_graph_keys_raw)
+    base_node_keys = {node.get("key", "") for node in base_manifest.get("nodes", [])}
+
+    # Keep compatible aliases during job/service migration windows.
+    for key in list(active_graph_keys):
+        alias_key = COMPONENT_KEY_ALIASES.get(key, "")
+        if alias_key and alias_key in base_node_keys:
+            active_graph_keys.add(alias_key)
+
     use_global_pruning = len(active_graph_keys) > 0
 
     # Backward-compatible fallback for older output sets.
@@ -328,13 +353,18 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
         ("job", outputs.get("jobs") or {}),
         ("service", outputs.get("services") or {}),
     ]
+    available_component_keys = {
+        node.get("key", "")
+        for node in base_manifest.get("nodes", [])
+        if node.get("key", "").startswith(("job:", "service:"))
+    }
 
     for component_kind, components in component_sets:
         for component_name, component in sorted(components.items()):
             if not component:
                 continue
 
-            component_key = f"{component_kind}:{component_name}"
+            component_key = normalize_component_key(f"{component_kind}:{component_name}", available_component_keys)
             hash_type, hash_value = resolve_component_hash(component)
             if not hash_value:
                 continue

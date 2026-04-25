@@ -13,9 +13,9 @@ gcloud auth login
 gcloud config set project YOUR_PROJECT_ID
 ```
 
-## Run Full Pipeline (Cloud Workflows)
+## Run Daily Pipeline (Cloud Workflows)
 
-The deployed workflow name is `daily-pipeline` in region `asia-southeast1`.
+The deployed daily workflow name is `daily-pipeline` in region `asia-southeast1`.
 
 Start a manual execution:
 
@@ -23,16 +23,6 @@ Start a manual execution:
 gcloud workflows execute daily-pipeline \
   --location=asia-southeast1
 ```
-
-Start a manual execution with crawler date range (optional):
-
-```bash
-gcloud workflows execute daily-pipeline \
-  --location=asia-southeast1 \
-  --data='{"crawl_start_date":"20-03-2026","crawl_end_date":"22-03-2026"}'
-```
-
-Date format must be `DD-MM-YYYY`.
 
 List recent executions:
 
@@ -42,11 +32,31 @@ gcloud workflows executions list daily-pipeline \
   --limit=10
 ```
 
+## Run Manual Date-Range Pipeline
+
+Use the separate workflow `manual-pipeline` for ad-hoc custom date ranges.
+
+```bash
+gcloud workflows execute manual-pipeline \
+  --location=asia-southeast1 \
+  --data='{"crawl_start_date":"20-03-2026","crawl_end_date":"22-03-2026"}'
+```
+
+Optional notification recipient override:
+
+```bash
+gcloud workflows execute manual-pipeline \
+  --location=asia-southeast1 \
+  --data='{"crawl_start_date":"20-03-2026","crawl_end_date":"22-03-2026","notify_email":"ops@example.com"}'
+```
+
+Date format must be `DD-MM-YYYY`.
+
 Describe a specific execution:
 
 ```bash
 gcloud workflows executions describe EXECUTION_ID \
-  --workflow=daily-pipeline \
+  --workflow=manual-pipeline \
   --location=asia-southeast1
 ```
 
@@ -76,22 +86,6 @@ gcloud run jobs execute crisis-classifier-job \
   --wait
 ```
 
-Run annotator:
-
-```bash
-gcloud run jobs execute dvb-annotator-job \
-  --region=asia-southeast1 \
-  --wait
-```
-
-Run extractor:
-
-```bash
-gcloud run jobs execute dvb-extractor-job \
-  --region=asia-southeast1 \
-  --wait
-```
-
 ## Helpful Monitoring Commands
 
 Read recent logs for one job:
@@ -111,5 +105,9 @@ gcloud scheduler jobs describe daily-pipeline-scheduler \
 
 ## Notes
 
-- Full workflow execution follows this order: crawler -> cleaner -> classifier -> annotator -> extractor.
+- Daily workflow execution follows this order: crawler -> cleaner -> classifier -> notify.
+- Manual workflow execution follows this order: crawler -> cleaner -> classifier -> notify.
+- Annotation and extraction happen after admin transitions via job execution:
+  - `pending_review -> crisis_articles` then run `dvb-annotator-job` to produce `pending_review_annotation`
+  - `pending_review_annotation -> annotated_articles` then run `dvb-extractor-job` to produce `events`
 - If you want to force an upstream hash for consumers, set `SOURCE_CONTENT_HASH` in job environment overrides when invoking jobs via API or workflow changes.

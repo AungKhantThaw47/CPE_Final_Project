@@ -219,15 +219,18 @@ locals {
       port            = 8080
       allow_public    = true
       environment_variables = {
-        CRISIS_BUCKET  = google_storage_bucket.pipeline_data.name
-        NEO4J_URI      = var.neo4j_uri
-        NEO4J_USER     = var.neo4j_user
-        NEO4J_PASSWORD = var.neo4j_password
-        NEO4J_DATABASE = var.neo4j_database
+        CRISIS_BUCKET         = google_storage_bucket.pipeline_data.name
+        GOOGLE_CLOUD_PROJECT  = var.project_id
+        GCP_REGION            = var.region
+        NEO4J_URI             = var.neo4j_uri
+        NEO4J_USER            = var.neo4j_user
+        NEO4J_PASSWORD        = var.neo4j_password
+        NEO4J_DATABASE        = var.neo4j_database
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
-        "roles/logging.logWriter"
+        "roles/logging.logWriter",
+        "roles/run.invoker"
       ]
       cloud_sql_instances = []
     }
@@ -478,9 +481,29 @@ resource "google_workflows_workflow" "daily_pipeline" {
   name            = "daily-pipeline"
   region          = var.region
   project         = var.project_id
-  description     = "Orchestrates daily pipeline: crawler → cleaner → classifier → annotator → extractor"
+  description     = "Daily pipeline: crawler -> cleaner -> classifier -> notify"
   service_account = google_service_account.workflow_sa.email
   source_contents = file("${path.root}/workflow.yaml")
+  user_env_vars = {
+    DAILY_NOTIFY_EMAIL = var.daily_notify_email
+    NOTIFY_WEBHOOK_URL = var.notify_webhook_url
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Cloud Workflows definition for manual date-range execution
+resource "google_workflows_workflow" "manual_pipeline" {
+  name            = "manual-pipeline"
+  region          = var.region
+  project         = var.project_id
+  description     = "Manual pipeline with custom date range: crawler -> cleaner -> classifier -> notify"
+  service_account = google_service_account.workflow_sa.email
+  source_contents = file("${path.root}/manual_workflow.yaml")
+  user_env_vars = {
+    DAILY_NOTIFY_EMAIL = var.daily_notify_email
+    NOTIFY_WEBHOOK_URL = var.notify_webhook_url
+  }
 
   depends_on = [google_project_service.apis]
 }
@@ -528,3 +551,4 @@ resource "google_cloud_scheduler_job" "daily_pipeline_trigger" {
     google_project_iam_member.workflow_invoker
   ]
 }
+

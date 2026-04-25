@@ -167,7 +167,7 @@
         "runtime": "Python + Gemini API",
         "cpu": "1",
         "memory": "512Mi",
-        "trigger": "manual_or_workflow"
+        "trigger": "admin_confirm"
       }
     },
     {
@@ -178,7 +178,7 @@
         "runtime": "Python + Gemini API",
         "cpu": "1",
         "memory": "512Mi",
-        "trigger": "manual_or_workflow"
+        "trigger": "admin_confirm_annotation"
       }
     },
     {
@@ -188,6 +188,15 @@
         "name": "daily-pipeline",
         "platform": "Cloud Workflows",
         "schedule": "5 0 * * *"
+      }
+    },
+    {
+      "key": "workflow:manual-pipeline",
+      "label": "Workflow",
+      "properties": {
+        "name": "manual-pipeline",
+        "platform": "Cloud Workflows",
+        "schedule": "manual"
       }
     },
     {
@@ -313,6 +322,12 @@
       "properties": {}
     },
     {
+      "from": "project:cpe-final-project",
+      "to": "workflow:manual-pipeline",
+      "type": "RUNS",
+      "properties": {}
+    },
+    {
       "from": "registry:artifact-registry",
       "to": "job:dvb-crawler-job",
       "type": "HOSTS_IMAGE_FOR",
@@ -423,9 +438,25 @@
     {
       "from": "service:crisis-admin",
       "to": "bucket:pipeline-data",
+      "type": "READS_FROM",
+      "properties": {
+        "path": "pending_review_annotation/"
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
         "path": "crisis_articles/"
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "bucket:pipeline-data",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "annotated_articles/"
       }
     },
     {
@@ -441,7 +472,7 @@
       "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
-        "path": "annotated_articles/"
+        "path": "pending_review_annotation/"
       }
     },
     {
@@ -457,7 +488,7 @@
       "to": "bucket:pipeline-data",
       "type": "WRITES_TO",
       "properties": {
-        "path": "extracted_events/"
+        "path": "events/"
       }
     },
     {
@@ -517,19 +548,43 @@
       }
     },
     {
-      "from": "workflow:daily-pipeline",
-      "to": "job:dvb-annotator-job",
+      "from": "workflow:manual-pipeline",
+      "to": "job:dvb-crawler-job",
       "type": "ORCHESTRATES",
       "properties": {
-        "step_order": 4
+        "step_order": 1
       }
     },
     {
-      "from": "workflow:daily-pipeline",
-      "to": "job:dvb-extractor-job",
+      "from": "workflow:manual-pipeline",
+      "to": "job:dvb-text-cleaner-job",
       "type": "ORCHESTRATES",
       "properties": {
-        "step_order": 5
+        "step_order": 2
+      }
+    },
+    {
+      "from": "workflow:manual-pipeline",
+      "to": "job:crisis-classifier-job",
+      "type": "ORCHESTRATES",
+      "properties": {
+        "step_order": 3
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "job:dvb-annotator-job",
+      "type": "TRIGGERS",
+      "properties": {
+        "action": "confirm"
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "job:dvb-extractor-job",
+      "type": "TRIGGERS",
+      "properties": {
+        "action": "confirm_annotation"
       }
     }
   ]

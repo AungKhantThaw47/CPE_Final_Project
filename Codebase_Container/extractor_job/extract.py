@@ -2,14 +2,12 @@ import os
 import re
 import logging
 import hashlib
+import sys
 import requests
-from flask import Flask, request, jsonify
 from google.cloud import storage
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
 
 EXTRACTION_PROMPT = '''You are an information extraction system. Your task is to read an article that contains one or more <event> ... </event> blocks and extract structured information only from the text inside those blocks.
 
@@ -113,119 +111,101 @@ def extract_events(article_text: str, api_key: str) -> str:
         raise RuntimeError(f"Gemini API error: {response.status_code} - {response.text}")
 
 
-@app.route("/", methods=["GET"])
-def root():
-    return jsonify({
-        "service": "dvb-extractor",
-        "status": "ok",
-        "usage": "Send Eventarc-compatible POST requests to / and GET requests to /health for health checks."
-    }), 200
-
-
-@app.route("/", methods=["POST"])
-def handle_event():
-    """Handle Eventarc GCS notification when a file lands in annotated_articles/."""
+def process_annotated_articles():
+    """Batch process all files in annotated_articles/ folder and extract events."""
+    logger.info("=" * 60)
+    logger.info("BATCH EXTRACTION JOB STARTED")
+    logger.info("=" * 60)
+    
+    crisis_bucket = os.environ.get('CRISIS_BUCKET')
+    gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    
+    if not crisis_bucket or not gemini_api_key:
+        logger.error("❌ Missing env vars: CRISIS_BUCKET, GEMINI_API_KEY")
+        return False
+    
+    content_hash = os.environ.get('CONTENT_HASH', 'unknown-hash').strip()
+    
     try:
-        event_data = request.get_json()
-
-        logger.info("=" * 60)
-        logger.info("RECEIVED EVENTARC WEBHOOK - EXTRACTOR")
-        logger.info("=" * 60)
-
-        # Extract object name from event
-        if 'data' in event_data:
-            object_name = event_data['data'].get('name', '')
-            bucket_name = event_data['data'].get('bucket', '')
-        else:
-            object_name = event_data.get('name', '')
-            bucket_name = event_data.get('bucket', '')
-
-        logger.info(f"📄 Object: {object_name}")
-        logger.info(f"📦 Bucket: {bucket_name}")
-
-        # Only process .txt files in annotated_articles/
-        if not object_name.startswith('annotated_articles/') or not object_name.endswith('.txt'):
-            logger.info(f"⏭️  Ignoring: {object_name}")
-            return jsonify({"status": "ignored"}), 200
-
-        # Parse source path
-        # hashed: annotated_articles/{hash}/{date}/{filename}
-        # legacy: annotated_articles/{date}/{filename}
-        hash_match = re.match(r'annotated_articles/([^/]+)/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
-        legacy_match = re.match(r'annotated_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)', object_name)
-
-        if hash_match:
-            source_hash = hash_match.group(1)
-            date_str = hash_match.group(2)
-            filename = hash_match.group(3)
-        elif legacy_match:
-            source_hash = "legacy"
-            date_str = legacy_match.group(1)
-            filename = legacy_match.group(2)
-        else:
-            logger.warning(f"⚠️  Could not parse path: {object_name}")
-            return jsonify({"status": "error", "reason": "invalid path"}), 400
-
-        output_hash = build_pipeline_output_hash(
-            source_hash,
-            os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
-        )
-        logger.info(f"📅 Date: {date_str}")
-        logger.info(f"🔎 Source hash: {source_hash}")
-        logger.info(f"🧬 Output hash: {output_hash}")
-        logger.info(f"📝 File: {filename}")
-
-        crisis_bucket = os.environ.get('CRISIS_BUCKET')
-        extraction_bucket = os.environ.get('EXTRACTION_BUCKET')
-        gemini_api_key = os.environ.get('GEMINI_API_KEY')
-
-        if not crisis_bucket or not extraction_bucket or not gemini_api_key:
-            logger.error("❌ Missing env vars: CRISIS_BUCKET, EXTRACTION_BUCKET, GEMINI_API_KEY")
-            return jsonify({"status": "error", "reason": "missing env vars"}), 500
-
-        # Check if already extracted
         storage_client = storage.Client()
-        source_bucket = storage_client.bucket(crisis_bucket)
-        output_bucket = storage_client.bucket(extraction_bucket)
-        output_filename = filename.replace('.txt', '.json')
-        extracted_blob_name = f"extracted_events/{output_hash}/{date_str}/{output_filename}"
-        extracted_blob = output_bucket.blob(extracted_blob_name)
-        if extracted_blob.exists():
-            logger.info(f"⏭️  Already extracted: {extracted_blob_name}")
-            return jsonify({"status": "skipped", "reason": "already extracted"}), 200
-
-        # Download annotated article from crisis bucket
-        source_blob = source_bucket.blob(object_name)
-        article_text = source_blob.download_as_text(encoding='utf-8')
-        logger.info(f"✅ Downloaded annotated article ({len(article_text)} chars)")
-
-        # Extract with Gemini
-        logger.info("🤖 Extracting with Gemini...")
-        result = extract_events(article_text, gemini_api_key)
-        logger.info("✅ Extraction complete")
-
-        # Save to extraction bucket
-        extracted_blob.upload_from_string(result, content_type='application/json')
-        logger.info(f"✅ Saved to gs://{extraction_bucket}/{extracted_blob_name}")
-
-        return jsonify({
-            "status": "success",
-            "date": date_str,
-            "filename": filename,
-            "extracted_path": extracted_blob_name
-        }), 200
-
+        bucket = storage_client.bucket(crisis_bucket)
+        
+        # List all files in annotated_articles/
+        blobs = bucket.list_blobs(prefix='annotated_articles/')
+        
+        processed_count = 0
+        skipped_count = 0
+        error_count = 0
+        
+        for blob in blobs:
+            # Skip directories and non-txt files
+            if blob.name.endswith('/') or not blob.name.endswith('.txt'):
+                continue
+            
+            try:
+                # Parse source path
+                # hashed: annotated_articles/{hash}/{date}/{filename}
+                # legacy: annotated_articles/{date}/{filename}
+                hash_match = re.match(r'annotated_articles/([^/]+)/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
+                legacy_match = re.match(r'annotated_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
+                
+                if hash_match:
+                    source_hash = hash_match.group(1)
+                    date_str = hash_match.group(2)
+                    filename = hash_match.group(3)
+                elif legacy_match:
+                    source_hash = "legacy"
+                    date_str = legacy_match.group(1)
+                    filename = legacy_match.group(2)
+                else:
+                    logger.warning(f"⏭️  Could not parse path: {blob.name}")
+                    skipped_count += 1
+                    continue
+                
+                output_hash = build_pipeline_output_hash(source_hash, content_hash)
+                output_filename = filename.replace('.txt', '.json')
+                extracted_blob_name = f"events/{output_hash}/{date_str}/{output_filename}"
+                
+                # Check if already extracted
+                extracted_blob = bucket.blob(extracted_blob_name)
+                if extracted_blob.exists():
+                    logger.info(f"⏭️  Already extracted: {extracted_blob_name}")
+                    skipped_count += 1
+                    continue
+                
+                # Download and extract
+                logger.info(f"📄 Processing: {blob.name}")
+                article_text = blob.download_as_text(encoding='utf-8')
+                logger.info(f"✅ Downloaded ({len(article_text)} chars)")
+                
+                logger.info("🤖 Extracting with Gemini...")
+                result = extract_events(article_text, gemini_api_key)
+                logger.info("✅ Extraction complete")
+                
+                # Save extracted output
+                extracted_blob.upload_from_string(result, content_type='application/json')
+                logger.info(f"✅ Saved to gs://{crisis_bucket}/{extracted_blob_name}")
+                
+                processed_count += 1
+                
+            except Exception as e:
+                logger.error(f"❌ Error processing {blob.name}: {e}")
+                error_count += 1
+                continue
+        
+        logger.info("=" * 60)
+        logger.info(f"BATCH COMPLETE: {processed_count} processed, {skipped_count} skipped, {error_count} errors")
+        logger.info("=" * 60)
+        
+        return error_count == 0
+    
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"❌ Fatal error: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok"}), 200
+        return False
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=False)
+    success = process_annotated_articles()
+    sys.exit(0 if success else 1)

@@ -308,17 +308,72 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
     return stats
 
 
+def parse_date_string(date_str: str) -> Optional[datetime]:
+    """Parse date string in DD-MM-YYYY or YYYY-MM-DD format."""
+    if not date_str:
+        return None
+    
+    # Try DD-MM-YYYY format (workflow format)
+    try:
+        return datetime.strptime(date_str, '%d-%m-%Y')
+    except ValueError:
+        pass
+    
+    # Try YYYY-MM-DD format
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d')
+    except ValueError:
+        return None
+
+
+def get_date_range() -> List[str]:
+    """
+    Get list of dates to process.
+    
+    Priority:
+    1. DATE_START and DATE_END env vars (workflow date range)
+    2. START_DATE and END_DATE env vars (crawler format)
+    3. PROCESS_DATE env var (single date, legacy)
+    4. Yesterday's date (default)
+    """
+    date_start = os.environ.get('DATE_START') or os.environ.get('START_DATE')
+    date_end = os.environ.get('DATE_END') or os.environ.get('END_DATE')
+    process_date = os.environ.get('PROCESS_DATE')
+    
+    # If we have a date range, use it
+    if date_start and date_end:
+        start = parse_date_string(date_start)
+        end = parse_date_string(date_end)
+        
+        if start and end:
+            if start > end:
+                start, end = end, start
+            
+            dates = []
+            current = start
+            while current <= end:
+                dates.append(current.strftime('%Y-%m-%d'))
+                current += timedelta(days=1)
+            return dates
+    
+    # If we have a single process date, use it
+    if process_date:
+        parsed = parse_date_string(process_date)
+        if parsed:
+            return [parsed.strftime('%Y-%m-%d')]
+        return [process_date]  # Fallback to raw string
+    
+    # Default to yesterday
+    yesterday = datetime.now() - timedelta(days=1)
+    return [yesterday.strftime('%Y-%m-%d')]
+
+
 if __name__ == "__main__":
     logger.info("=" * 60)
     logger.info("🚀 Crisis Classifier Job Starting...")
     logger.info("=" * 60)
 
-    # Get date to process (default: yesterday)
-    date_str = os.environ.get('PROCESS_DATE')
-    if not date_str:
-        yesterday = datetime.now() - timedelta(days=1)
-        date_str = yesterday.strftime('%Y-%m-%d')
-
+    dates_to_process = get_date_range()
     source_bucket = os.environ.get('GCS_BUCKET')
     crisis_bucket = os.environ.get('CRISIS_BUCKET')
 
@@ -326,41 +381,58 @@ if __name__ == "__main__":
         logger.error("❌ Missing required env vars: GCS_BUCKET, CRISIS_BUCKET")
         sys.exit(1)
 
-    logger.info(f"📅 Processing date: {date_str}")
+    logger.info(f"📅 Processing {len(dates_to_process)} date(s): {dates_to_process}")
     logger.info(f"📦 Source bucket:   {source_bucket}")
     logger.info(f"📦 Crisis bucket:   {crisis_bucket}")
 
-    # Skip if already classified
+    # Load model once
+    model = load_crisis_model(MODEL_PATH)
+    
+    # Track aggregate stats across all dates
+    aggregate_stats = {"total": 0, "crisis": 0, "errors": 0}
     storage_client = storage.Client()
     crisis_bkt = storage_client.bucket(crisis_bucket)
-    already_classified = (
-        any(True for _ in crisis_bkt.list_blobs(prefix="pending_review/")
-            if re.match(rf"^pending_review/[^/]+/{re.escape(date_str)}/", _.name)) or
-        any(True for _ in crisis_bkt.list_blobs(prefix="crisis_articles/")
-            if re.match(rf"^crisis_articles/[^/]+/{re.escape(date_str)}/", _.name)) or
-        any(True for _ in crisis_bkt.list_blobs(prefix=f"pending_review/{date_str}/", max_results=1)) or
-        any(True for _ in crisis_bkt.list_blobs(prefix=f"crisis_articles/{date_str}/", max_results=1))
-    )
-    if already_classified:
-        logger.info(f"⏭️  Already classified for {date_str}, skipping.")
-        sys.exit(0)
 
-    # Load model
-    model = load_crisis_model(MODEL_PATH)
-
-    # Classify
-    stats = process_and_classify_articles(source_bucket, crisis_bucket, model, date_str)
+    # Process each date in the range
+    for date_str in dates_to_process:
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info(f"Processing date: {date_str}")
+        logger.info("=" * 60)
+        
+        # Check if already classified
+        already_classified = (
+            any(True for _ in crisis_bkt.list_blobs(prefix="pending_review/")
+                if re.match(rf"^pending_review/[^/]+/{re.escape(date_str)}/", _.name)) or
+            any(True for _ in crisis_bkt.list_blobs(prefix="crisis_articles/")
+                if re.match(rf"^crisis_articles/[^/]+/{re.escape(date_str)}/", _.name)) or
+            any(True for _ in crisis_bkt.list_blobs(prefix=f"pending_review/{date_str}/", max_results=1)) or
+            any(True for _ in crisis_bkt.list_blobs(prefix=f"crisis_articles/{date_str}/", max_results=1))
+        )
+        
+        if already_classified:
+            logger.info(f"⏭️  Already classified for {date_str}, skipping.")
+            continue
+        
+        # Classify articles for this date
+        stats = process_and_classify_articles(source_bucket, crisis_bucket, model, date_str)
+        
+        # Aggregate stats
+        aggregate_stats["total"] += stats["total"]
+        aggregate_stats["crisis"] += stats["crisis"]
+        aggregate_stats["errors"] += stats["errors"]
+        
+        logger.info(f"📊 Date {date_str}: Total: {stats['total']}  |  Crisis: {stats['crisis']}  |  Errors: {stats['errors']}")
+        if stats['total'] > 0:
+            crisis_rate = stats['crisis'] / stats['total'] * 100
+            logger.info(f"   Crisis rate: {stats['crisis']}/{stats['total']} ({crisis_rate:.1f}%)")
 
     logger.info("")
     logger.info("=" * 60)
     logger.info("CLASSIFICATION COMPLETE!")
     logger.info("=" * 60)
-    logger.info(f"📊 Total: {stats['total']}  |  Crisis: {stats['crisis']}  |  Errors: {stats['errors']}")
-    if stats['total'] > 0:
-        crisis_rate = stats['crisis'] / stats['total'] * 100
-        logger.info(f"   Crisis rate: {stats['crisis']}/{stats['total']} ({crisis_rate:.1f}%)")
-        output_hash = build_pipeline_output_hash(
-            os.environ.get('SOURCE_CONTENT_HASH', '').strip(),
-            os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
-        )
-        logger.info(f"   Pending review: gs://{crisis_bucket}/pending_review/{output_hash}/{date_str}/")
+    logger.info(f"📊 Aggregate Stats: Total: {aggregate_stats['total']}  |  Crisis: {aggregate_stats['crisis']}  |  Errors: {aggregate_stats['errors']}")
+    if aggregate_stats['total'] > 0:
+        crisis_rate = aggregate_stats['crisis'] / aggregate_stats['total'] * 100
+        logger.info(f"   Crisis rate: {aggregate_stats['crisis']}/{aggregate_stats['total']} ({crisis_rate:.1f}%)")
+    logger.info(f"   Processed {len(dates_to_process)} date(s)")

@@ -151,3 +151,15 @@ variable "neo4j_database" {
   type        = string
   default     = "neo4j"
 }
+
+variable "daily_notify_email" {
+  description = "Default email recipient used by daily/manual workflows when sending completion notifications."
+  type        = string
+  default     = ""
+}
+
+variable "notify_webhook_url" {
+  description = "Webhook URL used by workflows for email notification dispatch. Leave empty to disable notifications."
+  type        = string
+  default     = ""
+}

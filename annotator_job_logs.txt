@@ -1,0 +1,9 @@
+ERROR	2026-04-25T13:50:03.475206Z	
+ERROR	2026-04-25T13:49:57.797335698Z	terminated: Application failed to start: The container may have exited abnormally.
+WARNING	2026-04-25T13:49:57.797335418Z	Application exec likely failed
+ERROR	2026-04-25T13:49:45.872216507Z	terminated: Application failed to start: The container may have exited abnormally.
+WARNING	2026-04-25T13:49:45.872215997Z	Application exec likely failed
+ERROR	2026-04-25T13:49:30.659919647Z	terminated: Application failed to start: The container may have exited abnormally.
+WARNING	2026-04-25T13:49:30.659919381Z	Application exec likely failed
+ERROR	2026-04-25T13:49:17.781620968Z	terminated: Application failed to start: The container may have exited abnormally.
+WARNING	2026-04-25T13:49:17.781620609Z	Application exec likely failed
