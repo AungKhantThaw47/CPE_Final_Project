@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Myanmar Crisis Dashboard · 2023</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+/* ── TOKENS ── */
+:root{
+  --ink:#0d1117;--ink2:#161b27;--ink3:#1e2538;
+  --glass:rgba(255,255,255,0.07);--glass2:rgba(255,255,255,0.12);
+  --border:rgba(255,255,255,0.14);--border2:rgba(255,255,255,0.25);
+  --tx:#f0f3fa;--tx2:#b0bbd0;--tx3:#7a8ba8;
+  --red:#ef4444;--orange:#f97316;--yellow:#eab308;--blue:#3b82f6;--green:#22c55e;
+  --red-g:rgba(239,68,68,.25);--orange-g:rgba(249,115,22,.25);
+  --yellow-g:rgba(234,179,8,.25);--blue-g:rgba(59,130,246,.25);
+  --accent:#e2a84b;--accent-g:rgba(226,168,75,.2);
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'IBM Plex Sans',sans-serif;
+  --r:8px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-size:13px;background:var(--ink);color:var(--tx);font-family:var(--sans)}
+
+/* ── LAYOUT ── */
+.shell{display:grid;grid-template-rows:52px 1fr;height:100vh;overflow:hidden}
+.topbar{background:var(--ink2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:16px;flex-shrink:0;z-index:100}
+.tb-logo{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:-.02em;white-space:nowrap;color:var(--tx)}
+.tb-logo span{color:var(--accent)}
+.tb-divider{width:1px;height:20px;background:var(--border2);flex-shrink:0}
+.tb-filters{display:flex;align-items:center;gap:8px;flex:1;flex-wrap:nowrap;overflow:hidden}
+.tb-label{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx3);white-space:nowrap}
+.tb-count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--tx2);white-space:nowrap;background:var(--glass2);border:1px solid var(--border);padding:3px 10px;border-radius:20px}
+
+/* FILTER CONTROLS */
+.f-date{display:flex;align-items:center;gap:4px}
+.f-input{background:var(--ink3);border:1px solid var(--border2);border-radius:5px;padding:4px 8px;color:var(--tx);font-family:var(--mono);font-size:10px;outline:none;width:100px}
+.f-input:focus{border-color:var(--accent)}
+.f-input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.5);cursor:pointer}
+.f-select{background:var(--ink3);border:1px solid var(--border2);border-radius:5px;padding:4px 8px;color:var(--tx);font-family:var(--mono);font-size:10px;outline:none;cursor:pointer}
+.f-select:focus{border-color:var(--accent)}
+
+/* TYPE CHIPS */
+.chip-wrap{display:flex;gap:4px}
+.chip{font-family:var(--mono);font-size:9px;padding:4px 9px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--tx2);cursor:pointer;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.chip:hover{color:var(--tx);border-color:var(--border2)}
+.chip.on{color:#fff;border-color:transparent}
+.chip-dot{width:6px;height:6px;border-radius:50%}
+.chip[data-t="Violent_incident"].on{background:var(--red);border-color:var(--red)}
+.chip[data-t="Fire"].on{background:var(--orange);border-color:var(--orange)}
+.chip[data-t="Explosion event"].on{background:var(--yellow);border-color:var(--yellow);color:#000}
+.chip[data-t="Natural disaster"].on{background:var(--blue);border-color:var(--blue)}
+
+/* RESET BTN */
+.btn-reset{font-family:var(--mono);font-size:9px;padding:4px 10px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--tx3);cursor:pointer;white-space:nowrap;transition:all .15s}
+.btn-reset:hover{color:var(--accent);border-color:var(--accent)}
+
+/* ── MAIN CONTENT ── */
+.body{display:grid;grid-template-columns:300px 1fr;height:100%;overflow:hidden}
+.left-col{display:flex;flex-direction:column;gap:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--ink2)}
+.right-col{display:flex;flex-direction:column;overflow:hidden}
+
+/* ── CARDS ── */
+.card{background:var(--glass);border-bottom:1px solid var(--border);padding:16px}
+.card-title{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.btn-expand{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--tx2);cursor:pointer;transition:all .15s;flex-shrink:0;font-family:var(--mono);font-size:11px;line-height:1}
+.btn-expand:hover{color:var(--accent);border-color:var(--accent);background:var(--glass2)}
+.btn-expand-floating{position:absolute;top:12px;right:12px;z-index:20}
+
+/* EXPANDED VIEW */
+.expand-overlay{position:fixed;inset:0;z-index:220;display:none;background:var(--ink);backdrop-filter:none}
+.expand-overlay.open{display:block}
+.is-expanded .shell{visibility:hidden;pointer-events:none}
+.expand-shell{position:absolute;inset:0;border:none;border-radius:0;background:var(--ink2);box-shadow:none;overflow:hidden;display:flex;flex-direction:column}
+.expand-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.expand-title{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.expand-close{width:28px;height:28px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--tx2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.expand-close:hover{color:var(--accent);border-color:var(--accent);background:var(--glass2)}
+.expand-stage{position:relative;flex:1;min-height:0;padding:14px;display:flex;background:var(--ink2)}
+.expand-stage>.card,.expand-stage>.bottom-card,.expand-stage>.map-area{width:100%;height:100%;border:none;border-radius:12px;background:var(--ink2);padding:16px;display:flex;flex-direction:column;overflow:hidden}
+.expand-stage>.map-area{padding:0;background:var(--ink2)}
+.expand-stage .ch-wrap{flex:1 !important;height:auto !important;min-height:0}
+.expand-stage .tbl-wrap{flex:1 !important;max-height:none}
+.expand-stage .entity-panel{flex:1 !important}
+.expand-stage .entity-graph-wrap{flex:1;min-height:220px}
+.expand-stage .entity-graph-network{height:100%}
+.expand-stage #top-locs{flex:1;overflow:auto}
+.expand-stage .map-area{position:relative;min-height:0}
+.expand-stage .card-title{margin-bottom:12px}
+.expand-stage .map-area .btn-expand-floating{top:14px;right:14px}
+
+/* OVERVIEW CARDS */
+.ov-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ov-card{background:var(--ink3);border:1px solid var(--border);border-radius:var(--r);padding:12px;position:relative;overflow:hidden;cursor:default;transition:border-color .2s}
+.ov-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--c,transparent)}
+.ov-card:hover{border-color:var(--border2)}
+.ov-label{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);margin-bottom:6px}
+.ov-val{font-family:var(--mono);font-size:22px;font-weight:600;letter-spacing:-.04em;line-height:1;color:var(--cv,var(--tx))}
+.ov-sub{font-family:var(--mono);font-size:8px;color:var(--tx3);margin-top:3px}
+
+/* CHART AREAS */
+.ch-wrap{position:relative}
+.ch-160{height:160px}
+.ch-120{height:120px}
+.ch-180{height:180px}
+
+/* TOP LOCATIONS */
+.loc-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.loc-row:last-child{border-bottom:none}
+.loc-row:hover{background:var(--glass2);margin:0 -16px;padding:6px 16px}
+.loc-rank{font-family:var(--mono);font-size:9px;color:var(--tx3);width:16px;flex-shrink:0;text-align:right}
+.loc-bar-wrap{flex:1}
+.loc-name{font-size:11px;color:var(--tx);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.loc-track{height:3px;background:var(--ink3);border-radius:2px;overflow:hidden}
+.loc-fill{height:100%;border-radius:2px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+.loc-count{font-family:var(--mono);font-size:10px;color:var(--tx2);flex-shrink:0;min-width:18px;text-align:right}
+
+/* ── MAP ── */
+.map-area{flex:1;position:relative;min-height:0}
+#map{height:100%;width:100%}
+.leaflet-container{background:#c8cdd6!important}
+.leaflet-tile{filter:brightness(.78) saturate(.8)}
+
+/* CUSTOM TOOLTIP */
+.crisis-tooltip{background:var(--ink2)!important;border:1px solid var(--border2)!important;color:var(--tx)!important;font-family:var(--mono)!important;font-size:11px!important;padding:8px 12px!important;border-radius:6px!important;box-shadow:0 8px 24px rgba(0,0,0,.5)!important;line-height:1.6!important}
+.crisis-tooltip::before{display:none!important}
+.tt-type{font-size:9px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px}
+.tt-loc{font-weight:500;font-size:12px;margin-bottom:6px;color:var(--tx)}
+.tt-row{display:flex;gap:12px;flex-wrap:wrap}
+.tt-item{font-size:9px;color:var(--tx2)}
+.tt-item span{color:var(--tx);font-weight:500}
+
+/* ── BOTTOM AREA ── */
+.bottom-area{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border);flex-shrink:0}
+.bottom-card{padding:14px 16px;overflow:hidden}
+.bottom-card+.bottom-card{border-left:1px solid var(--border)}
+
+/* TAB STRIP + ENTITY CONNECTIONS */
+.tab-strip{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tab-btn{font-family:var(--mono);font-size:9px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--tx3);cursor:pointer;white-space:nowrap;transition:all .15s}
+.tab-btn:hover{color:var(--tx);border-color:var(--accent)}
+.tab-btn.on{color:var(--tx);background:var(--glass2);border-color:var(--accent)}
+.tab-panel{display:none;flex:1;min-height:0}
+.tab-panel.on{display:flex;flex-direction:column;min-height:0}
+.entity-panel{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0}
+.entity-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;flex-shrink:0}
+.entity-stat{background:var(--ink3);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;overflow:hidden}
+.entity-stat-value{display:block;font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:-.03em;line-height:1.1;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entity-stat-label{display:block;margin-top:6px;font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3)}
+.entity-graph-wrap{background:var(--ink3);border:1px solid var(--border);border-radius:var(--r);padding:8px;display:flex;align-items:center;justify-content:center;min-height:128px;overflow:hidden}
+.entity-graph{width:100%;height:172px}
+.entity-graph-network{width:100%;height:172px}
+.entity-network-loading{display:flex;align-items:center;justify-content:center;width:100%;height:172px;font-family:var(--mono);font-size:10px;color:var(--tx3)}
+.entity-link-list{background:var(--ink3);border:1px solid var(--border);border-radius:var(--r);padding:8px 12px;overflow:auto;flex:1;min-height:0}
+.entity-link-row{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border)}
+.entity-link-row:last-child{border-bottom:none}
+.entity-link-name{font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;color:var(--tx)}
+.entity-link-mid{font-family:var(--mono);font-size:9px;color:var(--tx3);flex-shrink:0}
+.entity-link-count{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--tx3);flex-shrink:0}
+.entity-empty{display:flex;align-items:center;justify-content:center;min-height:100px;font-family:var(--mono);font-size:10px;color:var(--tx3)}
+
+/* ── TABLE ── */
+.tbl-wrap{overflow:auto;max-height:180px}
+table{width:100%;border-collapse:collapse;font-size:11px}
+thead th{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--ink2);position:sticky;top:0;z-index:2;cursor:pointer;white-space:nowrap;user-select:none;font-weight:400}
+thead th:hover{color:var(--tx)}
+thead th.asc::after{content:' ↑';color:var(--accent)}
+thead th.desc::after{content:' ↓';color:var(--accent)}
+tbody td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--tx2);white-space:nowrap;vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr{cursor:pointer;transition:background .1s}
+tbody tr:hover{background:var(--glass2)}
+tbody tr:hover td{color:var(--tx)}
+.badge{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:8px;padding:2px 7px;border-radius:20px;border:1px solid;white-space:nowrap}
+.b-violent{background:var(--red-g);border-color:rgba(239,68,68,.6);color:#fc8181}
+.b-fire{background:var(--orange-g);border-color:rgba(249,115,22,.6);color:#fda06a}
+.b-explosion{background:var(--yellow-g);border-color:rgba(234,179,8,.6);color:#fde047}
+.b-natural{background:var(--blue-g);border-color:rgba(59,130,246,.6);color:#93c5fd}
+.flag-y{color:var(--green);font-family:var(--mono);font-size:10px}
+.flag-n{color:var(--tx3);font-family:var(--mono);font-size:10px}
+.flag-na{color:var(--tx3);font-family:var(--mono);font-size:10px;opacity:.6}
+
+/* ── TIMELINE CHART ── */
+.tl-card{border-left:1px solid var(--border)}
+
+/* ── DETAIL PANEL ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;backdrop-filter:blur(2px)}
+.overlay.open{display:block}
+.detail{position:fixed;right:0;top:0;bottom:0;width:360px;background:var(--ink2);border-left:1px solid var(--border2);z-index:201;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
+.detail.open{transform:translateX(0)}
+.det-head{padding:16px 18px;border-bottom:1px solid var(--border);flex-shrink:0}
+.det-close{position:absolute;top:14px;right:16px;width:26px;height:26px;border-radius:5px;border:1px solid var(--border2);background:none;color:var(--tx2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .14s}
+.det-close:hover{background:var(--glass2);color:var(--tx)}
+.det-body{padding:16px 18px;overflow-y:auto;flex:1}
+.det-section{font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:14px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.det-row{display:flex;justify-content:space-between;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border)}
+.det-row:last-child{border-bottom:none}
+.det-k{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3)}
+.det-v{font-family:var(--mono);font-size:10px;color:var(--tx);text-align:right;max-width:200px;word-break:break-word}
+.det-entity{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border)}
+.det-entity:last-child{border-bottom:none}
+.ent-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0}
+
+/* LEAFLET OVERRIDES */
+.leaflet-popup-content-wrapper{background:var(--ink2)!important;border:1px solid var(--border2)!important;border-radius:8px!important;box-shadow:0 8px 32px rgba(0,0,0,.6)!important;color:var(--tx)!important;font-family:var(--mono)!important}
+.leaflet-popup-tip{background:var(--ink2)!important}
+.leaflet-popup-content{margin:10px 14px!important;font-size:11px!important;line-height:1.6!important}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--ink3);border-radius:2px}
+
+/* NO DATA */
+.no-data{display:flex;align-items:center;justify-content:center;height:80px;font-family:var(--mono);font-size:10px;color:var(--tx3)}
+
+/* MAP STATUS BADGE (geocoding indicator) */
+.map-status{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1000;background:var(--ink2);border:1px solid var(--border2);border-radius:20px;padding:5px 14px;font-family:var(--mono);font-size:10px;color:var(--tx2);pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:7px}
+.map-status::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0;animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── THEME TOGGLE ── */
+.btn-theme{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--tx2);cursor:pointer;transition:all .15s;flex-shrink:0}
+.btn-theme:hover{color:var(--accent);border-color:var(--accent)}
+
+/* ── LIGHT MODE ── */
+[data-theme="light"]{
+  --ink:#f0f4fb;--ink2:#ffffff;--ink3:#e4e9f5;
+  --glass:rgba(0,0,0,0.03);--glass2:rgba(0,0,0,0.07);
+  --border:rgba(0,0,0,0.10);--border2:rgba(0,0,0,0.18);
+  --tx:#0f1623;--tx2:#4a5568;--tx3:#7a8ba8;
+  --red-g:rgba(239,68,68,.12);--orange-g:rgba(249,115,22,.12);
+  --yellow-g:rgba(234,179,8,.14);--blue-g:rgba(59,130,246,.12);
+  --accent:#b8721a;--accent-g:rgba(184,114,26,.12);
+}
+[data-theme="light"] .leaflet-container{background:#f5f5f5!important}
+[data-theme="light"] .leaflet-tile{filter:none!important}
+[data-theme="light"] .f-input[type=date]::-webkit-calendar-picker-indicator{filter:none}
+[data-theme="light"] .leaflet-popup-content-wrapper{box-shadow:0 4px 20px rgba(0,0,0,.12)!important}
+[data-theme="light"] .b-violent{color:#dc2626}
+[data-theme="light"] .b-fire{color:#c2410c}
+[data-theme="light"] .b-explosion{color:#92400e}
+[data-theme="light"] .b-natural{color:#1d4ed8}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.fi{animation:fadeIn .3s ease both}
+</style>
+</head>
+<body>
+<div class="overlay" id="overlay" onclick="closeDetail()"></div>
+
+<div class="expand-overlay" id="expand-overlay" onclick="closeExpand()">
+  <div class="expand-shell" onclick="event.stopPropagation()">
+    <div class="expand-head">
+      <div class="expand-title" id="expand-title">Expanded view</div>
+      <button class="expand-close" onclick="closeExpand()" aria-label="Close expanded view">
+        <svg width="11" height="11" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="expand-stage" id="expand-stage"></div>
+  </div>
+</div>
+
+<!-- DETAIL PANEL -->
+<div class="detail" id="detail">
+  <div class="det-head">
+    <div id="det-badge" style="margin-bottom:6px"></div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:2px" id="det-title"></div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--tx2)" id="det-date"></div>
+    <button class="det-close" onclick="closeDetail()">
+      <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="det-body" id="det-body"></div>
+</div>
+
+<div class="shell">
+  <!-- ═══ TOPBAR ═══ -->
+  <header class="topbar">
+    <div class="tb-logo">Crisis<span>Intel</span></div>
+    <div class="tb-divider"></div>
+
+    <!-- DATE RANGE -->
+    <div class="tb-label">Date</div>
+    <div class="f-date">
+      <input class="f-input" type="date" id="f-from" value="2023-01-01" onchange="applyFilters()">
+      <span style="color:var(--tx3);font-size:10px">–</span>
+      <input class="f-input" type="date" id="f-to" value="2023-12-31" onchange="applyFilters()">
+    </div>
+
+    <div class="tb-divider"></div>
+
+    <!-- CRISIS TYPE MULTI-SELECT -->
+    <div class="tb-label">Type</div>
+    <div class="chip-wrap" id="type-chips">
+      <button class="chip on" data-t="Violent_incident" onclick="toggleChip(this)"><span class="chip-dot" style="background:var(--red)"></span>Violent</button>
+      <button class="chip on" data-t="Fire" onclick="toggleChip(this)"><span class="chip-dot" style="background:var(--orange)"></span>Fire</button>
+      <button class="chip on" data-t="Explosion event" onclick="toggleChip(this)"><span class="chip-dot" style="background:var(--yellow)"></span>Explosion</button>
+      <button class="chip on" data-t="Natural disaster" onclick="toggleChip(this)"><span class="chip-dot" style="background:var(--blue)"></span>Natural</button>
+    </div>
+
+    <div class="tb-divider"></div>
+
+    <!-- LOCATION FILTER -->
+    <div class="tb-label">Location</div>
+    <select class="f-select" id="f-location" onchange="applyFilters()">
+      <option value="">All regions</option>
+      <option value="Sagaing Region">Sagaing</option>
+      <option value="Magway Region">Magway</option>
+      <option value="Mandalay Region">Mandalay</option>
+      <option value="Yangon Region">Yangon</option>
+    </select>
+
+    <button class="btn-reset" onclick="resetFilters()">Reset</button>
+    <div class="tb-divider"></div>
+    <input type="file" id="json-file" accept=".json" style="display:none" onchange="handleFileUpload(event)">
+    <button class="btn-reset" onclick="document.getElementById('json-file').click()" title="Load a JSON data file">Load JSON</button>
+    <div class="tb-count" id="tb-count">17 events</div>
+    <div class="tb-divider"></div>
+    <button class="btn-theme" id="btn-theme" onclick="toggleTheme()" title="Toggle light / dark mode">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    </button>
+  </header>
+
+  <!-- ═══ BODY ═══ -->
+  <div class="body">
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+
+      <!-- OVERVIEW CARDS -->
+      <div class="card" id="section-overview">
+        <div class="card-title"><span>Overview</span><button class="btn-expand" onclick="openExpand('section-overview','Overview')" aria-label="Expand overview">⤢</button></div>
+        <div class="ov-grid">
+          <div class="ov-card" style="--c:var(--accent)">
+            <div class="ov-label">Total events</div>
+            <div class="ov-val" id="ov-total" style="--cv:var(--accent)">—</div>
+            <div class="ov-sub">incidents</div>
+          </div>
+          <div class="ov-card" style="--c:var(--red)">
+            <div class="ov-label">Civ. fatalities</div>
+            <div class="ov-val" id="ov-cfat" style="--cv:var(--red)">—</div>
+            <div class="ov-sub">confirmed deaths</div>
+          </div>
+          <div class="ov-card" style="--c:var(--orange)">
+            <div class="ov-label">Non-civ. deaths</div>
+            <div class="ov-val" id="ov-ncfat" style="--cv:var(--orange)">—</div>
+            <div class="ov-sub">armed personnel</div>
+          </div>
+          <div class="ov-card" style="--c:var(--yellow)">
+            <div class="ov-label">Displaced</div>
+            <div class="ov-val" id="ov-disp" style="--cv:var(--yellow)">—</div>
+            <div class="ov-sub">people (known)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CRISIS TYPE CHART -->
+      <div class="card" id="section-type">
+        <div class="card-title"><span>Crisis type breakdown</span><button class="btn-expand" onclick="openExpand('section-type','Crisis type breakdown')" aria-label="Expand crisis type breakdown">⤢</button></div>
+        <div class="ch-wrap ch-160">
+          <canvas id="typeChart" role="img" aria-label="Crisis type breakdown chart">Type breakdown.</canvas>
+        </div>
+      </div>
+
+      <!-- TOP LOCATIONS -->
+      <div class="card" id="section-locations" style="flex:1;border-bottom:none">
+        <div class="card-title"><span>Top locations <span style="color:var(--tx3);font-weight:400">by events</span></span><button class="btn-expand" onclick="openExpand('section-locations','Top locations')" aria-label="Expand top locations">⤢</button></div>
+        <div id="top-locs"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+
+      <!-- MAP -->
+      <div class="map-area" id="section-map">
+        <button class="btn-expand btn-expand-floating" onclick="openExpand('section-map','Map')" aria-label="Expand map">⤢</button>
+        <div id="map"></div>
+      </div>
+
+      <!-- BOTTOM: TIMELINE + CONNECTIONS -->
+      <div class="bottom-area" style="height:230px">
+
+        <!-- TIMELINE -->
+          <div class="bottom-card" id="section-timeline">
+            <div class="card-title" style="margin-bottom:8px"><span>Timeline <span style="color:var(--tx3);font-weight:400">events per day</span></span><button class="btn-expand" onclick="openExpand('section-timeline','Timeline')" aria-label="Expand timeline">⤢</button></div>
+          <div class="ch-wrap" style="height:170px">
+            <canvas id="timelineChart" role="img" aria-label="Events timeline over time">Timeline.</canvas>
+          </div>
+        </div>
+
+        <!-- EVENTS + ENTITY CONNECTIONS -->
+          <div class="bottom-card tl-card" id="section-connections" style="display:flex;flex-direction:column;overflow:hidden">
+          <div class="card-title" style="margin-bottom:8px;flex-shrink:0">
+              <span>Connections</span>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div class="tab-strip">
+                  <button class="tab-btn on" data-right-tab="events" onclick="switchRightTab('events')">Events</button>
+                  <button class="tab-btn" data-right-tab="entities" onclick="switchRightTab('entities')">Entities connections</button>
+                </div>
+                <button class="btn-expand" onclick="openExpand('section-connections','Connections')" aria-label="Expand connections">⤢</button>
+              </div>
+          </div>
+
+          <div class="tab-panel on" id="panel-events">
+            <div class="card-title" style="margin-bottom:8px;flex-shrink:0">
+              Events
+              <span id="tbl-count" style="color:var(--tx3);font-weight:400;font-size:9px">— records</span>
+            </div>
+            <div class="tbl-wrap" style="flex:1">
+              <table>
+                <thead>
+                  <tr>
+                    <th onclick="sortBy('date')">Date</th>
+                    <th onclick="sortBy('location')">Location</th>
+                    <th onclick="sortBy('crisis_type')">Type</th>
+                    <th onclick="sortBy('displacement')">Displaced</th>
+                    <th onclick="sortBy('infrastructure_damage')">Infra.</th>
+                  </tr>
+                </thead>
+                <tbody id="tbl-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="panel-entities">
+            <div class="entity-panel">
+              <div class="entity-stats">
+                <div class="entity-stat">
+                  <span class="entity-stat-value" id="entity-total">—</span>
+                  <span class="entity-stat-label">Unique entities</span>
+                </div>
+                <div class="entity-stat">
+                  <span class="entity-stat-value" id="entity-link-total">—</span>
+                  <span class="entity-stat-label">Shared links</span>
+                </div>
+                <div class="entity-stat">
+                  <span class="entity-stat-value" id="entity-top">—</span>
+                  <span class="entity-stat-label">Most active</span>
+                </div>
+              </div>
+              <div class="entity-graph-wrap">
+                <div class="entity-graph-network" id="entityGraph" role="img" aria-label="Entity connections graph"></div>
+              </div>
+              <div class="entity-link-list" id="entity-link-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   DATA — 17 real records + township coordinates
+   ================================================================ */
+const RAW = [
+  {"crisis_type":"Fire","location":"Pauk Township, Magway Region, Myanmar","date":"08/01/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"TRUE","civilian_fatalities":"NA","non-civilian_fatalities":"NA","number_of_people_displaced":"NA","entities":["Military"]},
+  {"crisis_type":"Violent_incident","location":"Pale Township, Sagaing Region, Myanmar","date":"11/01/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"NA","civilian_fatalities":"NA","non-civilian_fatalities":1,"number_of_people_displaced":"NA","entities":["Military","Pyu Saw Htee","Galon Net Group"]},
+  {"crisis_type":"Violent_incident","location":"Pale Township, Sagaing Region, Myanmar","date":"23/01/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"NA","civilian_fatalities":"NA","non-civilian_fatalities":4,"number_of_people_displaced":"NA","entities":["Military","Pyu Saw Htee","Galon Net Army"]},
+  {"crisis_type":"Fire","location":"Yinmabin Township, Sagaing Region, Myanmar","date":"23/01/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"TRUE","civilian_fatalities":0,"non-civilian_fatalities":"NA","number_of_people_displaced":"NA","entities":["Military"]},
+  {"crisis_type":"Fire","location":"Thabeikkyin Township, Mandalay Region, Myanmar","date":"24/01/2023","affected_civilian":"TRUE","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"NA","civilian_fatalities":"NA","non-civilian_fatalities":"NA","number_of_people_displaced":"NA","entities":["Military"]},
+  {"crisis_type":"Violent_incident","location":"Ayadaw Township, Sagaing Region, Myanmar","date":"27/01/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"NA","displacement":"NA","civilian_fatalities":"NA","non-civilian_fatalities":8,"number_of_people_displaced":"NA","entities":["Military","Pyu Saw Htee","Zero Guerrilla Force"]},
+  {"crisis_type":"Violent_incident","location":"Yesagyo Township, Magway Region, Myanmar","date":"28/01/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"NA","displacement":"NA","civilian_fatalities":"NA","non-civilian_fatalities":6,"number_of_people_displaced":"NA","entities":["Military","Lightning Guerrilla Force","Pakokku District Battalion No. 9","Steel Falcon Guerrilla Force","People's Defense Force"]},
+  {"crisis_type":"Violent_incident","location":"Pakokku Township, Magway Region, Myanmar","date":"31/01/2023","affected_civilian":"TRUE","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"TRUE","civilian_fatalities":"NA","non-civilian_fatalities":"NA","number_of_people_displaced":2000,"entities":["Military","Pyu Saw Htee","People's Defense Force"]},
+  {"crisis_type":"Violent_incident","location":"Myaing Township, Magway Region, Myanmar","date":"02/02/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"NA","displacement":"NA","civilian_fatalities":"NA","non-civilian_fatalities":2,"number_of_people_displaced":"NA","entities":["Pyu Saw Htee","People's Defense Force"]},
+  {"crisis_type":"Violent_incident","location":"Myinmu Township, Sagaing Region, Myanmar","date":"04/02/2023","affected_civilian":"TRUE","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"NA","civilian_fatalities":1,"non-civilian_fatalities":15,"number_of_people_displaced":"NA","entities":["Military","Kyaukse District Battalion 1","Red Dragon Battalion","Zero Guerrilla Force","Myingyan District Battalion 7","Shwebo District Battalion 19","Sagaing District Battalion 2","GTR (Myinmu)"]},
+  {"crisis_type":"Violent_incident","location":"Pale Township, Sagaing Region, Myanmar","date":"05/02/2023","affected_civilian":"FALSE","affected_women":"NA","affected_children":"NA","infrastructure_damage":"FALSE","displacement":"NA","civilian_fatalities":0,"non-civilian_fatalities":2,"number_of_people_displaced":"NA","entities":["Military","Black Galon Force","People's Defense Force"]},
+  {"crisis_type":"Violent_incident","location":"Yinmarbin Township, Sagaing Region, Myanmar","date":"07/02/2023","affected_civilian":"TRUE","affected_women":"NA","affected_children":"NA","infrastructure_damage":"NA","displacement":"TRUE","civilian_fatalities":1,"non-civilian_fatalities":"NA","number_of_people_displaced":"NA","entities":["Military"]},
+  {"crisis_type":"Violent_incident","location":"Pakokku Township, Magway Region, Myanmar","date":"11/02/2023","affected_civilian":"FALSE","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"TRUE","civilian_fatalities":0,"non-civilian_fatalities":7,"number_of_people_displaced":1000,"entities":["Military","People's Defense Force"]},
+  {"crisis_type":"Fire","location":"Kyunhla Township, Sagaing Region, Myanmar","date":"11/02/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"TRUE","civilian_fatalities":"NA","non-civilian_fatalities":"NA","number_of_people_displaced":"NA","entities":["Military","Pyu Saw Htee"]},
+  {"crisis_type":"Violent_incident","location":"Kani Township, Sagaing Region, Myanmar","date":"14/02/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"NA","displacement":"NA","civilian_fatalities":"NA","non-civilian_fatalities":5,"number_of_people_displaced":"NA","entities":["Military","Pyu Saw Htee","People's Defense Force"]},
+  {"crisis_type":"Explosion event","location":"Sanchaung Township, Yangon Region, Myanmar","date":"14/02/2023","affected_civilian":"NA","affected_women":"NA","affected_children":"NA","infrastructure_damage":"NA","displacement":"FALSE","civilian_fatalities":"NA","non-civilian_fatalities":"NA","number_of_people_displaced":"NA","entities":[]},
+  {"crisis_type":"Fire","location":"Yinmabin Township, Sagaing Region, Myanmar","date":"13/02/2023","affected_civilian":"TRUE","affected_women":"NA","affected_children":"NA","infrastructure_damage":"TRUE","displacement":"TRUE","civilian_fatalities":"NA","non-civilian_fatalities":0,"number_of_people_displaced":"NA","entities":["Military"]}
+];
+
+/* Coordinate cache — pre-seeded for known townships.
+   Any new township not listed here is auto-fetched from Nominatim
+   and stored here so subsequent renders skip the API call. */
+const coordCache = {
+  "Pauk Township":      [21.45, 94.47],
+  "Pale Township":      [21.98, 95.03],
+  "Yinmabin Township":  [22.17, 95.15],
+  "Thabeikkyin Township":[23.09,96.02],
+  "Ayadaw Township":    [22.07, 95.35],
+  "Yesagyo Township":   [21.63, 94.88],
+  "Pakokku Township":   [21.33, 95.09],
+  "Myaing Township":    [21.55, 94.85],
+  "Myinmu Township":    [22.28, 95.67],
+  "Yinmarbin Township": [22.11, 95.22],
+  "Kyunhla Township":   [23.06, 95.27],
+  "Kani Township":      [22.46, 94.99],
+  "Sanchaung Township": [16.84, 96.12],
+};
+
+const TYPE_COLOR = {
+  "Violent_incident": "#ef4444",
+  "Fire":             "#f97316",
+  "Explosion event":  "#eab308",
+  "Natural disaster": "#3b82f6",
+};
+const TYPE_LABEL = {
+  "Violent_incident": "Violent incident",
+  "Fire":             "Fire",
+  "Explosion event":  "Explosion",
+  "Natural disaster": "Natural disaster",
+};
+const BADGE_CLS = {
+  "Violent_incident": "b-violent",
+  "Fire":             "b-fire",
+  "Explosion event":  "b-explosion",
+  "Natural disaster": "b-natural",
+};
+
+/* ================================================================
+   STATE
+   ================================================================ */
+let DATA = RAW;           // original
+let filtered = [];        // after filters
+let activeTypes = new Set(["Violent_incident","Fire","Explosion event","Natural disaster"]);
+let sortCol = "date", sortDir = 1;
+let typeChartInst = null, tlChartInst = null;
+let mapMarkers = [];
+let leafMap = null;
+let tileLayer = null;
+let mapRenderToken = 0;
+let activeRightTab = "events";
+
+/* ================================================================
+   HELPERS
+   ================================================================ */
+function parseDate(s) {
+  if (!s || s === "NA") return null;
+  const [d,m,y] = s.split("/");
+  return new Date(+y, +m-1, +d);
+}
+function toISO(d) {
+  if (!d) return "";
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function fmtNum(v) { const n = parseInt(v); return isNaN(n) ? null : n; }
+function getRegion(loc) { return ((loc||"").split(",")[1]||"").trim(); }
+function getTownship(loc) { return ((loc||"").split(",")[0]||"").trim(); }
+function sum(arr, k) { return arr.reduce((s,d)=>{ const v=fmtNum(d[k]); return v!==null?s+v:s; }, 0); }
+function flag(v) {
+  if (v==="TRUE")  return '<span class="flag-y">Yes</span>';
+  if (v==="FALSE") return '<span class="flag-n">No</span>';
+  return '<span class="flag-na">–</span>';
+}
+function badge(t) {
+  return `<span class="badge ${BADGE_CLS[t]||''}">${TYPE_LABEL[t]||t}</span>`;
+}
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[char]));
+}
+function shortLabel(value, maxLength = 14) {
+  const text = String(value ?? "");
+  return text.length > maxLength ? text.slice(0, maxLength - 3) + "..." : text;
+}
+function colorVal(k, v) {
+  if ((k==="civilian_fatalities"||k==="non-civilian_fatalities") && parseInt(v)>0) return k.includes("civ")&&!k.includes("non") ? "var(--red)" : "var(--orange)";
+  if (v==="TRUE") return "var(--green)";
+  if (v==="FALSE") return "var(--tx3)";
+  return "var(--tx)";
+}
+
+let expandedSection = null;
+
+function openExpand(sectionId, title) {
+  if (expandedSection && expandedSection.sectionId === sectionId) {
+    closeExpand();
+    return;
+  }
+
+  closeExpand();
+
+  const section = document.getElementById(sectionId);
+  const stage = document.getElementById("expand-stage");
+  const overlay = document.getElementById("expand-overlay");
+  const titleEl = document.getElementById("expand-title");
+  if (!section || !stage || !overlay || !titleEl) return;
+
+  const placeholder = document.createComment(`expand:${sectionId}`);
+  section.parentNode.insertBefore(placeholder, section);
+  stage.appendChild(section);
+  titleEl.textContent = title;
+  overlay.classList.add("open");
+  document.body.classList.add("is-expanded");
+  expandedSection = { sectionId, section, placeholder };
+
+  requestAnimationFrame(() => {
+    if (sectionId === "section-map" && leafMap) leafMap.invalidateSize();
+    if (sectionId === "section-type" && typeChartInst) typeChartInst.resize();
+    if (sectionId === "section-timeline" && tlChartInst) tlChartInst.resize();
+    if (sectionId === "section-connections" && entityNetwork) entityNetwork.fit({ animation: false });
+  });
+}
+
+function closeExpand() {
+  if (!expandedSection) return;
+
+  const { section, placeholder } = expandedSection;
+  const overlay = document.getElementById("expand-overlay");
+  if (placeholder.parentNode) {
+    placeholder.parentNode.insertBefore(section, placeholder);
+    placeholder.remove();
+  }
+  overlay.classList.remove("open");
+  document.body.classList.remove("is-expanded");
+  expandedSection = null;
+
+  requestAnimationFrame(() => {
+    if (section.id === "section-map" && leafMap) leafMap.invalidateSize();
+    if (section.id === "section-type" && typeChartInst) typeChartInst.resize();
+    if (section.id === "section-timeline" && tlChartInst) tlChartInst.resize();
+    if (section.id === "section-connections" && entityNetwork) entityNetwork.fit({ animation: false });
+  });
+}
+
+/* ================================================================
+   FILTERS
+   ================================================================ */
+function toggleChip(btn) {
+  const t = btn.dataset.t;
+  if (activeTypes.has(t)) {
+    if (activeTypes.size === 1) return; // keep at least one
+    activeTypes.delete(t);
+    btn.classList.remove("on");
+  } else {
+    activeTypes.add(t);
+    btn.classList.add("on");
+  }
+  applyFilters();
+}
+
+function applyFilters() {
+  const from = parseDate(document.getElementById("f-from").value.split("-").reverse().join("/"));
+  const to   = parseDate(document.getElementById("f-to").value.split("-").reverse().join("/"));
+  const loc  = document.getElementById("f-location").value;
+
+  filtered = DATA.filter(d => {
+    const dt = parseDate(d.date);
+    if (from && dt && dt < from) return false;
+    if (to   && dt && dt > to)   return false;
+    if (!activeTypes.has(d.crisis_type)) return false;
+    if (loc && !(d.location||"").includes(loc)) return false;
+    return true;
+  });
+
+  document.getElementById("tb-count").textContent = filtered.length + " events";
+  renderAll();
+}
+
+function resetFilters() {
+  document.getElementById("f-from").value = "2023-01-01";
+  document.getElementById("f-to").value   = "2023-12-31";
+  document.getElementById("f-location").value = "";
+  activeTypes = new Set(["Violent_incident","Fire","Explosion event","Natural disaster"]);
+  document.querySelectorAll(".chip").forEach(c => c.classList.add("on"));
+  applyFilters();
+}
+
+/* ================================================================
+   RENDER ALL
+   ================================================================ */
+function renderAll() {
+  renderOverview();
+  renderTypeChart();
+  renderTopLocations();
+  renderMap();
+  renderTimeline();
+  renderTable();
+  renderEntitiesConnections();
+}
+
+/* ── OVERVIEW CARDS ── */
+function renderOverview() {
+  const n = filtered.length;
+  const cf  = sum(filtered, "civilian_fatalities");
+  const ncf = sum(filtered, "non-civilian_fatalities");
+  const dp  = sum(filtered, "number_of_people_displaced");
+  document.getElementById("ov-total").textContent = n;
+  document.getElementById("ov-cfat").textContent  = cf  || "NA";
+  document.getElementById("ov-ncfat").textContent = ncf || "NA";
+  document.getElementById("ov-disp").textContent  = dp > 0 ? dp.toLocaleString() : "NA";
+}
+
+/* ── CRISIS TYPE CHART ── */
+function renderTypeChart() {
+  const tc = {};
+  filtered.forEach(d => { if(d.crisis_type) tc[d.crisis_type] = (tc[d.crisis_type]||0)+1; });
+  const types = Object.keys(tc);
+  const counts = types.map(t => tc[t]);
+  const colors = types.map(t => TYPE_COLOR[t]||"#888");
+
+  if (typeChartInst) typeChartInst.destroy();
+  const ctx = document.getElementById("typeChart");
+  if (!types.length) { ctx.getContext("2d").clearRect(0,0,ctx.width,ctx.height); return; }
+
+  const cc = getChartColors();
+  typeChartInst = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: types.map(t => TYPE_LABEL[t]||t),
+      datasets: [{
+        data: counts,
+        backgroundColor: colors,
+        borderColor: cc.sliceBorder,
+        borderWidth: 2,
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: "65%",
+      plugins: {
+        legend: {
+          display: true,
+          position: "right",
+          labels: {
+            color: cc.tx2,
+            font: { size: 9, family: "'IBM Plex Mono'" },
+            boxWidth: 8, boxHeight: 8,
+            padding: 10,
+            generateLabels: chart => {
+              const ds = chart.data.datasets[0];
+              return chart.data.labels.map((l,i) => ({
+                text: `${l}  ${ds.data[i]}`,
+                fillStyle: ds.backgroundColor[i],
+                strokeStyle: "transparent",
+                index: i,
+              }));
+            }
+          }
+        },
+        tooltip: {
+          backgroundColor: cc.tooltipBg,
+          borderColor: cc.tooltipBorder,
+          borderWidth: 1,
+          titleFont: { family: "'IBM Plex Mono'", size: 10 },
+          bodyFont:  { family: "'IBM Plex Mono'", size: 10 },
+          titleColor: cc.tx,
+          bodyColor:  cc.tx2,
+        }
+      }
+    }
+  });
+}
+
+/* ── TOP LOCATIONS ── */
+function renderTopLocations() {
+  const lc = {};
+  filtered.forEach(d => {
+    const t = getTownship(d.location);
+    if (t) lc[t] = (lc[t]||0)+1;
+  });
+  const sorted = Object.entries(lc).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const max = sorted[0]?.[1]||1;
+  const el = document.getElementById("top-locs");
+  if (!sorted.length) { el.innerHTML = '<div class="no-data">No data</div>'; return; }
+  el.innerHTML = sorted.map(([name,cnt],i) => `
+    <div class="loc-row" onclick="filterByLocation('${name}')">
+      <span class="loc-rank">${i+1}</span>
+      <div class="loc-bar-wrap">
+        <div class="loc-name">${name}</div>
+        <div class="loc-track">
+          <div class="loc-fill" style="width:${Math.round(cnt/max*100)}%;background:var(--accent)"></div>
+        </div>
+      </div>
+      <span class="loc-count">${cnt}</span>
+    </div>`).join("");
+}
+
+function filterByLocation(township) {
+  // find what region this township is in
+  const rec = filtered.find(d => getTownship(d.location) === township) ||
+              DATA.find(d => getTownship(d.location) === township);
+  if (!rec) return;
+  const region = getRegion(rec.location);
+  document.getElementById("f-location").value = region;
+  applyFilters();
+}
+
+/* ── GEOCODER ── */
+async function geocodeTownship(township, fullLocation) {
+  // Cache hit (including null = confirmed not found)
+  if (township in coordCache) return coordCache[township];
+
+  try {
+    const q = encodeURIComponent(fullLocation || `${township}, Myanmar`);
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=mm`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    const data = await res.json();
+    coordCache[township] = data[0] ? [+data[0].lat, +data[0].lon] : null;
+  } catch(e) {
+    coordCache[township] = null;
+  }
+
+  // Nominatim usage policy: max 1 request/second
+  await new Promise(r => setTimeout(r, 1100));
+  return coordCache[township];
+}
+
+/* ── MAP ── */
+async function renderMap() {
+  // Increment token so any in-flight render for a previous filter knows to abort
+  const token = ++mapRenderToken;
+  mapMarkers.forEach(m => leafMap.removeLayer(m));
+  mapMarkers = [];
+
+  for (const d of filtered) {
+    if (token !== mapRenderToken) return; // newer render started, abort this one
+
+    const township = getTownship(d.location);
+    const coords = await geocodeTownship(township, d.location);
+
+    if (token !== mapRenderToken) return;
+    if (!coords) continue;
+
+    const color = TYPE_COLOR[d.crisis_type] || "#888";
+    const cf    = fmtNum(d.civilian_fatalities);
+    const ncf   = fmtNum(d["non-civilian_fatalities"]);
+    const infra  = d.infrastructure_damage;
+
+    const jitter = () => (Math.random() - 0.5) * 0.04;
+    const marker = L.circleMarker([coords[0] + jitter(), coords[1] + jitter()], {
+      radius: 8,
+      fillColor: color,
+      fillOpacity: 0.85,
+      color: "#fff",
+      weight: 1.5,
+      opacity: 0.9,
+    });
+
+    const popupHtml = `
+      <div>
+        <div style="font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:${color};margin-bottom:4px">${TYPE_LABEL[d.crisis_type]||d.crisis_type}</div>
+        <div style="font-size:12px;font-weight:500;margin-bottom:6px;color:var(--tx)">${getTownship(d.location)}</div>
+        <div style="font-size:10px;color:var(--tx2);margin-bottom:8px">${getRegion(d.location)} · ${d.date}</div>
+        <div style="display:flex;flex-direction:column;gap:3px;font-size:10px">
+          <div><span style="color:var(--tx3)">Civ. fatalities: </span><span style="color:${cf!==null&&cf>0?"var(--red)":"var(--tx)"}">${cf!==null?cf:"NA"}</span></div>
+          <div><span style="color:var(--tx3)">Non-civ. fatalities: </span><span style="color:${ncf!==null&&ncf>0?"var(--orange)":"var(--tx)"}">${ncf!==null?ncf:"NA"}</span></div>
+          <div><span style="color:var(--tx3)">Infra. damage: </span><span style="color:${infra==="TRUE"?"var(--green)":infra==="FALSE"?"var(--tx3)":"var(--tx)"}">${infra==="TRUE"?"Yes":infra==="FALSE"?"No":"NA"}</span></div>
+        </div>
+        <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">
+          <span style="font-size:9px;color:var(--tx2);cursor:pointer;text-decoration:underline" onclick="openDetailFromMap(${DATA.indexOf(d)})">View full details →</span>
+        </div>
+      </div>`;
+
+    marker.bindPopup(popupHtml, { maxWidth: 220 });
+    marker.on("click", () => marker.openPopup());
+    marker.addTo(leafMap);
+    mapMarkers.push(marker);
+  }
+}
+
+/* ── TIMELINE CHART ── */
+function renderTimeline() {
+  // Group by date
+  const dc = {};
+  filtered.forEach(d => {
+    if (d.date && d.date !== "NA") {
+      const [day,mo,yr] = d.date.split("/");
+      const key = `${yr}-${mo}-${day}`;
+      dc[key] = (dc[key]||0)+1;
+    }
+  });
+  const keys = Object.keys(dc).sort();
+  const labels = keys.map(k => {
+    const [y,m,d] = k.split("-");
+    return `${d}/${m}`;
+  });
+  const values = keys.map(k => dc[k]);
+
+  if (tlChartInst) tlChartInst.destroy();
+  const ctx = document.getElementById("timelineChart");
+  if (!keys.length) { ctx.getContext("2d").clearRect(0,0,ctx.width,ctx.height); return; }
+
+  const cc = getChartColors();
+  tlChartInst = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: "#e2a84b",
+        backgroundColor: "rgba(226,168,75,0.10)",
+        borderWidth: 1.5,
+        pointRadius: 3,
+        pointBackgroundColor: "#e2a84b",
+        pointBorderColor: cc.sliceBorder,
+        pointBorderWidth: 1,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: cc.tooltipBg,
+          borderColor: cc.tooltipBorder,
+          borderWidth: 1,
+          titleFont: { family: "'IBM Plex Mono'", size: 9 },
+          bodyFont:  { family: "'IBM Plex Mono'", size: 10 },
+          titleColor: cc.tx2,
+          bodyColor:  cc.tx,
+          callbacks: {
+            title: items => "Date: " + items[0].label,
+            label: item => "Events: " + item.raw,
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: cc.grid, drawTicks: false },
+          ticks: { color: cc.tx3, font: { size: 9, family: "'IBM Plex Mono'" }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+          border: { display: false }
+        },
+        y: {
+          grid: { color: cc.grid, drawTicks: false },
+          ticks: { color: cc.tx3, font: { size: 9, family: "'IBM Plex Mono'" }, stepSize: 1, maxTicksLimit: 4 },
+          border: { display: false },
+          min: 0,
+        }
+      }
+    }
+  });
+}
+
+/* ── EVENT TABLE ── */
+function renderTable() {
+  let data = [...filtered];
+
+  // sort
+  data.sort((a,b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (sortCol === "date") { av = parseDate(av)||new Date(0); bv = parseDate(bv)||new Date(0); return (av-bv)*sortDir; }
+    av = String(av||""); bv = String(bv||"");
+    return av.localeCompare(bv)*sortDir;
+  });
+
+  document.getElementById("tbl-count").textContent = data.length + " records";
+  document.getElementById("tbl-body").innerHTML = data.map(d => {
+    const idx = DATA.indexOf(d);
+    return `<tr onclick="openDetail(${idx})">
+      <td class="td-mono" style="font-family:var(--mono);font-size:10px;color:var(--tx2)">${d.date||"—"}</td>
+      <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${getTownship(d.location)||"—"}</td>
+      <td>${badge(d.crisis_type)}</td>
+      <td>${flag(d.displacement)}</td>
+      <td>${flag(d.infrastructure_damage)}</td>
+    </tr>`;
+  }).join("");
+
+  // update sort indicators
+  document.querySelectorAll("thead th").forEach(th => th.classList.remove("asc","desc"));
+}
+
+function sortBy(col) {
+  if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+  renderTable();
+  // mark header
+  const headers = ["date","location","crisis_type","displacement","infrastructure_damage"];
+  document.querySelectorAll("thead th").forEach((th,i) => {
+    th.classList.remove("asc","desc");
+    if (headers[i] === sortCol) th.classList.add(sortDir===1?"asc":"desc");
+  });
+}
+
+/* ── ENTITY CONNECTIONS ── */
+function buildEntityConnections(data) {
+  const counts = new Map();
+  const links = new Map();
+
+  data.forEach(d => {
+    const entities = [...new Set((d.entities || []).map(entity => String(entity || "").trim()).filter(Boolean))].sort();
+    entities.forEach(entity => counts.set(entity, (counts.get(entity) || 0) + 1));
+    for (let i = 0; i < entities.length; i++) {
+      for (let j = i + 1; j < entities.length; j++) {
+        const key = `${entities[i]}|||${entities[j]}`;
+        links.set(key, (links.get(key) || 0) + 1);
+      }
+    }
+  });
+
+  const sortedNodes = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const sortedLinks = [...links.entries()]
+    .map(([key, count]) => {
+      const [source, target] = key.split("|||");
+      return { source, target, count };
+    })
+    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
+
+  return { sortedNodes, sortedLinks };
+}
+
+let entityNetwork = null;
+let entityNetworkNodes = null;
+let entityNetworkEdges = null;
+let entityExpansion = { nodeId: null, revealed: [] };
+
+function renderEntitiesConnections() {
+  const graphEl = document.getElementById("entityGraph");
+  const listEl = document.getElementById("entity-link-list");
+  const totalEl = document.getElementById("entity-total");
+  const linkTotalEl = document.getElementById("entity-link-total");
+  const topEntityEl = document.getElementById("entity-top");
+
+  if (!graphEl || !listEl || !totalEl || !linkTotalEl || !topEntityEl) return;
+
+  const { sortedNodes, sortedLinks } = buildEntityConnections(filtered);
+  collapseEntityExpansion();
+  totalEl.textContent = String(sortedNodes.length);
+  linkTotalEl.textContent = String(sortedLinks.length);
+  topEntityEl.textContent = sortedNodes[0]?.[0] || "—";
+
+  if (!sortedNodes.length) {
+    graphEl.innerHTML = '<div class="entity-network-loading">No entity data</div>';
+    listEl.innerHTML = '<div class="entity-empty">No shared connections</div>';
+    return;
+  }
+
+  if (!window.vis || !window.vis.Network || !window.vis.DataSet) {
+    graphEl.innerHTML = '<div class="entity-network-loading">Loading entity network...</div>';
+    listEl.innerHTML = '<div class="entity-empty">Loading shared connections</div>';
+    return;
+  }
+
+  const { Network, DataSet } = window.vis;
+  const topEntity = sortedNodes[0]?.[0] || null;
+  const visibleSeeds = new Set(sortedNodes.slice(0, 6).map(([name]) => name));
+  if (topEntity) visibleSeeds.add(topEntity);
+
+  const nodes = sortedNodes.map(([name, count]) => ({
+    id: name,
+    label: name,
+    group: "entity",
+    hidden: !visibleSeeds.has(name),
+    expanded: visibleSeeds.has(name),
+    value: count,
+    title: `${escapeHtml(name)}<br/>Connected incidents: ${count}`,
+    font: { face: "IBM Plex Mono", size: 11, color: isLight() ? "#0f1623" : "#f0f3fa" },
+  }));
+
+  const edges = sortedLinks.map(link => ({
+    id: `${link.source}|||${link.target}`,
+    from: link.source,
+    to: link.target,
+    type: "entity-entity",
+    width: 1 + link.count,
+    label: String(link.count),
+    dashes: link.count === 1,
+    hidden: !visibleSeeds.has(link.source) || !visibleSeeds.has(link.target),
+    color: { color: isLight() ? "rgba(15,22,35,.28)" : "rgba(255,255,255,.20)", highlight: "#e2a84b" },
+    font: { face: "IBM Plex Mono", size: 9, color: isLight() ? "#4a5568" : "#b0bbd0" },
+  }));
+
+  entityNetworkNodes = new DataSet(nodes);
+  entityNetworkEdges = new DataSet(edges);
+
+  const options = {
+    groups: {
+      entity: {
+        shape: "dot",
+        size: 18,
+        borderWidth: 2,
+        color: {
+          background: isLight() ? "#ffffff" : "#161b27",
+          border: "#e2a84b",
+          highlight: { background: "#e2a84b", border: "#e2a84b" },
+        },
+      },
+    },
+    nodes: { shape: "dot", scaling: { min: 12, max: 28 } },
+    edges: { smooth: true, selectionWidth: 2 },
+    physics: {
+      stabilization: true,
+      barnesHut: { gravitationalConstant: -2200, springLength: 120, springConstant: 0.04 },
+    },
+    interaction: { hover: true, multiselect: false },
+    layout: { improvedLayout: true },
+  };
+
+  if (entityNetwork) {
+    entityNetwork.setData({ nodes: entityNetworkNodes, edges: entityNetworkEdges });
+    entityNetwork.setOptions(options);
+  } else {
+    entityNetwork = new Network(graphEl, { nodes: entityNetworkNodes, edges: entityNetworkEdges }, options);
+
+    entityNetwork.on("click", params => {
+      if (!params.nodes.length) {
+        collapseEntityExpansion();
+        updateEntityLinkList(null, sortedLinks);
+        return;
+      }
+
+      const nodeId = params.nodes[0];
+      const node = entityNetworkNodes.get(nodeId);
+      if (!node) return;
+      toggleEntityExpansion(nodeId, sortedLinks);
+    });
+
+    entityNetwork.on("doubleClick", params => {
+      if (!params.nodes.length) return;
+      entityNetwork.fit({ animation: true, duration: 300 });
+    });
+  }
+
+  requestAnimationFrame(() => {
+    if (entityNetwork) entityNetwork.fit({ animation: false });
+  });
+
+  updateEntityLinkList(entityExpansion.nodeId, sortedLinks);
+}
+
+function getEntityNeighbors(nodeId) {
+  if (!entityNetworkEdges) return [];
+  const connected = new Set();
+  entityNetworkEdges.forEach(edge => {
+    if (edge.from === nodeId) connected.add(edge.to);
+    if (edge.to === nodeId) connected.add(edge.from);
+  });
+  return [...connected];
+}
+
+function updateEntityLinkList(nodeId, sortedLinks) {
+  const listEl = document.getElementById("entity-link-list");
+  if (!listEl) return;
+
+  if (!sortedLinks.length) {
+    listEl.innerHTML = '<div class="entity-empty">No shared connections</div>';
+    return;
+  }
+
+  if (!nodeId) {
+    const topLinks = sortedLinks.slice(0, 8);
+    listEl.innerHTML = topLinks.map(link => `
+      <div class="entity-link-row">
+        <span class="entity-link-name">${escapeHtml(link.source)}</span>
+        <span class="entity-link-mid">↔</span>
+        <span class="entity-link-name">${escapeHtml(link.target)}</span>
+        <span class="entity-link-count">${link.count}</span>
+      </div>
+    `).join("");
+    return;
+  }
+
+  const nodeLinks = sortedLinks
+    .filter(link => link.source === nodeId || link.target === nodeId)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  listEl.innerHTML = nodeLinks.length
+    ? nodeLinks.map(link => {
+        const neighbor = link.source === nodeId ? link.target : link.source;
+        return `
+          <div class="entity-link-row">
+            <span class="entity-link-name">${escapeHtml(nodeId)}</span>
+            <span class="entity-link-mid">↔</span>
+            <span class="entity-link-name">${escapeHtml(neighbor)}</span>
+            <span class="entity-link-count">${link.count}</span>
+          </div>
+        `;
+      }).join("")
+    : '<div class="entity-empty">No direct connections</div>';
+}
+
+function collapseEntityExpansion() {
+  if (!entityNetwork || !entityNetworkNodes || !entityNetworkEdges) {
+    entityExpansion = { nodeId: null, revealed: [] };
+    return;
+  }
+
+  if (entityExpansion.nodeId) {
+    entityNetworkNodes.update({ id: entityExpansion.nodeId, expanded: false, label: entityExpansion.nodeId });
+  }
+
+  entityExpansion.revealed.forEach(revealedId => {
+    entityNetworkNodes.update({ id: revealedId, hidden: true });
+  });
+
+  entityNetworkEdges.forEach(edge => {
+    const sourceHidden = entityNetworkNodes.get(edge.from)?.hidden;
+    const targetHidden = entityNetworkNodes.get(edge.to)?.hidden;
+    entityNetworkEdges.update({ id: edge.id, hidden: !!(sourceHidden || targetHidden) });
+  });
+
+  entityExpansion = { nodeId: null, revealed: [] };
+}
+
+function expandEntityNode(nodeId) {
+  if (!entityNetwork || !entityNetworkNodes || !entityNetworkEdges) return;
+
+  const node = entityNetworkNodes.get(nodeId);
+  if (!node || node.group !== "entity") return;
+
+  if (entityExpansion.nodeId === nodeId) {
+    collapseEntityExpansion();
+    return;
+  }
+
+  collapseEntityExpansion();
+
+  const neighbors = getEntityNeighbors(nodeId);
+  const revealed = [];
+
+  neighbors.forEach(neighborId => {
+    const neighbor = entityNetworkNodes.get(neighborId);
+    if (neighbor && neighbor.hidden) {
+      entityNetworkNodes.update({ id: neighborId, hidden: false });
+      revealed.push(neighborId);
+    }
+  });
+
+  entityNetworkEdges.forEach(edge => {
+    const connectsNode = edge.from === nodeId || edge.to === nodeId;
+    if (!connectsNode) return;
+    const otherId = edge.from === nodeId ? edge.to : edge.from;
+    const otherHidden = entityNetworkNodes.get(otherId)?.hidden;
+    entityNetworkEdges.update({ id: edge.id, hidden: !!otherHidden });
+  });
+
+  entityNetworkNodes.update({ id: nodeId, expanded: true, label: `${node.label || nodeId} ▾` });
+  entityExpansion = { nodeId, revealed };
+  updateEntityLinkList(nodeId, buildEntityConnections(filtered).sortedLinks);
+  if (entityNetwork) entityNetwork.fit({ animation: true, duration: 250 });
+}
+
+function toggleEntityExpansion(nodeId, sortedLinks) {
+  if (entityExpansion.nodeId === nodeId) {
+    collapseEntityExpansion();
+    updateEntityLinkList(null, sortedLinks);
+    if (entityNetwork) entityNetwork.fit({ animation: true, duration: 250 });
+    return;
+  }
+
+  expandEntityNode(nodeId);
+}
+
+function switchRightTab(tabName) {
+  activeRightTab = tabName;
+  document.querySelectorAll("[data-right-tab]").forEach(btn => {
+    btn.classList.toggle("on", btn.dataset.rightTab === tabName);
+  });
+  document.querySelectorAll(".tab-panel").forEach(panel => {
+    panel.classList.toggle("on", panel.id === `panel-${tabName}`);
+  });
+  if (tabName === "events" && tlChartInst) {
+    requestAnimationFrame(() => tlChartInst.resize());
+  }
+  if (tabName === "entities" && entityNetwork) {
+    requestAnimationFrame(() => entityNetwork.fit({ animation: false }));
+  }
+}
+
+/* ================================================================
+   DETAIL PANEL
+   ================================================================ */
+function openDetail(idx) {
+  const d = DATA[idx]; if (!d) return;
+  document.getElementById("det-badge").innerHTML = badge(d.crisis_type);
+  document.getElementById("det-title").textContent = getTownship(d.location)||"—";
+  document.getElementById("det-date").textContent  = d.date + "  ·  " + getRegion(d.location);
+
+  const nc  = fmtNum(d["non-civilian_fatalities"]);
+  const cf  = fmtNum(d.civilian_fatalities);
+  const dp  = fmtNum(d.number_of_people_displaced);
+
+  const rows = [
+    { s: "Location & Date" },
+    { k:"Township",   v: getTownship(d.location) },
+    { k:"Region",     v: getRegion(d.location) },
+    { k:"Date",       v: d.date },
+    { s: "Casualties & Displacement" },
+    { k:"Civilian fatalities",   v: cf!==null?cf:"NA",  c: cf!==null&&cf>0?"var(--red)":undefined },
+    { k:"Non-civ. fatalities",   v: nc!==null?nc:"NA",  c: nc!==null&&nc>0?"var(--orange)":undefined },
+    { k:"People displaced",      v: dp!==null?dp.toLocaleString():"NA" },
+    { s: "Impact Flags" },
+    { k:"Civilians affected",  v: d.affected_civilian||"NA",  c: d.affected_civilian==="TRUE"?"var(--green)":undefined },
+    { k:"Women affected",      v: d.affected_women||"NA",     c: d.affected_women==="TRUE"?"var(--green)":undefined },
+    { k:"Children affected",   v: d.affected_children||"NA",  c: d.affected_children==="TRUE"?"var(--green)":undefined },
+    { k:"Infrastructure dmg.", v: d.infrastructure_damage||"NA", c: d.infrastructure_damage==="TRUE"?"var(--orange)":undefined },
+    { k:"Displacement",        v: d.displacement||"NA",        c: d.displacement==="TRUE"?"var(--yellow)":undefined },
+  ];
+
+  let html = rows.map(r => {
+    if (r.s) return `<div class="det-section">${r.s}</div>`;
+    return `<div class="det-row">
+      <span class="det-k">${r.k}</span>
+      <span class="det-v" style="color:${r.c||"var(--tx)"}">${r.v}</span>
+    </div>`;
+  }).join("");
+
+  html += `<div class="det-section">Entities Involved</div>`;
+  const ents = d.entities||[];
+  html += ents.length
+    ? ents.map(e => `<div class="det-entity"><span class="ent-dot"></span><span style="font-family:var(--mono);font-size:10px;color:var(--tx)">${e}</span></div>`).join("")
+    : `<div style="font-family:var(--mono);font-size:10px;color:var(--tx3);padding:6px 0">None recorded</div>`;
+
+  document.getElementById("det-body").innerHTML = html;
+  document.getElementById("detail").classList.add("open");
+  document.getElementById("overlay").classList.add("open");
+}
+
+function openDetailFromMap(idx) {
+  leafMap.closePopup();
+  openDetail(idx);
+}
+
+function closeDetail() {
+  document.getElementById("detail").classList.remove("open");
+  document.getElementById("overlay").classList.remove("open");
+}
+
+/* ================================================================
+   THEME
+   ================================================================ */
+const TILE_DARK  = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const TILE_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
+const MOON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+const SUN_SVG  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+
+function isLight() { return document.documentElement.dataset.theme === "light"; }
+
+function getChartColors() {
+  const l = isLight();
+  return {
+    tx:            l ? "#0f1623" : "#f0f3fa",
+    tx2:           l ? "#4a5568" : "#b0bbd0",
+    tx3:           l ? "#7a8ba8" : "#7a8ba8",
+    tooltipBg:     l ? "#ffffff" : "#161b27",
+    tooltipBorder: l ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.14)",
+    grid:          l ? "rgba(0,0,0,0.08)"  : "rgba(255,255,255,0.08)",
+    sliceBorder:   l ? "#f0f4fb" : "#0d1117",
+  };
+}
+
+function toggleTheme() {
+  const goLight = !isLight();
+  if (goLight) {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  // swap map tile
+  if (tileLayer && leafMap) {
+    leafMap.removeLayer(tileLayer);
+    tileLayer = L.tileLayer(goLight ? TILE_LIGHT : TILE_DARK, { maxZoom: 18, subdomains: "abcd" }).addTo(leafMap);
+  }
+  // update icon: sun in dark mode (click → light), moon in light mode (click → dark)
+  document.getElementById("btn-theme").innerHTML = goLight ? MOON_SVG : SUN_SVG;
+  // re-render charts with new colors
+  renderTypeChart();
+  renderTimeline();
+}
+
+/* ================================================================
+   MAP INIT
+   ================================================================ */
+function initMap() {
+  leafMap = L.map("map", {
+    center: [21.5, 95.5],
+    zoom: 7,
+    zoomControl: true,
+    attributionControl: false,
+  });
+
+  tileLayer = L.tileLayer(TILE_DARK, {
+    maxZoom: 18,
+    subdomains: "abcd",
+  }).addTo(leafMap);
+
+  // Attribution small
+  L.control.attribution({ prefix: false, position: "bottomright" })
+    .addAttribution('© <a href="https://carto.com" style="color:#7a8ba8">CARTO</a>')
+    .addTo(leafMap);
+}
+
+/* ================================================================
+   DATA LOADING + AUTO-GEOCODING
+   ================================================================ */
+
+/* Show/hide the pulsing status badge over the map */
+function showMapStatus(msg) {
+  let el = document.getElementById("map-status");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "map-status";
+    el.className = "map-status";
+    document.querySelector(".map-area").appendChild(el);
+  }
+  el.textContent = msg;
+}
+function hideMapStatus() {
+  const el = document.getElementById("map-status");
+  if (el) el.remove();
+}
+
+/* Geocode every township in `data` that isn't already in coordCache.
+   Requests are sequential to respect Nominatim's 1 req/sec policy. */
+async function preGeocodeAll(data) {
+  const unknowns = [...new Set(
+    data.map(d => getTownship(d.location)).filter(t => t && !(t in coordCache))
+  )];
+  if (!unknowns.length) return;
+
+  for (let i = 0; i < unknowns.length; i++) {
+    const township = unknowns[i];
+    showMapStatus(`Locating ${i + 1} / ${unknowns.length}: ${township}`);
+    const rec = data.find(d => getTownship(d.location) === township);
+    await geocodeTownship(township, rec?.location);
+  }
+  hideMapStatus();
+}
+
+/* Replace the active dataset, geocode any new locations, then re-render */
+async function loadData(jsonArray) {
+  DATA = Array.isArray(jsonArray) ? jsonArray : (jsonArray.data || []);
+  await preGeocodeAll(DATA);
+  applyFilters();
+}
+
+/* File-picker handler — reads a .json file dropped via "Load JSON" button */
+function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = ""; // reset so same file can be re-loaded
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      await loadData(JSON.parse(ev.target.result));
+    } catch {
+      alert("Could not parse JSON file. Make sure it is a valid JSON array.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ================================================================
+   BOOT
+   ================================================================ */
+document.addEventListener("DOMContentLoaded", () => {
+  initMap();
+  switchRightTab(activeRightTab);
+  applyFilters(); // renders with the built-in sample data on first load
+});
+</script>
+</body>
+</html>
