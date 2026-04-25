@@ -1,0 +1,77 @@
+[
+  {
+    "crisis_type": "Armed Conflict",
+    "location": "NA, NA, NA",
+    "date": "NA",
+    "affected_civilian": "NA",
+    "affected_women": "NA",
+    "affected_children": "NA",
+    "civilian_properties_damage": "NA",
+    "civilian_forced_displacement": "NA",
+    "civilian_fatalities": "NA",
+    "armed_personnel_fatalities": "NA",
+    "number_of_people_displaced": "NA",
+    "involved_parties": []
+  },
+  {
+    "crisis_type": "Armed Conflict",
+    "location": "NA, NA, NA",
+    "date": "04/03/2024",
+    "affected_civilian": "TRUE",
+    "affected_women": "NA",
+    "affected_children": "NA",
+    "civilian_properties_damage": "NA",
+    "civilian_forced_displacement": "TRUE",
+    "civilian_fatalities": "NA",
+    "armed_personnel_fatalities": "NA",
+    "number_of_people_displaced": "NA",
+    "involved_parties": []
+  },
+  {
+    "crisis_type": "Armed Conflict",
+    "location": "NA, NA, NA",
+    "date": "NA",
+    "affected_civilian": "TRUE",
+    "affected_women": "TRUE",
+    "affected_children": "NA",
+    "civilian_properties_damage": "NA",
+    "civilian_forced_displacement": "TRUE",
+    "civilian_fatalities": "NA",
+    "armed_personnel_fatalities": "NA",
+    "number_of_people_displaced": "NA",
+    "involved_parties": [
+      "PNO"
+    ]
+  },
+  {
+    "crisis_type": "Armed Conflict",
+    "location": "NA, NA, NA",
+    "date": "NA",
+    "affected_civilian": "NA",
+    "affected_women": "NA",
+    "affected_children": "NA",
+    "civilian_properties_damage": "NA",
+    "civilian_forced_displacement": "NA",
+    "civilian_fatalities": "NA",
+    "armed_personnel_fatalities": "NA",
+    "number_of_people_displaced": "NA",
+    "involved_parties": []
+  },
+  {
+    "crisis_type": "Fire",
+    "location": "NA, NA, NA",
+    "date": "NA",
+    "affected_civilian": "TRUE",
+    "affected_women": "NA",
+    "affected_children": "NA",
+    "civilian_properties_damage": "TRUE",
+    "civilian_forced_displacement": "TRUE",
+    "civilian_fatalities": "NA",
+    "armed_personnel_fatalities": "NA",
+    "number_of_people_displaced": "NA",
+    "involved_parties": [
+      "Military",
+      "PNO"
+    ]
+  }
+]

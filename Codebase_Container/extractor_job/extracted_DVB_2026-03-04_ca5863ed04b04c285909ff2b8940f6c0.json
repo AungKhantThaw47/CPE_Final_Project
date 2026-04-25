@@ -1,0 +1,35 @@
+[
+  {
+    "crisis_type": "Armed Conflict",
+    "location": "NA, NA, Myanmar",
+    "date": "01/03/NA",
+    "affected_civilian": "NA",
+    "affected_women": "NA",
+    "affected_children": "NA",
+    "civilian_properties_damage": "NA",
+    "civilian_forced_displacement": "NA",
+    "civilian_fatalities": "NA",
+    "armed_personnel_fatalities": "NA",
+    "number_of_people_displaced": "NA",
+    "involved_parties": [
+      "Military",
+      "Revolutionary Alliance Forces"
+    ]
+  },
+  {
+    "crisis_type": "Airstrike",
+    "location": "NA, NA, Myanmar",
+    "date": "NA",
+    "affected_civilian": "NA",
+    "affected_women": "NA",
+    "affected_children": "NA",
+    "civilian_properties_damage": "NA",
+    "civilian_forced_displacement": "NA",
+    "civilian_fatalities": "NA",
+    "armed_personnel_fatalities": "NA",
+    "number_of_people_displaced": "NA",
+    "involved_parties": [
+      "Military"
+    ]
+  }
+]
