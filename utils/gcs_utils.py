@@ -63,17 +63,27 @@ def save_results_to_gcs(results_data, confirm_save=True):
         # Initialize GCS client (uses service account from Cloud Run)
         client = storage.Client()
         bucket = client.bucket(bucket_name)
+        folder_name = os.path.dirname(filename)
+        file_url = f"gs://{bucket_name}/{filename}"
+        folder_url = f"gs://{bucket_name}/{folder_name}/" if folder_name else f"gs://{bucket_name}/"
         
         # Upload to GCS
         blob = bucket.blob(filename)
+        if blob.exists():
+            print(f"⏭️  Results already exist, skipping upload: gs://{bucket_name}/{filename}")
+            return {
+                "status": "exists",
+                "bucket": bucket_name,
+                "folder": folder_name,
+                "filename": filename,
+                "size_bytes": len(json_payload),
+                "url": file_url,
+            }
+
         blob.upload_from_string(
             json_payload,
             content_type="application/json"
         )
-        
-        folder_name = os.path.dirname(filename)
-        file_url = f"gs://{bucket_name}/{filename}"
-        folder_url = f"gs://{bucket_name}/{folder_name}/" if folder_name else f"gs://{bucket_name}/"
 
         print(f"✅ Results saved to {file_url}")
         print(f"   Saved folder: {folder_url}")

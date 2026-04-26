@@ -2,10 +2,8 @@ import os
 import logging
 import sys
 import re
-from html import escape
-from collections import defaultdict
 from datetime import datetime
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify, redirect, render_template
 from google.cloud import storage
 import google.auth
 from google.auth.transport.requests import AuthorizedSession
@@ -15,7 +13,7 @@ from typing import List, Dict, Optional
 if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
-from utils.neo4j_utils import query_latest_hash_from_neo4j_env
+from utils.neo4j_utils import query_latest_hash_from_neo4j_env, query_latest_folder_hash_from_neo4j_env
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,6 +40,13 @@ def read_article_from_gcs(bucket_name: str, blob_name: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"❌ Error reading {blob_name}: {e}")
         return None
+
+
+def extract_event_blocks(text: str) -> List[str]:
+    """Extract text contained in <event>...</event> tags."""
+    if not text:
+        return []
+    return [match.strip() for match in re.findall(r"<event>(.*?)</event>", text, flags=re.DOTALL | re.IGNORECASE)]
 
 
 def trigger_cloud_run_job(job_name: str) -> None:
@@ -89,12 +94,18 @@ def resolve_latest_hash(bucket, prefix: str) -> Optional[str]:
     return max(latest_by_hash.items(), key=lambda item: item[1])[0]
 
 
-def list_stage_articles(crisis_bucket: str, stage_prefix: str, latest_hash_key: str) -> List[Dict]:
+def list_stage_articles(
+    crisis_bucket: str,
+    stage_prefix: str,
+    latest_hash_key: str,
+    preferred_hash: Optional[str] = None,
+) -> List[Dict]:
     """List stage articles from latest hash folder (with legacy fallback)."""
     client = storage.Client()
     bucket = client.bucket(crisis_bucket)
     latest_hash = (
-        os.environ.get("SOURCE_CONTENT_HASH", "").strip()
+        (preferred_hash or "").strip()
+        or os.environ.get("SOURCE_CONTENT_HASH", "").strip()
         or query_latest_hash_from_neo4j_env(latest_hash_key)
         or resolve_latest_hash(bucket, stage_prefix)
     )
@@ -137,55 +148,63 @@ def list_pending_articles(crisis_bucket: str) -> List[Dict]:
 
 
 def list_pending_annotation_articles(crisis_bucket: str) -> List[Dict]:
-    return list_stage_articles(crisis_bucket, "pending_review_annotation", "job:dvb-annotator-job")
+    folder_hash = query_latest_folder_hash_from_neo4j_env("pending_review_annotation/", crisis_bucket)
+    return list_stage_articles(
+        crisis_bucket,
+        "pending_review_annotation",
+        "job:dvb-annotator-job",
+        preferred_hash=folder_hash,
+    )
 
 
-def render_stage_tables(
-    articles: List[Dict],
-    section_title: str,
-    confirm_action: str,
-    reject_action: str,
-    empty_text: str,
-) -> str:
-    by_date = defaultdict(list)
+def get_pending_annotation_hash_status(crisis_bucket: str) -> Dict[str, str]:
+    """Compare latest pending_review_annotation hash in GCS vs system DB FolderHash."""
+    client = storage.Client()
+    bucket = client.bucket(crisis_bucket)
+
+    gcs_latest_hash = resolve_latest_hash(bucket, "pending_review_annotation")
+    system_db_hash = query_latest_folder_hash_from_neo4j_env("pending_review_annotation/", crisis_bucket)
+
+    if gcs_latest_hash and system_db_hash:
+        status = "match" if gcs_latest_hash == system_db_hash else "mismatch"
+    elif gcs_latest_hash and not system_db_hash:
+        status = "missing_system_db"
+    elif not gcs_latest_hash and system_db_hash:
+        status = "missing_gcs"
+    else:
+        status = "empty"
+
+    return {
+        "status": status,
+        "gcs_latest_hash": gcs_latest_hash or "-",
+        "system_db_hash": system_db_hash or "-",
+    }
+
+
+def group_articles_by_date(articles: List[Dict]) -> List[Dict]:
+    """Group articles by date for template rendering."""
+    grouped: Dict[str, List[Dict]] = {}
     for article in articles:
-        by_date[article['date']].append(article)
+        grouped.setdefault(article["date"], []).append(article)
 
-    sorted_dates = sorted(by_date.keys())
-    if not sorted_dates:
-        return f"<h2 class='stage-header'>{escape(section_title)}</h2><p class='empty'>{escape(empty_text)}</p>"
+    result = []
+    for date in sorted(grouped.keys()):
+        result.append({"date": date, "articles": grouped[date]})
+    return result
 
-    sections = f"<h2 class='stage-header'>{escape(section_title)}</h2>"
-    for date in sorted_dates:
-        date_articles = by_date[date]
-        rows = ""
-        for article in date_articles:
-            rows += f"""
-        <tr>
-            <td>{escape(article['filename'])}</td>
-            <td>{escape(article['hash'])}</td>
-            <td>{article['size']} bytes</td>
-            <td>
-                <form method="POST" action="{escape(confirm_action)}" style="display:inline">
-                    <input type="hidden" name="blob_name" value="{escape(article['blob_name'])}">
-                    <button type="submit" class="btn confirm">Confirm</button>
-                </form>
-                <form method="POST" action="{escape(reject_action)}" style="display:inline">
-                    <input type="hidden" name="blob_name" value="{escape(article['blob_name'])}">
-                    <button type="submit" class="btn reject">Reject</button>
-                </form>
-                <a href="/admin/view?blob={escape(article['blob_name'])}" target="_blank" class="btn view">View</a>
-            </td>
-        </tr>"""
 
-        sections += f"""
-    <h3 class="date-header">{escape(date)} <span class="date-count">({len(date_articles)} articles)</span></h3>
-    <table>
-        <thead><tr><th>Filename</th><th>Hash</th><th>Size</th><th>Action</th></tr></thead>
-        <tbody>{rows}</tbody>
-    </table>"""
+def get_review_actions(blob_name: str) -> Dict[str, str]:
+    """Return the correct confirm/reject actions for a blob path."""
+    if blob_name.startswith("pending_review_annotation/"):
+        return {
+            "confirm_action": "/admin/confirm_annotation",
+            "reject_action": "/admin/reject_annotation",
+        }
 
-    return sections
+    return {
+        "confirm_action": "/admin/confirm",
+        "reject_action": "/admin/reject",
+    }
 
 
 @app.route("/admin", methods=["GET"])
@@ -195,57 +214,59 @@ def admin_page():
     try:
         pending_articles = list_pending_articles(crisis_bucket) if crisis_bucket else []
         pending_annotation_articles = list_pending_annotation_articles(crisis_bucket) if crisis_bucket else []
+        pending_annotation_hash_status = (
+            get_pending_annotation_hash_status(crisis_bucket) if crisis_bucket else {
+                "status": "empty",
+                "gcs_latest_hash": "-",
+                "system_db_hash": "-",
+            }
+        )
     except Exception as e:
         pending_articles = []
         pending_annotation_articles = []
+        pending_annotation_hash_status = {
+            "status": "error",
+            "gcs_latest_hash": "-",
+            "system_db_hash": "-",
+        }
         logger.error(f"Error listing pending articles: {e}")
 
-    pending_section = render_stage_tables(
-        pending_articles,
-        "Pending Classification Review",
-        "/admin/confirm",
-        "/admin/reject",
-        "No pending classification articles."
-    )
-    annotation_section = render_stage_tables(
-        pending_annotation_articles,
-        "Pending Annotation Review",
-        "/admin/confirm_annotation",
-        "/admin/reject_annotation",
-        "No pending annotation articles."
-    )
+    latest_pending_annotation_hash = pending_annotation_hash_status["gcs_latest_hash"]
+    if latest_pending_annotation_hash and latest_pending_annotation_hash != "-":
+        pending_annotation_articles = [
+            article for article in pending_annotation_articles if article.get("hash") == latest_pending_annotation_hash
+        ]
 
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>Crisis Article Review</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
-        h1 {{ color: #c0392b; }}
-        h2.stage-header {{ color: #2c3e50; margin-top: 32px; margin-bottom: 8px; font-size: 20px; }}
-        h3.date-header {{ color: #2c3e50; margin-top: 24px; margin-bottom: 8px; font-size: 16px; }}
-        .date-count {{ color: #888; font-size: 14px; font-weight: normal; }}
-        table {{ border-collapse: collapse; width: 100%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.1); margin-bottom: 24px; }}
-        th, td {{ padding: 12px 16px; text-align: left; border-bottom: 1px solid #eee; }}
-        th {{ background: #2c3e50; color: white; }}
-        tr:hover {{ background: #fafafa; }}
-        .btn {{ padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; text-decoration: none; display: inline-block; }}
-        .confirm {{ background: #27ae60; color: white; }}
-        .reject {{ background: #e74c3c; color: white; margin-left: 6px; }}
-        .view {{ background: #2980b9; color: white; margin-left: 6px; }}
-        .empty {{ color: #888; padding: 20px; text-align: center; }}
-        .count {{ color: #555; margin-bottom: 16px; }}
-    </style>
-</head>
-<body>
-    <h1>Crisis Article Review</h1>
-    <p class="count">Pending classification: <strong>{len(pending_articles)}</strong></p>
-    <p class="count">Pending annotation review: <strong>{len(pending_annotation_articles)}</strong></p>
-    {pending_section}
-    {annotation_section}
-</body>
-</html>"""
-    return html
+    hash_status = pending_annotation_hash_status.get("status", "empty")
+    if hash_status == "match":
+        hash_status_text = "System DB hash matches latest GCS pending annotation hash"
+        hash_status_class = "ok"
+    elif hash_status == "mismatch":
+        hash_status_text = "System DB hash does NOT match latest GCS pending annotation hash"
+        hash_status_class = "warn"
+    elif hash_status == "missing_system_db":
+        hash_status_text = "System DB hash missing for pending annotation folder"
+        hash_status_class = "warn"
+    elif hash_status == "missing_gcs":
+        hash_status_text = "No pending annotation data in GCS, but system DB has a hash"
+        hash_status_class = "warn"
+    elif hash_status == "error":
+        hash_status_text = "Unable to verify pending annotation hash consistency"
+        hash_status_class = "warn"
+    else:
+        hash_status_text = "No pending annotation hashes available yet"
+        hash_status_class = "muted"
+
+    return render_template(
+        "admin.html",
+        pending_articles_count=len(pending_articles),
+        pending_annotation_articles_count=len(pending_annotation_articles),
+        pending_grouped=group_articles_by_date(pending_articles),
+        annotation_grouped=group_articles_by_date(pending_annotation_articles),
+        hash_status_class=hash_status_class,
+        hash_status_text=hash_status_text,
+        pending_annotation_hash_status=pending_annotation_hash_status,
+    )
 
 
 @app.route("/admin/view", methods=["GET"])
@@ -259,7 +280,40 @@ def admin_view_article():
         content = read_article_from_gcs(crisis_bucket, blob_name)
         if content is None:
             return "Article not found", 404
-        return f"<pre style='font-family:monospace;padding:20px;white-space:pre-wrap'>{content}</pre>"
+        review_actions = get_review_actions(blob_name)
+        return render_template(
+            "article_view.html",
+            blob_name=blob_name,
+            content=content,
+            confirm_action=review_actions["confirm_action"],
+            reject_action=review_actions["reject_action"],
+        )
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
+@app.route("/admin/view_event_tags", methods=["GET"])
+def admin_view_event_tags():
+    """View extracted <event> blocks from a pending annotated article."""
+    blob_name = request.args.get('blob', '')
+    crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
+    if not blob_name or not crisis_bucket:
+        return "Missing parameters", 400
+
+    try:
+        content = read_article_from_gcs(crisis_bucket, blob_name)
+        if content is None:
+            return "Article not found", 404
+
+        event_blocks = extract_event_blocks(content)
+        review_actions = get_review_actions(blob_name)
+        return render_template(
+            "event_tags.html",
+            blob_name=blob_name,
+            event_blocks=event_blocks,
+            confirm_action=review_actions["confirm_action"],
+            reject_action=review_actions["reject_action"],
+        )
     except Exception as e:
         return f"Error: {e}", 500
 

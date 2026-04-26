@@ -168,8 +168,14 @@ async function saveAndUploadGroupedMetadata(posts, sourceUrl) {
         console.log(`Saved JSON locally: ${localFilePath}`);
 
         const gcsPath = `dvb/${CONTENT_HASH}/${dateStr}/DVB_Burmese_${dateStr}.json`;
-        await uploadJSONToGCS(resultsData, gcsPath);
-        console.log(`Uploaded metadata to GCS: ${gcsPath}`);
+        const metadataUpload = await uploadJSONToGCS(resultsData, gcsPath);
+        if (metadataUpload.status === 'success') {
+            console.log(`Uploaded metadata to GCS: ${gcsPath}`);
+        } else if (metadataUpload.status === 'exists') {
+            console.log(`Metadata already exists in GCS: ${gcsPath}`);
+        } else {
+            console.log(`Metadata upload skipped: ${gcsPath}`);
+        }
 
         if (datePosts.length === 0) {
             console.log(`No articles found for ${dateStr}; uploaded empty metadata file.`);
@@ -336,9 +342,13 @@ async function fetchPostContents() {
             // Upload to GCS
             const uploadResult = await uploadTextToGCS(full_content, gcsPath);
 
-            if (uploadResult.status === 'success') {
+            if (uploadResult.status === 'success' || uploadResult.status === 'exists') {
                 post.content_file = uploadResult.url;
-                console.log(`   Uploaded to: ${gcsPath}`);
+                if (uploadResult.status === 'success') {
+                    console.log(`   Uploaded to: ${gcsPath}`);
+                } else {
+                    console.log(`   Already exists, skipped upload: ${gcsPath}`);
+                }
             } else {
                 post.content_file = "Upload skipped - no GCS bucket configured";
                 console.log(`   Upload skipped`);

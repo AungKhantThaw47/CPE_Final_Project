@@ -3,8 +3,22 @@ import re
 import logging
 import hashlib
 import sys
+import json
 import requests
+from datetime import datetime, timezone
 from google.cloud import storage
+from google.cloud import firestore
+
+if "/workspace" not in sys.path:
+    sys.path.append("/workspace")
+
+from utils.firestore_schema import (
+    FIELD_EVENT_INDEX,
+    FIELD_SOURCE_FILENAME,
+    FIELD_USED_FOLDER_HASH,
+    build_event_document,
+    build_event_id,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -111,6 +125,82 @@ def extract_events(article_text: str, api_key: str) -> str:
         raise RuntimeError(f"Gemini API error: {response.status_code} - {response.text}")
 
 
+def parse_extracted_events(raw_json: str) -> list:
+    """Parse extracted events JSON and normalize to a list of dict objects."""
+    if not isinstance(raw_json, str):
+        raise ValueError("Extraction output is not a string")
+
+    payload = raw_json.strip()
+    if payload.startswith("```"):
+        payload = re.sub(r"^```(?:json)?\s*", "", payload, flags=re.IGNORECASE)
+        payload = re.sub(r"\s*```$", "", payload)
+
+    parsed = json.loads(payload)
+    if not isinstance(parsed, list):
+        raise ValueError("Extraction output must be a JSON array")
+
+    normalized = []
+    for index, item in enumerate(parsed):
+        if isinstance(item, dict):
+            normalized.append(item)
+        else:
+            normalized.append({"raw_value": item, "_normalized_index": index})
+
+    return normalized
+
+
+def write_events_to_firestore(
+    firestore_client,
+    collection_name: str,
+    events: list,
+    source_blob_name: str,
+    source_folder_hash: str,
+    output_hash: str,
+    date_str: str,
+    filename: str,
+) -> int:
+    """Upsert extracted events into Firestore and return number of written docs."""
+    written = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+    collection_ref = firestore_client.collection(collection_name)
+
+    for idx, event in enumerate(events):
+        event_id = build_event_id(source_folder_hash, filename, idx)
+        doc_id = event_id
+        event_payload = event if isinstance(event, dict) else {"raw_value": event}
+
+        # Cleanup legacy IDs for the same event so one event keeps one canonical ID.
+        existing_docs = collection_ref.where(FIELD_SOURCE_FILENAME, "==", filename).stream()
+        for existing_doc in existing_docs:
+            if existing_doc.id == doc_id:
+                continue
+            existing_data = existing_doc.to_dict() or {}
+            if (
+                int(existing_data.get(FIELD_EVENT_INDEX, -1)) == idx
+                and str(existing_data.get(FIELD_USED_FOLDER_HASH, "")) == str(source_folder_hash)
+            ):
+                existing_doc.reference.delete()
+
+        doc_data = build_event_document(
+            event_id=event_id,
+            filename=filename,
+            event_index=idx,
+            source_blob_name=source_blob_name,
+            source_folder_hash=source_folder_hash,
+            output_hash=output_hash,
+            date_str=date_str,
+            event_payload=event_payload,
+            updated_at_iso=now_iso,
+        )
+        # Explicitly delete deprecated field from existing docs on upsert.
+        doc_data["source_stage"] = firestore.DELETE_FIELD
+
+        collection_ref.document(doc_id).set(doc_data, merge=True)
+        written += 1
+
+    return written
+
+
 def process_annotated_articles():
     """Batch process all files in annotated_articles/ folder and extract events."""
     logger.info("=" * 60)
@@ -125,10 +215,12 @@ def process_annotated_articles():
         return False
     
     content_hash = os.environ.get('CONTENT_HASH', 'unknown-hash').strip()
+    firestore_collection = os.environ.get('FIRESTORE_COLLECTION', 'events').strip() or 'events'
     
     try:
         storage_client = storage.Client()
         bucket = storage_client.bucket(crisis_bucket)
+        firestore_client = firestore.Client()
         
         # List all files in annotated_articles/
         blobs = bucket.list_blobs(prefix='annotated_articles/')
@@ -170,6 +262,24 @@ def process_annotated_articles():
                 extracted_blob = bucket.blob(extracted_blob_name)
                 if extracted_blob.exists():
                     logger.info(f"⏭️  Already extracted: {extracted_blob_name}")
+
+                    try:
+                        existing_result = extracted_blob.download_as_text(encoding='utf-8')
+                        existing_events = parse_extracted_events(existing_result)
+                        firestore_written = write_events_to_firestore(
+                            firestore_client=firestore_client,
+                            collection_name=firestore_collection,
+                            events=existing_events,
+                            source_blob_name=blob.name,
+                            source_folder_hash=source_hash,
+                            output_hash=output_hash,
+                            date_str=date_str,
+                            filename=filename,
+                        )
+                        logger.info(f"✅ Synced {firestore_written} existing event document(s) to Firestore collection '{firestore_collection}'")
+                    except Exception as firestore_sync_error:
+                        logger.warning(f"⚠️  Firestore sync for existing output failed: {firestore_sync_error}")
+
                     skipped_count += 1
                     continue
                 
@@ -181,10 +291,24 @@ def process_annotated_articles():
                 logger.info("🤖 Extracting with Gemini...")
                 result = extract_events(article_text, gemini_api_key)
                 logger.info("✅ Extraction complete")
+
+                events = parse_extracted_events(result)
                 
                 # Save extracted output
                 extracted_blob.upload_from_string(result, content_type='application/json')
                 logger.info(f"✅ Saved to gs://{crisis_bucket}/{extracted_blob_name}")
+
+                firestore_written = write_events_to_firestore(
+                    firestore_client=firestore_client,
+                    collection_name=firestore_collection,
+                    events=events,
+                    source_blob_name=blob.name,
+                    source_folder_hash=source_hash,
+                    output_hash=output_hash,
+                    date_str=date_str,
+                    filename=filename,
+                )
+                logger.info(f"✅ Upserted {firestore_written} event document(s) to Firestore collection '{firestore_collection}'")
                 
                 processed_count += 1
                 

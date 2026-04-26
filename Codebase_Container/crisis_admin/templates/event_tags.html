@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Tags</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body>
+    <main class="container narrow">
+        <h2 class="stage-header">Extracted &lt;event&gt; Tags</h2>
+        <p class="meta">Blob: <code>{{ blob_name }}</code></p>
+        <p class="meta">Total events: <strong>{{ event_blocks | length }}</strong></p>
+        <div class="page-actions">
+            <form method="POST" action="{{ confirm_action }}" class="inline">
+                <input type="hidden" name="blob_name" value="{{ blob_name }}">
+                <button type="submit" class="btn confirm">Confirm</button>
+            </form>
+            <form method="POST" action="{{ reject_action }}" class="inline">
+                <input type="hidden" name="blob_name" value="{{ blob_name }}">
+                <button type="submit" class="btn reject">Reject</button>
+            </form>
+        </div>
+
+        {% if not event_blocks %}
+        <p class="empty">No &lt;event&gt; tags found.</p>
+        {% else %}
+            {% for block in event_blocks %}
+            <article class="event-card">
+                <h3 class="event-title">Event {{ loop.index }}</h3>
+                <pre class="event-body">{{ block }}</pre>
+            </article>
+            {% endfor %}
+        {% endif %}
+    </main>
+</body>
+</html>

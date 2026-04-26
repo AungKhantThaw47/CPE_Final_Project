@@ -6,6 +6,12 @@ const { Storage } = require('@google-cloud/storage');
 const fs = require('fs');
 const path = require('path');
 
+async function objectExists(bucket, destinationPath) {
+    const blob = bucket.file(destinationPath);
+    const [exists] = await blob.exists();
+    return exists;
+}
+
 /**
  * Upload a file to Google Cloud Storage
  * 
@@ -26,6 +32,21 @@ async function uploadFileToGCS(localFilePath, destinationPath) {
         // Initialize GCS client (uses service account from Cloud Run)
         const storage = new Storage();
         const bucket = storage.bucket(bucketName);
+
+        if (await objectExists(bucket, destinationPath)) {
+            const folderPath = path.posix.dirname(destinationPath);
+            const fileUri = `gs://${bucketName}/${destinationPath}`;
+            const folderUri = `gs://${bucketName}/${folderPath === "." ? "" : `${folderPath}/`}`;
+            console.log(`⏭️  File already exists, skipping upload: ${fileUri}`);
+            return {
+                status: 'exists',
+                bucket: bucketName,
+                folder: folderPath,
+                filename: destinationPath,
+                url: fileUri,
+                folder_url: folderUri
+            };
+        }
         
         // Upload file
         await bucket.upload(localFilePath, {
@@ -79,6 +100,21 @@ async function uploadJSONToGCS(data, destinationPath) {
         // Initialize GCS client
         const storage = new Storage();
         const bucket = storage.bucket(bucketName);
+
+        if (await objectExists(bucket, destinationPath)) {
+            const folderPath = path.posix.dirname(destinationPath);
+            const fileUri = `gs://${bucketName}/${destinationPath}`;
+            const folderUri = `gs://${bucketName}/${folderPath === "." ? "" : `${folderPath}/`}`;
+            console.log(`⏭️  JSON already exists, skipping upload: ${fileUri}`);
+            return {
+                status: 'exists',
+                bucket: bucketName,
+                folder: folderPath,
+                filename: destinationPath,
+                url: fileUri,
+                folder_url: folderUri
+            };
+        }
         
         // Convert to JSON string
         const jsonPayload = JSON.stringify(data, null, 2);
@@ -132,6 +168,21 @@ async function uploadTextToGCS(content, destinationPath) {
         // Initialize GCS client
         const storage = new Storage();
         const bucket = storage.bucket(bucketName);
+
+        if (await objectExists(bucket, destinationPath)) {
+            const folderPath = path.posix.dirname(destinationPath);
+            const fileUri = `gs://${bucketName}/${destinationPath}`;
+            const folderUri = `gs://${bucketName}/${folderPath === "." ? "" : `${folderPath}/`}`;
+            console.log(`⏭️  Text already exists, skipping upload: ${fileUri}`);
+            return {
+                status: 'exists',
+                bucket: bucketName,
+                folder: folderPath,
+                filename: destinationPath,
+                url: fileUri,
+                folder_url: folderUri
+            };
+        }
         
         // Upload text
         const blob = bucket.file(destinationPath);

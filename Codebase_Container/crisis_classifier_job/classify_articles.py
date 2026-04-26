@@ -225,17 +225,25 @@ def classify_text(model, text: str) -> tuple:
         raise
 
 
-def upload_article(content: str, bucket_name: str, destination_path: str) -> bool:
-    """Upload article to GCS."""
+def upload_article(content: str, bucket_name: str, destination_path: str) -> str:
+    """Upload article to GCS.
+
+    Returns:
+        str: one of "uploaded", "exists", "error"
+    """
     try:
         client = storage.Client()
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(destination_path)
+
+        if blob.exists():
+            return "exists"
+
         blob.upload_from_string(content, content_type='text/plain')
-        return True
+        return "uploaded"
     except Exception as e:
         logger.error(f"❌ Error uploading to {destination_path}: {e}")
-        return False
+        return "error"
 
 
 def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
@@ -267,9 +275,9 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
     logger.info(f"⏳ Pending: gs://{crisis_bucket}/pending_review/{output_hash}/{date_str}/")
 
     if not articles:
-        return {"total": 0, "crisis": 0, "errors": 0}
+        return {"total": 0, "crisis": 0, "skipped_existing": 0, "errors": 0}
 
-    stats = {"total": len(articles), "crisis": 0, "errors": 0}
+    stats = {"total": len(articles), "crisis": 0, "skipped_existing": 0, "errors": 0}
 
     logger.info(f"Processing {stats['total']} articles...")
     logger.info("")
@@ -290,11 +298,14 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
 
             if is_crisis:
                 destination_path = f"pending_review/{output_hash}/{date_str}/{filename}"
-                success = upload_article(content, crisis_bucket, destination_path)
+                upload_status = upload_article(content, crisis_bucket, destination_path)
 
-                if success:
+                if upload_status == "uploaded":
                     stats['crisis'] += 1
                     logger.info(f"  CRISIS (confidence: {confidence:.2%}) - Saved to pending_review")
+                elif upload_status == "exists":
+                    stats['skipped_existing'] += 1
+                    logger.info(f"  ⏭️  CRISIS (confidence: {confidence:.2%}) - Output already exists, skipped")
                 else:
                     stats['errors'] += 1
                     logger.error("  CRISIS but upload failed")
@@ -389,7 +400,7 @@ if __name__ == "__main__":
     model = load_crisis_model(MODEL_PATH)
     
     # Track aggregate stats across all dates
-    aggregate_stats = {"total": 0, "crisis": 0, "errors": 0}
+    aggregate_stats = {"total": 0, "crisis": 0, "skipped_existing": 0, "errors": 0}
     storage_client = storage.Client()
     crisis_bkt = storage_client.bucket(crisis_bucket)
 
@@ -420,9 +431,10 @@ if __name__ == "__main__":
         # Aggregate stats
         aggregate_stats["total"] += stats["total"]
         aggregate_stats["crisis"] += stats["crisis"]
+        aggregate_stats["skipped_existing"] += stats["skipped_existing"]
         aggregate_stats["errors"] += stats["errors"]
         
-        logger.info(f"📊 Date {date_str}: Total: {stats['total']}  |  Crisis: {stats['crisis']}  |  Errors: {stats['errors']}")
+        logger.info(f"📊 Date {date_str}: Total: {stats['total']}  |  Crisis: {stats['crisis']}  |  Skipped existing: {stats['skipped_existing']}  |  Errors: {stats['errors']}")
         if stats['total'] > 0:
             crisis_rate = stats['crisis'] / stats['total'] * 100
             logger.info(f"   Crisis rate: {stats['crisis']}/{stats['total']} ({crisis_rate:.1f}%)")
@@ -431,7 +443,7 @@ if __name__ == "__main__":
     logger.info("=" * 60)
     logger.info("CLASSIFICATION COMPLETE!")
     logger.info("=" * 60)
-    logger.info(f"📊 Aggregate Stats: Total: {aggregate_stats['total']}  |  Crisis: {aggregate_stats['crisis']}  |  Errors: {aggregate_stats['errors']}")
+    logger.info(f"📊 Aggregate Stats: Total: {aggregate_stats['total']}  |  Crisis: {aggregate_stats['crisis']}  |  Skipped existing: {aggregate_stats['skipped_existing']}  |  Errors: {aggregate_stats['errors']}")
     if aggregate_stats['total'] > 0:
         crisis_rate = aggregate_stats['crisis'] / aggregate_stats['total'] * 100
         logger.info(f"   Crisis rate: {aggregate_stats['crisis']}/{aggregate_stats['total']} ({crisis_rate:.1f}%)")

@@ -157,3 +157,61 @@ def query_output_hash_from_neo4j_env(key: str) -> Optional[str]:
         )
     except Exception:
         return None
+
+
+def query_latest_folder_hash_from_neo4j(
+    folder_path: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str = "neo4j",
+    bucket_name: str = "",
+) -> Optional[str]:
+    """Return latest FolderHash.hash_value for a folder path and optional bucket.
+
+    This resolves through StorageBucket-[:HAS_HASH]->FolderHash which points to
+    the current folder hash in the system graph.
+    """
+    query = """
+    MATCH (bucket:StorageBucket)-[:HAS_HASH]->(h:FolderHash {folder_path: $folder_path})
+    WHERE $bucket_name = "" OR h.bucket_name = $bucket_name OR bucket.name = $bucket_name
+    RETURN h.hash_value AS hash_value
+    LIMIT 1
+    """
+
+    driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
+
+    with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
+        with driver.session(database=neo4j_database) as session:
+            record = session.run(
+                query,
+                folder_path=folder_path,
+                bucket_name=(bucket_name or "").strip(),
+            ).single()
+            if not record:
+                return None
+            value = record.get("hash_value")
+            return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def query_latest_folder_hash_from_neo4j_env(folder_path: str, bucket_name: str = "") -> Optional[str]:
+    """Resolve latest FolderHash using Neo4j connection settings from environment variables."""
+    neo4j_uri = os.environ.get("NEO4J_URI", "").strip()
+    neo4j_user = os.environ.get("NEO4J_USER", "").strip()
+    neo4j_password = os.environ.get("NEO4J_PASSWORD", "").strip()
+    neo4j_database = os.environ.get("NEO4J_DATABASE", "neo4j").strip() or "neo4j"
+
+    if not neo4j_uri or not neo4j_user or not neo4j_password:
+        return None
+
+    try:
+        return query_latest_folder_hash_from_neo4j(
+            folder_path=folder_path,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            neo4j_database=neo4j_database,
+            bucket_name=bucket_name,
+        )
+    except Exception:
+        return None

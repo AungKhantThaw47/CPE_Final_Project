@@ -6,7 +6,7 @@ TF_PLAN_FILE ?= tfplan
 AUTO_APPROVE ?= false
 ENV_FILE ?= .env
 
-.PHONY: help check-tools init fmt validate plan apply deploy destroy output clean post-apply restart-graph
+.PHONY: help check-tools init fmt validate plan apply deploy destroy output clean post-apply restart-graph system-restart
 
 help:
 	@echo "Terraform Make targets"
@@ -22,6 +22,7 @@ help:
 	@echo "  make output    - Show Terraform outputs"
 	@echo "  make clean     - Remove local plan file"
 	@echo "  make restart-graph - Clean and reload Neo4j graph from manifest"
+	@echo "  make system-restart CONFIRM=true - Clean Firestore events, hash nodes, and all bucket objects"
 	@echo ""
 	@echo "Variables:"
 	@echo "  TF=<binary>                (default: terraform)"
@@ -139,3 +140,7 @@ post-apply:
 restart-graph: check-tools
 	@set -a; [ ! -f "$(ENV_FILE)" ] || source "$(ENV_FILE)"; set +a; \
 	python3 bootstrap/neo4j/restart_graph.py
+
+system-restart: check-tools
+	@set -a; [ ! -f "$(ENV_FILE)" ] || source "$(ENV_FILE)"; set +a; \
+	bash scripts/system_restart.sh

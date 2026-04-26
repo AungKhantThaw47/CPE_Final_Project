@@ -172,10 +172,12 @@ locals {
         CRISIS_BUCKET     = google_storage_bucket.pipeline_data.name
         EXTRACTION_BUCKET = google_storage_bucket.pipeline_data.name
         GEMINI_API_KEY    = var.gemini_api_key
+        FIRESTORE_COLLECTION = "events"
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
-        "roles/logging.logWriter"
+        "roles/logging.logWriter",
+        "roles/datastore.user"
       ]
     }
 
@@ -235,6 +237,28 @@ locals {
       cloud_sql_instances = []
     }
 
+    events-api = {
+      codebase_path   = "${path.root}/Codebase_Container/events_api"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/events-api:latest"
+      description     = "Events backend API for Firestore data"
+      build_image     = true
+      cpu_limit       = "1"
+      memory_limit    = "512Mi"
+      min_instances   = 0
+      max_instances   = 2
+      port            = 8080
+      allow_public    = true
+      environment_variables = {
+        GOOGLE_CLOUD_PROJECT = var.project_id
+        FIRESTORE_COLLECTION = "events"
+      }
+      service_account_roles = [
+        "roles/datastore.user",
+        "roles/logging.logWriter"
+      ]
+      cloud_sql_instances = []
+    }
+
   }
 }
 
@@ -250,12 +274,25 @@ resource "google_project_service" "apis" {
     "sqladmin.googleapis.com",
     "cloudscheduler.googleapis.com",
     "eventarc.googleapis.com",
+    "firestore.googleapis.com",
     "workflows.googleapis.com",
     "workflowexecutions.googleapis.com"
   ])
 
   service            = each.value
   disable_on_destroy = false
+}
+
+# ============================================
+# Firestore Database
+# ============================================
+resource "google_firestore_database" "default" {
+  project     = var.project_id
+  name        = "(default)"
+  location_id = var.region
+  type        = "FIRESTORE_NATIVE"
+
+  depends_on = [google_project_service.apis]
 }
 
 # ============================================

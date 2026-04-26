@@ -216,19 +216,26 @@ def read_article_from_gcs(bucket_name: str, blob_name: str) -> Optional[str]:
         return None
 
 
-def upload_cleaned_article(content: str, bucket_name: str, destination_path: str) -> bool:
-    """Upload cleaned article content to GCS."""
+def upload_cleaned_article(content: str, bucket_name: str, destination_path: str) -> str:
+    """Upload cleaned article content to GCS.
+
+    Returns:
+        str: one of "uploaded", "exists", "error"
+    """
     try:
         client = storage.Client()
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(destination_path)
+
+        if blob.exists():
+            return "exists"
         
         blob.upload_from_string(content, content_type='text/plain')
-        return True
+        return "uploaded"
         
     except Exception as e:
         print(f"❌ Error uploading to {destination_path}: {e}")
-        return False
+        return "error"
 
 
 def process_and_clean_articles(source_bucket: str, target_bucket: str, 
@@ -262,9 +269,9 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
         print("🔎 Source hash: legacy/non-hash path")
     
     if not articles:
-        return {"total": 0, "cleaned": 0, "unchanged": 0, "errors": 0}
+        return {"total": 0, "cleaned": 0, "unchanged": 0, "skipped_existing": 0, "errors": 0}
     
-    stats = {"total": len(articles), "cleaned": 0, "unchanged": 0, "errors": 0}
+    stats = {"total": len(articles), "cleaned": 0, "unchanged": 0, "skipped_existing": 0, "errors": 0}
     
     print(f"Processing {stats['total']} articles...")
     print()
@@ -283,15 +290,18 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
         cleaned_content, was_modified = clean_text_content(content)
         
         destination_path = f"dvb_cleaned/{output_hash}/{date_str}/{filename}"
-        success = upload_cleaned_article(cleaned_content, target_bucket, destination_path)
-        
-        if success:
+        upload_status = upload_cleaned_article(cleaned_content, target_bucket, destination_path)
+
+        if upload_status == "uploaded":
             if was_modified:
                 stats['cleaned'] += 1
                 print(f"  ✅ Cleaned and uploaded")
             else:
                 stats['unchanged'] += 1
                 print(f"  ⏭️  No changes, uploaded as-is")
+        elif upload_status == "exists":
+            stats['skipped_existing'] += 1
+            print(f"  ⏭️  Output already exists, skipped")
         else:
             stats['errors'] += 1
             print(f"  ❌ Upload failed")
@@ -334,6 +344,7 @@ if __name__ == "__main__":
     print(f"   Total articles: {stats['total']}")
     print(f"   ✅ Cleaned: {stats['cleaned']}")
     print(f"   ⏭️  Unchanged: {stats['unchanged']}")
+    print(f"   ⏭️  Skipped existing outputs: {stats['skipped_existing']}")
     print(f"   ❌ Errors: {stats['errors']}")
     print()
     
@@ -354,8 +365,11 @@ if __name__ == "__main__":
             client = storage.Client()
             marker_path = f"dvb_cleaned/{output_hash}/{final_date}/_COMPLETE"
             marker_blob = client.bucket(target_bucket).blob(marker_path)
-            marker_blob.upload_from_string("", content_type='text/plain')
-            print(f"   Completion marker: gs://{target_bucket}/{marker_path}")
+            if marker_blob.exists():
+                print(f"   Completion marker already exists: gs://{target_bucket}/{marker_path}")
+            else:
+                marker_blob.upload_from_string("", content_type='text/plain')
+                print(f"   Completion marker: gs://{target_bucket}/{marker_path}")
         except Exception as e:
             print(f"   ⚠️  Failed to create completion marker: {e}")
 
