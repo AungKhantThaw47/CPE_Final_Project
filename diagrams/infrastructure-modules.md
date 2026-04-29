@@ -14,7 +14,7 @@ graph TD
         R_BUCKETS["GCS Buckets\n(5 buckets)"]
         R_JOBS["locals.jobs\nJob definitions map"]
         R_SERVICES["locals.services\nService definitions map"]
-        R_EA["google_eventarc_trigger\n(annotator + extractor)"]
+        R_EA["google_eventarc_trigger\n(optional: annotator + extractor)\nPrimary invocation: admin-triggered job runs via crisis-admin"]
         R_WF["google_workflows_workflow\n(orchestration)"]
         R_OUT["outputs.tf\njobs + services + hashes"]
     end

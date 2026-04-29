@@ -14,16 +14,20 @@ import pickle
 import logging
 import sys
 import re
-import hashlib
 from datetime import datetime, timedelta
 from google.cloud import storage
 from typing import List, Dict, Optional, Tuple
+import hashlib
 
 
 if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
-from utils.neo4j_utils import query_latest_hash_from_neo4j_env, query_output_hash_from_neo4j_env
+from utils.neo4j_utils import (
+    query_latest_hash_from_neo4j_env,
+    query_latest_folder_hash_from_neo4j_env,
+    write_folder_hash_to_neo4j_env,
+)
 
 # Heavy ML imports — required for model loading
 try:
@@ -107,7 +111,10 @@ def load_crisis_model(model_path: str):
 
 
 def resolve_latest_hash_for_date(bucket, prefix_path: str, date_str: str) -> Optional[str]:
-    """Resolve latest hash folder under prefix/date by blob update time."""
+    """Resolve the latest hash folder under a prefix/date by blob update time.
+
+    This is only a fallback when Neo4j is unavailable or empty at runtime.
+    """
     pattern = re.compile(rf"^{re.escape(prefix_path)}/([^/]+)/{re.escape(date_str)}/")
     latest_by_hash = {}
 
@@ -127,15 +134,20 @@ def resolve_latest_hash_for_date(bucket, prefix_path: str, date_str: str) -> Opt
     return max(latest_by_hash.items(), key=lambda item: item[1])[0]
 
 
-def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
-    """Build deterministic folder hash from upstream hash + current content hash."""
-    content_hash = (content_hash or "unknown-hash").strip()
-    source_hash = (source_hash or "").strip()
+def compute_folder_hash(previous_folder_hash: str, content_hash: str) -> str:
+    """Compute the next FolderHash from the previous folder hash and content hash.
 
-    if not source_hash:
+    Matches the same formula used by the cleaner job: sha256("{previous}:{content}").
+    """
+    previous_folder_hash = (previous_folder_hash or "").strip()
+    content_hash = (content_hash or "").strip()
+
+    if not previous_folder_hash:
         return content_hash
+    if not content_hash:
+        return previous_folder_hash
 
-    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{previous_folder_hash}:{content_hash}".encode("utf-8")).hexdigest()
 
 
 def fetch_cleaned_articles(bucket_name: str, date_str: str,
@@ -156,17 +168,17 @@ def fetch_cleaned_articles(bucket_name: str, date_str: str,
 
         source_hash = os.environ.get("SOURCE_CONTENT_HASH", "").strip()
         if not source_hash:
-            # Query the exact output hash the cleaner wrote for this date
-            source_hash = query_output_hash_from_neo4j_env(f"dvb_cleaned_output:{date_str}") or ""
+            # Query the latest cleaned folder hash directly from Neo4j.
+            source_hash = query_latest_folder_hash_from_neo4j_env("dvb_cleaned/", bucket_name) or ""
         if not source_hash:
-            # Fallback: scan bucket for most recently updated hash folder
             source_hash = resolve_latest_hash_for_date(bucket, prefix_path, date_str) or ""
+        if not source_hash:
+            logger.warning(
+                "⚠️  No source hash found in Neo4j or GCS fallback for folder dvb_cleaned/; returning empty input set.",
+            )
+            return [], ""
 
-        if source_hash:
-            prefix = f"{prefix_path}/{source_hash}/{date_str}/"
-        else:
-            # Legacy fallback for older layout without hash folders.
-            prefix = f"{prefix_path}/{date_str}/"
+        prefix = f"{prefix_path}/{source_hash}/{date_str}/"
 
         logger.info(f"📂 Resolved source path: {prefix}")
         blobs = list(bucket.list_blobs(prefix=prefix))
@@ -261,10 +273,9 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
     logger.info("")
 
     articles, source_hash = fetch_cleaned_articles(source_bucket, date_str, prefix_path)
-    output_hash = build_pipeline_output_hash(
-        source_hash,
-        os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
-    )
+    # Compute output folder hash from previous folder hash (source_hash) + this job's CONTENT_HASH
+    classifier_content_hash = os.environ.get("CONTENT_HASH", "").strip()
+    output_hash = compute_folder_hash(source_hash, classifier_content_hash)
 
     if source_hash:
         logger.info(f"🔎 Source hash: {source_hash}")
@@ -316,6 +327,20 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
             stats['errors'] += 1
             logger.error(f"  ❌ Classification error: {e}")
 
+    # Save the output folder hash to Neo4j ONLY if articles were actually written
+    if stats['crisis'] > 0:
+        if write_folder_hash_to_neo4j_env(
+            folder_path="pending_review/",
+            hash_value=output_hash,
+            bucket_name=crisis_bucket,
+            producer_component_key="job:crisis-classifier-job",
+        ):
+            logger.info(f"✅ Output folder hash saved to Neo4j: pending_review/ → {output_hash}")
+        else:
+            logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
+    else:
+        logger.info(f"⏭️  No crisis articles classified - skipping Neo4j hash update")
+
     return stats
 
 
@@ -338,15 +363,7 @@ def parse_date_string(date_str: str) -> Optional[datetime]:
 
 
 def get_date_range() -> List[str]:
-    """
-    Get list of dates to process.
-    
-    Priority:
-    1. DATE_START and DATE_END env vars (workflow date range)
-    2. START_DATE and END_DATE env vars (crawler format)
-    3. PROCESS_DATE env var (single date, legacy)
-    4. Yesterday's date (default)
-    """
+    """Return the list of dates to process."""
     date_start = os.environ.get('DATE_START') or os.environ.get('START_DATE')
     date_end = os.environ.get('DATE_END') or os.environ.get('END_DATE')
     process_date = os.environ.get('PROCESS_DATE')

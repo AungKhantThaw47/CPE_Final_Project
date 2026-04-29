@@ -7,6 +7,11 @@ from pathlib import Path
 import subprocess
 import sys
 
+from google.cloud import storage
+
+# Add utils to path for Neo4j utilities
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils.neo4j_utils import query_latest_folder_hash_from_neo4j_env, create_main_pipeline_linkage_env
 
 TIMEOUT_SECONDS = 10
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -531,6 +536,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
             if not upstream_folder_hashes:
                 upstream_folder_hashes = sorted(folder_hashes_by_component.get(source_component, set()))
             for upstream_folder_hash_key in upstream_folder_hashes:
+                if upstream_folder_hash_key == folder_hash_key:
+                    continue
                 lineage_edge_key = (folder_hash_key, upstream_folder_hash_key)
                 if lineage_edge_key in folder_source_edges:
                     continue
@@ -548,6 +555,89 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                         },
                     }
                 )
+
+            # Preserve the real business flow: `crisis_articles/` is produced
+            # from `pending_review/` before the annotator job runs.
+            if rel_path == "crisis_articles/":
+                pending_key = None
+                for v in folder_hash_keys.values():
+                    if ":pending_review:" in v:
+                        pending_key = v
+                        break
+                if pending_key:
+                    lineage_edge_key = (folder_hash_key, pending_key)
+                    if lineage_edge_key not in folder_source_edges:
+                        folder_source_edges.add(lineage_edge_key)
+                        relationships.append(
+                            {
+                                "from": folder_hash_key,
+                                "to": pending_key,
+                                "type": "DEPENDS_ON_DATA_FROM",
+                                "properties": {
+                                    "source_relation": "folder_hash_lineage",
+                                    "source_hash": folder_hash_value_by_key.get(pending_key, ""),
+                                    "source_bucket": target,
+                                    "source_path": "pending_review/",
+                                },
+                            }
+                        )
+
+            # Special-case: ensure `annotated_articles/` also depends on
+            # `pending_review_annotation/` when that folder hash exists. This
+            # covers the case where crisis-admin produces both stages and the
+            # generator's single-source heuristic may miss the explicit link.
+            if rel_path == "annotated_articles/":
+                pending_key = None
+                for v in folder_hash_keys.values():
+                    if ":pending_review_annotation:" in v:
+                        pending_key = v
+                        break
+                if pending_key:
+                    lineage_edge_key = (folder_hash_key, pending_key)
+                    if lineage_edge_key not in folder_source_edges:
+                        folder_source_edges.add(lineage_edge_key)
+                        relationships.append(
+                            {
+                                "from": folder_hash_key,
+                                "to": pending_key,
+                                "type": "DEPENDS_ON_DATA_FROM",
+                                "properties": {
+                                    "source_relation": "folder_hash_lineage",
+                                    "source_hash": folder_hash_value_by_key.get(pending_key, ""),
+                                    "source_bucket": target,
+                                    "source_path": "pending_review_annotation/",
+                                },
+                            }
+                        )
+
+    folder_hash_key_by_path = {}
+    for node in nodes:
+        if node.get("label") != "FolderHash":
+            continue
+        props = node.get("properties", {})
+        folder_path = props.get("folder_path", "")
+        if folder_path in {"annotated_articles/", "pending_review_annotation/"}:
+            folder_hash_key_by_path[folder_path] = node.get("key", "")
+
+    annotated_folder_key = folder_hash_key_by_path.get("annotated_articles/", "")
+    pending_folder_key = folder_hash_key_by_path.get("pending_review_annotation/", "")
+    if annotated_folder_key and pending_folder_key:
+        lineage_edge_key = (annotated_folder_key, pending_folder_key)
+        if lineage_edge_key not in folder_source_edges:
+            folder_source_edges.add(lineage_edge_key)
+            relationships.append(
+                {
+                    "from": annotated_folder_key,
+                    "to": pending_folder_key,
+                    "type": "DEPENDS_ON_DATA_FROM",
+                    "properties": {
+                        "source_relation": "folder_hash_lineage",
+                        "source_hash": folder_hash_value_by_key.get(pending_folder_key, ""),
+                        "source_bucket": "bucket:pipeline-data",
+                        "source_path": "pending_review_annotation/",
+                    },
+                }
+            )
 
     all_buckets = set(writers_by_bucket) | set(readers_by_bucket)
     for bucket_key in sorted(all_buckets):
@@ -994,6 +1084,57 @@ def sync_graph_to_neo4j(generated_graph_path: Path) -> str:
     return message or "synced"
 
 
+def seed_folder_created_markers(generated_graph_path: Path, outputs: dict) -> list[str]:
+    """Create .FOLDER_CREATED marker files for every generated FolderHash node.
+
+    The admin UI treats only .txt files as reviewable content, so the marker
+    keeps a folder path present in GCS without changing the visible article list.
+    
+    For each folder path, this function first attempts to query Neo4j for the actual 
+    runtime FolderHash. If found, it uses that hash value. If not found in Neo4j,
+    it falls back to the computed deployment-time hash.
+    """
+    gcs_bucket = (outputs.get("gcs_output_bucket") or "").strip()
+    if not gcs_bucket:
+        return []
+
+    manifest = load_json_file(generated_graph_path)
+    folder_nodes = [node for node in manifest.get("nodes", []) if node.get("label") == "FolderHash"]
+    if not folder_nodes:
+        return []
+
+    client = storage.Client()
+    bucket = client.bucket(gcs_bucket)
+    created = []
+
+    for node in folder_nodes:
+        props = node.get("properties", {}) or {}
+        folder_path = (props.get("folder_path") or "").strip()
+        computed_hash = (props.get("hash_value") or "").strip()
+        if not folder_path or not computed_hash:
+            continue
+
+        # First, try to query Neo4j for the actual runtime FolderHash for this folder
+        hash_value = computed_hash  # default to computed hash
+        try:
+            neo4j_hash = query_latest_folder_hash_from_neo4j_env(folder_path, gcs_bucket)
+            if neo4j_hash:
+                hash_value = neo4j_hash
+        except Exception as e:
+            # If Neo4j query fails, silently fall back to computed hash
+            pass
+
+        marker_name = f"{folder_path.rstrip('/')}/{hash_value}/.FOLDER_CREATED"
+        blob = bucket.blob(marker_name)
+        if blob.exists():
+            continue
+
+        blob.upload_from_string("", content_type="text/plain")
+        created.append(marker_name)
+
+    return created
+
+
 def print_summary(outputs: dict, generated_graph_path: Path, neo4j_status: str) -> None:
     print_line("Terraform post-action summary")
     print_line("==============================")
@@ -1074,16 +1215,35 @@ def main() -> int:
         outputs = get_terraform_outputs(terraform_binary)
         generated_graph_path = write_generated_graph(outputs)
         neo4j_status = sync_graph_to_neo4j(generated_graph_path)
+        marker_files = seed_folder_created_markers(generated_graph_path, outputs)
+        
+        # NOTE: Main pipeline linkage is now handled by terraform_post_action.py graph generation
+        # The special-case logic creates DEPENDS_ON_DATA_FROM relationships during the graph build phase
+        # Calling create_main_pipeline_linkage_env() after graph sync was creating duplicate/conflicting edges
+        # linkage_success, linkage_msg = create_main_pipeline_linkage_env()
+        # if linkage_success:
+        #     print_line(f"Neo4j pipeline linkage: {linkage_msg}")
+        
         print_summary(outputs, generated_graph_path, neo4j_status)
+        if marker_files:
+            print_line(f"Folder markers created: {len(marker_files)}")
     except SystemExit as exc:
         if exc.code == 0 and GENERATED_GRAPH_MANIFEST.exists():
             generated_graph_path = refresh_generated_graph_from_existing_file()
             neo4j_status = sync_graph_to_neo4j(generated_graph_path)
+            
+            # Main pipeline linkage handled by existing terraform_post_action.py special-case logic
+            # linkage_success, linkage_msg = create_main_pipeline_linkage_env()
+            
             print_line("Terraform post-action summary")
             print_line("==============================")
             print_line("Terraform outputs were unavailable; reused existing generated graph manifest.")
             print_line(f"Generated graph manifest: {generated_graph_path}")
             print_line(f"Neo4j sync: {neo4j_status}")
+            # if linkage_success:
+            #     print_line(f"Neo4j pipeline linkage: {linkage_msg}")
+            # else:
+            #     print_line(f"Warning: Neo4j pipeline linkage - {linkage_msg}")
             return 0
         raise
     return 0

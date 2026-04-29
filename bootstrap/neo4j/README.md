@@ -10,7 +10,8 @@ The graph includes:
 - GCP project, Artifact Registry, Cloud Build, and schedulers
 - Cloud Run jobs and services
 - Storage buckets
-- Eventarc triggers
+ - Storage buckets
+ - Admin-driven transitions (via `crisis-admin`) and optional Eventarc triggers
 - Workflow orchestration edges
 - Data flow relationships between jobs, services, and buckets
 
@@ -78,6 +79,17 @@ make restart-graph
 This forces `NEO4J_CLEAN=true` for the run and then reloads the manifest configured by `NEO4J_MANIFEST_PATH`.
 
 The loader reads the repository `.env` file by default. To use a different env file, set `BOOTSTRAP_ENV_FILE=/path/to/.env` before running it.
+
+## Loader Relationship Pruning
+
+By default (`NEO4J_CLEAN=false`), the loader applies an incremental sync strategy:
+
+- **Stale managed nodes are removed**: nodes with managed prefixes (`project:`, `job:`, `service:`, etc.) that are not present in the new manifest are deleted.
+- **Stale relationships are pruned**: relationships between manifest-managed nodes that are not explicitly declared in the manifest relationships are automatically deleted. This prevents leftover self-loops or obsolete edges from persisting when the manifest changes.
+
+This pruning ensures the Neo4j graph remains consistent with the manifest and reflects only intentional data dependencies.
+
+To perform a full clean reload (removing all history), use `python3 restart_graph.py` or `make restart-graph`, which sets `NEO4J_CLEAN=true` and deletes all nodes before loading the manifest.
 
 ## Terraform Hash Graph
 

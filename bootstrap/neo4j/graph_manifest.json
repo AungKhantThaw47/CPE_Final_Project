@@ -194,6 +194,17 @@
       }
     },
     {
+      "key": "job:gcs-folder-rename-job",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "gcs-folder-rename-job",
+        "runtime": "Python + Cloud Run tasks",
+        "cpu": "1",
+        "memory": "512Mi",
+        "trigger": "manual"
+      }
+    },
+    {
       "key": "workflow:daily-pipeline",
       "label": "Workflow",
       "properties": {
@@ -609,6 +620,14 @@
       "type": "TRIGGERS",
       "properties": {
         "action": "confirm_annotation"
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "bucket:pipeline-data",
+      "type": "READS_FROM",
+      "properties": {
+        "path": "crisis_articles/"
       }
     }
   ]

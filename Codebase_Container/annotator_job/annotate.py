@@ -2,10 +2,15 @@ import os
 import re
 import logging
 import time
-import hashlib
 import sys
+import hashlib
 from google.cloud import storage
 from google import genai
+
+if "/workspace" not in sys.path:
+    sys.path.append("/workspace")
+
+from utils.neo4j_utils import query_latest_folder_hash_from_neo4j_env, write_folder_hash_to_neo4j_env
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -68,15 +73,21 @@ ANNOTATION_PROMPT = """
 """
 
 
-def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
-    """Build deterministic folder hash from upstream hash + current content hash."""
-    content_hash = (content_hash or "unknown-hash").strip()
-    source_hash = (source_hash or "").strip()
+def compute_folder_hash(previous_folder_hash: str, content_hash: str) -> str:
+    """Compute the next FolderHash from the previous folder hash and content hash.
 
-    if not source_hash:
+    Matches the same formula used by the cleaner and classifier jobs: sha256("{previous}:{content}").
+    """
+    previous_folder_hash = (previous_folder_hash or "").strip()
+    content_hash = (content_hash or "").strip()
+
+    if not previous_folder_hash:
         return content_hash
 
-    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
+    if not content_hash:
+        return previous_folder_hash
+
+    return hashlib.sha256(f"{previous_folder_hash}:{content_hash}".encode("utf-8")).hexdigest()
 
 
 def annotate_article(article_text: str, gemini_client) -> str:
@@ -102,19 +113,26 @@ def process_crisis_articles():
         logger.error("❌ Missing env vars: CRISIS_BUCKET, GEMINI_API_KEY")
         return False
     
-    content_hash = os.environ.get('CONTENT_HASH', 'unknown-hash').strip()
-    
     try:
         storage_client = storage.Client()
         bucket = storage_client.bucket(crisis_bucket)
         gemini_client = genai.Client(api_key=gemini_api_key)
-        
-        # List all files in crisis_articles/
-        blobs = bucket.list_blobs(prefix='crisis_articles/')
+
+        source_hash = query_latest_folder_hash_from_neo4j_env("crisis_articles/", crisis_bucket) or ""
+        if not source_hash:
+            logger.error("❌ No latest crisis_articles/ hash found in Neo4j")
+            return False
+
+        logger.info(f"🔎 Neo4j source hash: {source_hash}")
+
+        # List only the latest crisis batch resolved from Neo4j.
+        blobs = bucket.list_blobs(prefix=f'crisis_articles/{source_hash}/')
         
         processed_count = 0
         skipped_count = 0
         error_count = 0
+        annotator_content_hash = os.environ.get("CONTENT_HASH", "").strip()
+        output_hash = compute_folder_hash(source_hash, annotator_content_hash)
         
         for blob in blobs:
             # Skip directories and non-txt files
@@ -129,19 +147,28 @@ def process_crisis_articles():
                 legacy_match = re.match(r'crisis_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
                 
                 if hash_match:
-                    source_hash = hash_match.group(1)
+                    blob_hash = hash_match.group(1)
                     date_str = hash_match.group(2)
                     filename = hash_match.group(3)
                 elif legacy_match:
-                    source_hash = "legacy"
+                    blob_hash = source_hash
                     date_str = legacy_match.group(1)
                     filename = legacy_match.group(2)
                 else:
                     logger.warning(f"⏭️  Could not parse path: {blob.name}")
                     skipped_count += 1
                     continue
+
+                if blob_hash != source_hash:
+                    logger.warning(
+                        "⚠️  Blob hash %s does not match Neo4j source hash %s; skipping %s",
+                        blob_hash,
+                        source_hash,
+                        blob.name,
+                    )
+                    skipped_count += 1
+                    continue
                 
-                output_hash = build_pipeline_output_hash(source_hash, content_hash)
                 annotated_blob_name = f"pending_review_annotation/{output_hash}/{date_str}/{filename}"
                 
                 # Check if already annotated
@@ -174,6 +201,16 @@ def process_crisis_articles():
         logger.info("=" * 60)
         logger.info(f"BATCH COMPLETE: {processed_count} processed, {skipped_count} skipped, {error_count} errors")
         logger.info("=" * 60)
+
+        if write_folder_hash_to_neo4j_env(
+            folder_path="pending_review_annotation/",
+            hash_value=output_hash,
+            bucket_name=crisis_bucket,
+            producer_component_key="job:dvb-annotator-job",
+        ):
+            logger.info(f"✅ Output folder hash saved to Neo4j: pending_review_annotation/ → {output_hash}")
+        else:
+            logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
         
         return error_count == 0
     

@@ -164,6 +164,9 @@ resource "google_cloud_run_v2_job" "scheduled_job" {
   }
 
   template {
+    task_count  = var.task_count
+    parallelism = var.parallelism
+
     template {
       execution_environment         = var.execution_environment
       gpu_zonal_redundancy_disabled = var.enable_gpu ? true : null

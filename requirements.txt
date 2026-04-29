@@ -21,6 +21,7 @@ python-Levenshtein
 # Dependencies for Cloud Run Job triggering
 google-auth==2.27.0
 google-auth-httplib2==0.2.0
+google-cloud-storage
 mlflow==3.8.1
 
 # Crisis classifier dependencies

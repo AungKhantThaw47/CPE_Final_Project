@@ -4,10 +4,10 @@ Script to clean DVB news articles from GCS bucket.
 Fetches articles from crawler bucket, cleans them, and stores in cleaned bucket.
 """
 
+import hashlib
 import os
 import re
 import sys
-import hashlib
 from datetime import datetime, timedelta
 from google.cloud import storage
 from typing import List, Dict, Optional, Tuple
@@ -16,7 +16,11 @@ from typing import List, Dict, Optional, Tuple
 if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
-from utils.neo4j_utils import query_latest_hash_from_neo4j_env, write_output_hash_to_neo4j_env
+from utils.neo4j_utils import (
+    query_latest_folder_hash_from_neo4j_env,
+    query_latest_hash_from_neo4j_env,
+    write_folder_hash_to_neo4j_env,
+)
 
 # Common Myanmar author name patterns
 AUTHOR_NAME_PATTERN = re.compile(r'^[\u1000-\u109F\u200B-\u200D\uAA60-\uAA7F]{2,20}$')
@@ -105,7 +109,10 @@ def clean_text_content(content: str) -> tuple:
 
 
 def resolve_latest_hash_for_date(bucket, prefix_path: str, date_str: str) -> Optional[str]:
-    """Resolve latest hash folder under prefix/date by blob update time."""
+    """Resolve the latest hash folder under a prefix/date by blob update time.
+
+    This is only a fallback when Neo4j is unavailable or empty at runtime.
+    """
     pattern = re.compile(rf"^{re.escape(prefix_path)}/([^/]+)/{re.escape(date_str)}/")
     latest_by_hash = {}
 
@@ -125,15 +132,17 @@ def resolve_latest_hash_for_date(bucket, prefix_path: str, date_str: str) -> Opt
     return max(latest_by_hash.items(), key=lambda item: item[1])[0]
 
 
-def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
-    """Build deterministic folder hash from upstream hash + current content hash."""
-    content_hash = (content_hash or "unknown-hash").strip()
-    source_hash = (source_hash or "").strip()
+def compute_folder_hash(previous_folder_hash: str, content_hash: str) -> str:
+    """Compute the next FolderHash from the previous folder hash and content hash."""
+    previous_folder_hash = (previous_folder_hash or "").strip()
+    content_hash = (content_hash or "").strip()
 
-    if not source_hash:
+    if not previous_folder_hash:
         return content_hash
+    if not content_hash:
+        return previous_folder_hash
 
-    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{previous_folder_hash}:{content_hash}".encode("utf-8")).hexdigest()
 
 
 def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None,
@@ -161,12 +170,11 @@ def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None,
             source_hash = query_latest_hash_from_neo4j_env("job:dvb-crawler-job") or ""
         if not source_hash:
             source_hash = resolve_latest_hash_for_date(bucket, prefix_path, date_str) or ""
+        if not source_hash:
+            print("⚠️  No source hash found in Neo4j or GCS fallback for job:dvb-crawler-job; returning empty input set.")
+            return [], ""
 
-        if source_hash:
-            prefix = f"{prefix_path}/{source_hash}/{date_str}/"
-        else:
-            # Legacy fallback for older layout without hash folders.
-            prefix = f"{prefix_path}/{date_str}/"
+        prefix = f"{prefix_path}/{source_hash}/{date_str}/"
 
         print(f"📂 Resolved source path: {prefix}")
         blobs = list(bucket.list_blobs(prefix=prefix))
@@ -255,13 +263,21 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
     
     articles, source_hash = fetch_articles_from_gcs(source_bucket, date_str, prefix_path)
     os.environ["SOURCE_CONTENT_HASH"] = source_hash
-    output_hash = build_pipeline_output_hash(
-        source_hash,
-        os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
+    print(f"🔎 Source content hash: {source_hash}")
+    print(f"📤 Target root: gs://{target_bucket}/dvb_cleaned/")
+    previous_folder_hash = query_latest_folder_hash_from_neo4j_env("dvb/", target_bucket) or source_hash
+    cleaner_content_hash = (
+        os.environ.get("CONTENT_HASH", "").strip()
+        or query_latest_hash_from_neo4j_env("job:dvb-text-cleaner-job")
+        or ""
     )
+    output_hash = compute_folder_hash(previous_folder_hash, cleaner_content_hash)
+    os.environ["DVB_CLEANED_FOLDER_HASH"] = output_hash
 
     print(f"🧬 Output hash: {output_hash}")
     print(f"📤 Target: gs://{target_bucket}/dvb_cleaned/{output_hash}/{date_str}/")
+    print(f"🔗 Previous folder hash: {previous_folder_hash}")
+    print(f"🧾 Cleaner content hash: {cleaner_content_hash or 'NONE'}")
 
     if source_hash:
         print(f"🔎 Source hash: {source_hash}")
@@ -351,33 +367,29 @@ if __name__ == "__main__":
     if stats['errors'] > 0:
         print(f"⚠️  Completed with {stats['errors']} errors")
         exit(1)
-    else:
-        print("✅ All articles processed successfully!")
-        final_date = date_str or (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-        output_hash = build_pipeline_output_hash(
-            os.environ.get('SOURCE_CONTENT_HASH', '').strip(),
-            os.environ.get('CONTENT_HASH', 'unknown-hash').strip(),
-        )
-        print(f"   Cleaned data: gs://{target_bucket}/dvb_cleaned/{output_hash}/{final_date}/")
 
-        # Create completion marker file to trigger classifier
-        try:
-            client = storage.Client()
-            marker_path = f"dvb_cleaned/{output_hash}/{final_date}/_COMPLETE"
-            marker_blob = client.bucket(target_bucket).blob(marker_path)
-            if marker_blob.exists():
-                print(f"   Completion marker already exists: gs://{target_bucket}/{marker_path}")
-            else:
-                marker_blob.upload_from_string("", content_type='text/plain')
-                print(f"   Completion marker: gs://{target_bucket}/{marker_path}")
-        except Exception as e:
-            print(f"   ⚠️  Failed to create completion marker: {e}")
+    print("✅ All articles processed successfully!")
+    final_date = date_str or (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    output_hash = os.environ.get("DVB_CLEANED_FOLDER_HASH", "").strip()
+    print(f"   Cleaned data: gs://{target_bucket}/dvb_cleaned/{output_hash}/{final_date}/")
 
-        # Write output hash to Neo4j so the classifier can resolve the exact path
-        neo4j_key = f"dvb_cleaned_output:{final_date}"
-        if write_output_hash_to_neo4j_env(neo4j_key, output_hash):
-            print(f"   ✅ Output hash saved to Neo4j: {neo4j_key} → {output_hash}")
+    # Create completion marker file to trigger classifier
+    try:
+        client = storage.Client()
+        marker_path = f"dvb_cleaned/{output_hash}/{final_date}/_COMPLETE"
+        marker_blob = client.bucket(target_bucket).blob(marker_path)
+        if marker_blob.exists():
+            print(f"   Completion marker already exists: gs://{target_bucket}/{marker_path}")
         else:
-            print(f"   ⚠️  Neo4j write skipped (not configured or failed) — bucket scan fallback will be used")
+            marker_blob.upload_from_string("", content_type='text/plain')
+            print(f"   Completion marker: gs://{target_bucket}/{marker_path}")
+    except Exception as e:
+        print(f"   ⚠️  Failed to create completion marker: {e}")
 
-        exit(0)
+    # Write the cleaned folder hash to Neo4j so downstream jobs query the folder lineage directly.
+    if write_folder_hash_to_neo4j_env("dvb_cleaned/", output_hash, target_bucket, "job:dvb-text-cleaner-job"):
+        print(f"   ✅ Folder hash saved to Neo4j: dvb_cleaned/ → {output_hash}")
+    else:
+        print(f"   ⚠️  Neo4j folder hash write skipped (not configured or failed)")
+
+    exit(0)

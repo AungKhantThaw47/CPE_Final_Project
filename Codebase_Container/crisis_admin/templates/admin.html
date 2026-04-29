@@ -17,22 +17,23 @@
             </div>
         </header>
 
-        <section class="hash-status {{ hash_status_class }}">
-            <strong>{{ hash_status_text }}</strong>
+        {% for hash_status in hash_statuses %}
+        <section class="hash-status {{ hash_status.class_name }}">
+            <strong>{{ hash_status.text }}</strong>
             <div class="hash-line">
-                <span>Latest GCS hash:</span>
-                <code id="gcs-hash">{{ pending_annotation_hash_status.gcs_latest_hash }}</code>
-                <button type="button" class="copy-btn" data-copy-target="gcs-hash">Copy</button>
-            </div>
-            <div class="hash-line">
-                <span>System DB hash:</span>
-                <code id="system-hash">{{ pending_annotation_hash_status.system_db_hash }}</code>
-                <button type="button" class="copy-btn" data-copy-target="system-hash">Copy</button>
+                <span>Neo4j FolderHash:</span>
+                <code id="{{ hash_status.system_hash_id }}">{{ hash_status.system_db_hash }}</code>
+                <button type="button" class="copy-btn" data-copy-target="{{ hash_status.system_hash_id }}">Copy</button>
             </div>
         </section>
+        {% endfor %}
 
-        <section>
-            <h2 class="stage-header">Pending Classification Review</h2>
+        <div class="tabs">
+            <button class="tab-button active" data-tab="classification">Pending Classification Review</button>
+            <button class="tab-button" data-tab="annotation">Pending Annotation Review</button>
+        </div>
+
+        <section id="classification" class="tab-content active">
             {% if not pending_grouped %}
             <p class="empty">No pending classification articles.</p>
             {% else %}
@@ -49,16 +50,16 @@
                     </thead>
                     <tbody>
                         {% for article in group.articles %}
-                        <tr>
+                        <tr data-blob="{{ article.blob_name }}">
                             <td>{{ article.filename }}</td>
                             <td>{{ article.hash }}</td>
                             <td>{{ article.size }} bytes</td>
                             <td>
-                                <form method="POST" action="/admin/confirm" class="inline">
+                                <form method="POST" action="/admin/confirm" class="inline action-form">
                                     <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
                                     <button type="submit" class="btn confirm">Confirm</button>
                                 </form>
-                                <form method="POST" action="/admin/reject" class="inline">
+                                <form method="POST" action="/admin/reject" class="inline action-form">
                                     <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
                                     <button type="submit" class="btn reject">Reject</button>
                                 </form>
@@ -72,8 +73,7 @@
             {% endif %}
         </section>
 
-        <section>
-            <h2 class="stage-header">Pending Annotation Review</h2>
+        <section id="annotation" class="tab-content">
             {% if not annotation_grouped %}
             <p class="empty">No pending annotation articles.</p>
             {% else %}
@@ -90,16 +90,16 @@
                     </thead>
                     <tbody>
                         {% for article in group.articles %}
-                        <tr>
+                        <tr data-blob="{{ article.blob_name }}">
                             <td>{{ article.filename }}</td>
                             <td>{{ article.hash }}</td>
                             <td>{{ article.size }} bytes</td>
                             <td>
-                                <form method="POST" action="/admin/confirm_annotation" class="inline">
+                                <form method="POST" action="/admin/confirm_annotation" class="inline action-form">
                                     <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
                                     <button type="submit" class="btn confirm">Confirm</button>
                                 </form>
-                                <form method="POST" action="/admin/reject_annotation" class="inline">
+                                <form method="POST" action="/admin/reject_annotation" class="inline action-form">
                                     <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
                                     <button type="submit" class="btn reject">Reject</button>
                                 </form>

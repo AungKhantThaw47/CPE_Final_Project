@@ -47,9 +47,9 @@ graph TD
             B7["terraform-state\n(indefinite)"]
         end
 
-        subgraph Events["Eventarc Triggers"]
-            EA1["GCS trigger\ncrisis_articles/ → annotator"]
-            EA2["GCS trigger\nannotated_articles/ → extractor"]
+        subgraph Events["Admin-driven transitions and optional Eventarc Triggers"]
+            EA1["Admin job trigger\ncrisis_articles/ → annotator"]
+            EA2["Admin job trigger\nannotated_articles/ → extractor"]
         end
 
         IAM["IAM Service Accounts\n(per job/service)"]
@@ -75,12 +75,12 @@ graph TD
     J3 -->|reads cleaned, writes crisis| B3
     J4 -->|writes results| B5
 
-    B3 -->|crisis_articles/ event| EA1
-    EA1 -->|invokes| S3
+    B3 -->|admin move to crisis_articles/| EA1
+    EA1 -->|invokes (run dvb-annotator-job)| S3
     S3 -->|writes annotated| B3
 
-    B3 -->|annotated_articles/ event| EA2
-    EA2 -->|invokes| S4
+    B3 -->|admin move to annotated_articles/| EA2
+    EA2 -->|invokes (run dvb-extractor-job)| S4
     S4 -->|writes extracted| B4
 
     S2 -->|reads crisis articles| B3

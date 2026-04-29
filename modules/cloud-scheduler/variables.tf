@@ -140,3 +140,15 @@ variable "enable_scheduler" {
   type        = bool
   default     = true
 }
+
+variable "task_count" {
+  description = "Number of Cloud Run tasks for the job"
+  type        = number
+  default     = 1
+}
+
+variable "parallelism" {
+  description = "Maximum number of Cloud Run tasks to run in parallel"
+  type        = number
+  default     = 1
+}

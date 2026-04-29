@@ -1,7 +1,6 @@
 import os
 import re
 import logging
-import hashlib
 import sys
 import json
 import requests
@@ -19,6 +18,7 @@ from utils.firestore_schema import (
     build_event_document,
     build_event_id,
 )
+from utils.neo4j_utils import query_latest_folder_hash_from_neo4j_env, write_folder_hash_to_neo4j_env
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -94,17 +94,6 @@ Example: Mawlamyine Township, Mon State, Myanmar
 
 Article:
 '''
-
-
-def build_pipeline_output_hash(source_hash: str, content_hash: str) -> str:
-    """Build deterministic folder hash from upstream hash + current content hash."""
-    content_hash = (content_hash or "unknown-hash").strip()
-    source_hash = (source_hash or "").strip()
-
-    if not source_hash:
-        return content_hash
-
-    return hashlib.sha256(f"{source_hash}:{content_hash}".encode("utf-8")).hexdigest()
 
 
 def extract_events(article_text: str, api_key: str) -> str:
@@ -214,16 +203,24 @@ def process_annotated_articles():
         logger.error("❌ Missing env vars: CRISIS_BUCKET, GEMINI_API_KEY")
         return False
     
-    content_hash = os.environ.get('CONTENT_HASH', 'unknown-hash').strip()
     firestore_collection = os.environ.get('FIRESTORE_COLLECTION', 'events').strip() or 'events'
     
     try:
         storage_client = storage.Client()
         bucket = storage_client.bucket(crisis_bucket)
         firestore_client = firestore.Client()
-        
-        # List all files in annotated_articles/
-        blobs = bucket.list_blobs(prefix='annotated_articles/')
+
+        source_hash = query_latest_folder_hash_from_neo4j_env("annotated_articles/", crisis_bucket) or ""
+        if not source_hash:
+            logger.error("❌ No latest annotated_articles/ hash found in Neo4j")
+            return False
+
+        logger.info(f"🔎 Neo4j source hash: {source_hash}")
+
+        output_hash = query_latest_folder_hash_from_neo4j_env("events/", crisis_bucket) or source_hash
+
+        # List only the latest annotated batch resolved from Neo4j.
+        blobs = bucket.list_blobs(prefix=f'annotated_articles/{source_hash}/')
         
         processed_count = 0
         skipped_count = 0
@@ -242,19 +239,28 @@ def process_annotated_articles():
                 legacy_match = re.match(r'annotated_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
                 
                 if hash_match:
-                    source_hash = hash_match.group(1)
+                    blob_hash = hash_match.group(1)
                     date_str = hash_match.group(2)
                     filename = hash_match.group(3)
                 elif legacy_match:
-                    source_hash = "legacy"
+                    blob_hash = source_hash
                     date_str = legacy_match.group(1)
                     filename = legacy_match.group(2)
                 else:
                     logger.warning(f"⏭️  Could not parse path: {blob.name}")
                     skipped_count += 1
                     continue
+
+                if blob_hash != source_hash:
+                    logger.warning(
+                        "⚠️  Blob hash %s does not match Neo4j source hash %s; skipping %s",
+                        blob_hash,
+                        source_hash,
+                        blob.name,
+                    )
+                    skipped_count += 1
+                    continue
                 
-                output_hash = build_pipeline_output_hash(source_hash, content_hash)
                 output_filename = filename.replace('.txt', '.json')
                 extracted_blob_name = f"events/{output_hash}/{date_str}/{output_filename}"
                 
@@ -320,6 +326,16 @@ def process_annotated_articles():
         logger.info("=" * 60)
         logger.info(f"BATCH COMPLETE: {processed_count} processed, {skipped_count} skipped, {error_count} errors")
         logger.info("=" * 60)
+
+        if write_folder_hash_to_neo4j_env(
+            folder_path="events/",
+            hash_value=output_hash,
+            bucket_name=crisis_bucket,
+            producer_component_key="job:dvb-extractor-job",
+        ):
+            logger.info(f"✅ Output folder hash saved to Neo4j: events/ → {output_hash}")
+        else:
+            logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
         
         return error_count == 0
     
