@@ -10,7 +10,11 @@ from google import genai
 if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
-from utils.neo4j_utils import query_latest_folder_hash_from_neo4j_env, write_folder_hash_to_neo4j_env
+from utils.neo4j_utils import (
+    query_latest_folder_hash_from_neo4j_env,
+    query_folder_hash_derived_from_env,
+    write_folder_hash_to_neo4j_env,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -118,9 +122,15 @@ def process_crisis_articles():
         bucket = storage_client.bucket(crisis_bucket)
         gemini_client = genai.Client(api_key=gemini_api_key)
 
-        source_hash = query_latest_folder_hash_from_neo4j_env("crisis_articles/", crisis_bucket) or ""
+        # Traverse DERIVED_FROM from the latest pending_review/ hash to find the matching crisis_articles/ hash.
+        # Falls back to chain-tip query for backwards compatibility before edges are written.
+        source_hash = (
+            query_folder_hash_derived_from_env("crisis_articles/", "pending_review/", bucket_name=crisis_bucket)
+            or query_latest_folder_hash_from_neo4j_env("crisis_articles/", crisis_bucket)
+            or ""
+        )
         if not source_hash:
-            logger.error("❌ No latest crisis_articles/ hash found in Neo4j")
+            logger.error("❌ No crisis_articles/ hash found in Neo4j (via DERIVED_FROM or chain tip)")
             return False
 
         logger.info(f"🔎 Neo4j source hash: {source_hash}")
@@ -176,21 +186,25 @@ def process_crisis_articles():
                 if annotated_blob.exists():
                     logger.info(f"⏭️  Already annotated: {annotated_blob_name}")
                     skipped_count += 1
+                    blob.delete()
+                    logger.info(f"🗑️  Deleted source: {blob.name}")
                     continue
-                
+
                 # Download and annotate
                 logger.info(f"📄 Processing: {blob.name}")
                 article_text = blob.download_as_text(encoding='utf-8')
                 logger.info(f"✅ Downloaded ({len(article_text)} chars)")
-                
+
                 logger.info("🤖 Annotating with Gemini...")
                 annotated_text = annotate_article(article_text, gemini_client)
                 logger.info("✅ Annotation complete")
-                
-                # Save annotated output
+
+                # Save annotated output, then remove source
                 annotated_blob.upload_from_string(annotated_text, content_type='text/plain; charset=utf-8')
                 logger.info(f"✅ Saved to gs://{crisis_bucket}/{annotated_blob_name}")
-                
+                blob.delete()
+                logger.info(f"🗑️  Deleted source: {blob.name}")
+
                 processed_count += 1
                 
             except Exception as e:
@@ -207,6 +221,8 @@ def process_crisis_articles():
             hash_value=output_hash,
             bucket_name=crisis_bucket,
             producer_component_key="job:dvb-annotator-job",
+            source_folder_path="crisis_articles/",
+            source_folder_hash=source_hash,
         ):
             logger.info(f"✅ Output folder hash saved to Neo4j: pending_review_annotation/ → {output_hash}")
         else:

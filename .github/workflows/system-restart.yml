@@ -1,0 +1,86 @@
+name: System Restart
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "true" to confirm destructive restart (wipes GCS, Firestore, Neo4j hash nodes)'
+        required: true
+        default: 'false'
+      firestore_collection:
+        description: 'Firestore collection to clean'
+        required: false
+        default: 'events'
+
+env:
+  GOOGLE_PROJECT: cpe-final-project
+  GOOGLE_REGION: asia-southeast1
+
+jobs:
+  system-restart:
+    name: System Restart (Destructive)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'true'
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cache Terraform Plugins
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            .terraform/providers
+          key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Install Python dependencies
+        run: pip install google-cloud-firestore --quiet
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Run system restart
+        run: bash scripts/system_restart.sh
+        env:
+          CONFIRM: 'true'
+          FIRESTORE_COLLECTION: ${{ github.event.inputs.firestore_collection }}
+          NEO4J_URI: ${{ secrets.NEO4J_URI }}
+          NEO4J_USER: ${{ secrets.NEO4J_USER }}
+          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+          NEO4J_DATABASE: ${{ vars.NEO4J_DATABASE || 'neo4j' }}
+          NEO4J_SKIP_SSL_VERIFY: ${{ vars.NEO4J_SKIP_SSL_VERIFY || 'false' }}
+
+      - name: Restart Neo4j graph from manifest
+        run: cd bootstrap/neo4j && python3 restart_graph.py
+        env:
+          NEO4J_URI: ${{ secrets.NEO4J_URI }}
+          NEO4J_USER: ${{ secrets.NEO4J_USER }}
+          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+          NEO4J_DATABASE: ${{ vars.NEO4J_DATABASE || 'neo4j' }}
+          NEO4J_SKIP_SSL_VERIFY: ${{ vars.NEO4J_SKIP_SSL_VERIFY || 'false' }}

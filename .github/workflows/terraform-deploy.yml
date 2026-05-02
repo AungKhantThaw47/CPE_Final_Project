@@ -179,3 +179,16 @@ jobs:
 
       - name: Display Outputs
         run: terraform output -json
+
+      - name: Install post-deploy dependencies
+        run: pip install neo4j==5.28.1 google-cloud-storage --quiet
+
+      - name: Seed Neo4j graph and pipeline edges
+        run: bash scripts/terraform_post_action.sh
+        continue-on-error: true
+        env:
+          NEO4J_URI: ${{ secrets.NEO4J_URI }}
+          NEO4J_USER: ${{ secrets.NEO4J_USER }}
+          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+          NEO4J_DATABASE: ${{ vars.NEO4J_DATABASE || 'neo4j' }}
+          NEO4J_SKIP_SSL_VERIFY: ${{ vars.NEO4J_SKIP_SSL_VERIFY || 'false' }}

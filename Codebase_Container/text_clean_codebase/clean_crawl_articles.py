@@ -273,6 +273,7 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
     )
     output_hash = compute_folder_hash(previous_folder_hash, cleaner_content_hash)
     os.environ["DVB_CLEANED_FOLDER_HASH"] = output_hash
+    os.environ["DVB_SOURCE_FOLDER_HASH"] = previous_folder_hash or ""
 
     print(f"🧬 Output hash: {output_hash}")
     print(f"📤 Target: gs://{target_bucket}/dvb_cleaned/{output_hash}/{date_str}/")
@@ -315,9 +316,19 @@ def process_and_clean_articles(source_bucket: str, target_bucket: str,
             else:
                 stats['unchanged'] += 1
                 print(f"  ⏭️  No changes, uploaded as-is")
+            try:
+                storage.Client().bucket(source_bucket).blob(article['blob_name']).delete()
+                print(f"  🗑️  Deleted source: {article['blob_name']}")
+            except Exception as del_err:
+                print(f"  ⚠️  Could not delete source: {del_err}")
         elif upload_status == "exists":
             stats['skipped_existing'] += 1
             print(f"  ⏭️  Output already exists, skipped")
+            try:
+                storage.Client().bucket(source_bucket).blob(article['blob_name']).delete()
+                print(f"  🗑️  Deleted source: {article['blob_name']}")
+            except Exception as del_err:
+                print(f"  ⚠️  Could not delete source: {del_err}")
         else:
             stats['errors'] += 1
             print(f"  ❌ Upload failed")
@@ -386,8 +397,17 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"   ⚠️  Failed to create completion marker: {e}")
 
-    # Write the cleaned folder hash to Neo4j so downstream jobs query the folder lineage directly.
-    if write_folder_hash_to_neo4j_env("dvb_cleaned/", output_hash, target_bucket, "job:dvb-text-cleaner-job"):
+    # Write the cleaned folder hash to Neo4j; include DERIVED_FROM so the classifier can
+    # find this hash by traversing from the dvb/ source hash rather than just taking the tip.
+    source_folder_hash = os.environ.get("DVB_SOURCE_FOLDER_HASH", "").strip()
+    if write_folder_hash_to_neo4j_env(
+        "dvb_cleaned/",
+        output_hash,
+        target_bucket,
+        "job:dvb-text-cleaner-job",
+        source_folder_path="dvb/",
+        source_folder_hash=source_folder_hash,
+    ):
         print(f"   ✅ Folder hash saved to Neo4j: dvb_cleaned/ → {output_hash}")
     else:
         print(f"   ⚠️  Neo4j folder hash write skipped (not configured or failed)")

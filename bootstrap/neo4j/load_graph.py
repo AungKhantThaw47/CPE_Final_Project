@@ -442,10 +442,14 @@ def load_graph(config: dict, manifest: dict) -> None:
             // that are not explicitly declared in the manifest's relationship
             // list. Uses parameterized allowed_relationships to avoid
             // accidentally removing valid links.
+            // DERIVED_FROM edges are written at runtime by job scripts and the
+            // post-deploy seed — they are never in the static manifest, so they
+            // must be excluded here to avoid being pruned on every redeploy.
             UNWIND $node_keys AS nk
             WITH collect(DISTINCT nk) AS node_keys, $allowed_rels AS allowed
             MATCH (a)-[r]->(b)
             WHERE a.key IN node_keys AND b.key IN node_keys
+              AND type(r) <> 'DERIVED_FROM'
               AND NOT any(x IN allowed WHERE x.from = a.key AND x.to = b.key AND x.type = type(r))
             DELETE r
             """,

@@ -12,7 +12,10 @@ from typing import List, Dict, Optional
 if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
-from utils.neo4j_utils import query_latest_folder_hash_from_neo4j_env, write_folder_hash_to_neo4j_env
+from utils.neo4j_utils import (
+    query_latest_folder_hash_from_neo4j_env,
+    write_folder_hash_to_neo4j_env,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -372,15 +375,31 @@ def admin_confirm():
         bucket = client.bucket(crisis_bucket)
         source_blob = bucket.blob(blob_name)
 
-        # pending_review/{hash}/{date}/{filename} -> crisis_articles/{LATEST_HASH}/{date}/{filename}
-        # Move to latest crisis_articles hash
-        output_hash = query_latest_folder_hash_from_neo4j_env("crisis_articles/", crisis_bucket) or "unknown"
+        # pending_review/{hash}/{date}/{filename} -> crisis_articles/{same_hash}/{date}/{filename}
+        # Use the pending_review hash directly so that crisis_articles/ stays version-chain aligned.
+        pending_hash_match = re.match(r'^pending_review/([^/]+)/', blob_name)
+        pending_review_hash = pending_hash_match.group(1) if pending_hash_match else ""
+        output_hash = pending_review_hash or "unknown"
         date_match = re.match(r'^pending_review/[^/]+/([0-9]{4}-[0-9]{2}-[0-9]{2})/', blob_name)
         date_str = date_match.group(1) if date_match else "unknown"
         filename = blob_name.split('/')[-1]
         destination_name = f'crisis_articles/{output_hash}/{date_str}/{filename}'
         bucket.copy_blob(source_blob, bucket, destination_name)
         source_blob.delete()
+
+        if pending_review_hash:
+            if write_folder_hash_to_neo4j_env(
+                folder_path='crisis_articles/',
+                hash_value=pending_review_hash,
+                bucket_name=crisis_bucket,
+                producer_component_key='service:crisis-admin',
+                source_folder_path='pending_review/',
+                source_folder_hash=pending_review_hash,
+            ):
+                logger.info(f"✅ Folder hash saved to Neo4j: crisis_articles/ → {pending_review_hash}")
+            else:
+                logger.warning("⚠️  Neo4j folder hash write skipped (not configured or failed)")
+
         trigger_cloud_run_job("dvb-annotator-job")
 
         logger.info(f"✅ Confirmed: {blob_name} -> {destination_name}")
@@ -444,9 +463,11 @@ def admin_confirm_annotation():
         bucket = client.bucket(crisis_bucket)
         source_blob = bucket.blob(blob_name)
 
-        # pending_review_annotation/{hash}/{date}/{filename} -> annotated_articles/{LATEST_HASH}/{date}/{filename}
-        # Move to latest annotated_articles hash
-        output_hash = query_latest_folder_hash_from_neo4j_env("annotated_articles/", crisis_bucket) or "unknown"
+        # pending_review_annotation/{hash}/{date}/{filename} -> annotated_articles/{same_hash}/{date}/{filename}
+        # Use the pending_review_annotation hash directly so that annotated_articles/ stays version-chain aligned.
+        pending_ann_match = re.match(r'^pending_review_annotation/([^/]+)/', blob_name)
+        pending_ann_hash = pending_ann_match.group(1) if pending_ann_match else ""
+        output_hash = pending_ann_hash or "unknown"
         date_match = re.match(r'^pending_review_annotation/[^/]+/([0-9]{4}-[0-9]{2}-[0-9]{2})/', blob_name)
         date_str = date_match.group(1) if date_match else "unknown"
         filename = blob_name.split('/')[-1]
@@ -459,6 +480,8 @@ def admin_confirm_annotation():
             hash_value=output_hash,
             bucket_name=crisis_bucket,
             producer_component_key='service:crisis-admin',
+            source_folder_path='pending_review_annotation/',
+            source_folder_hash=pending_ann_hash,
         ):
             logger.info(f"✅ Output folder hash saved to Neo4j: annotated_articles/ → {output_hash}")
         else:

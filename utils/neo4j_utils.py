@@ -296,8 +296,15 @@ def write_folder_hash_to_neo4j(
     neo4j_database: str = "neo4j",
     bucket_name: str = "",
     producer_component_key: str = "",
+    source_folder_path: str = "",
+    source_folder_hash: str = "",
 ) -> bool:
-    """Create/update a FolderHash node at runtime; link to previous hash if it exists."""
+    """Create/update a FolderHash node at runtime; link to previous hash if it exists.
+
+    When source_folder_path and source_folder_hash are provided, also writes a
+    DERIVED_FROM edge from the new FolderHash to the source FolderHash so that
+    downstream jobs can traverse version chains across folder boundaries.
+    """
     query = """
     OPTIONAL MATCH (latest:FolderHash {folder_path: $folder_path})
     WHERE NOT EXISTS {
@@ -328,6 +335,12 @@ def write_folder_hash_to_neo4j(
     FOREACH (_ IN CASE WHEN producer IS NOT NULL THEN [1] ELSE [] END |
         MERGE (new_hash)-[:PRODUCED_BY]->(producer)
     )
+
+    // Write cross-folder DERIVED_FROM edge for version-chain traversal
+    FOREACH (_ IN CASE WHEN $source_folder_path <> '' AND $source_folder_hash <> '' THEN [1] ELSE [] END |
+        MERGE (src:FolderHash {folder_path: $source_folder_path, hash_value: $source_folder_hash})
+        MERGE (new_hash)-[:DERIVED_FROM]->(src)
+    )
     """
 
     bucket_candidates = {bucket_name.strip()}
@@ -350,6 +363,8 @@ def write_folder_hash_to_neo4j(
                     bucket_names=sorted(bucket_candidates),
                     bucket_keys=sorted(bucket_keys),
                     producer_component_key=producer_component_key,
+                    source_folder_path=source_folder_path or "",
+                    source_folder_hash=source_folder_hash or "",
                 )
         return True
     except Exception:
@@ -361,6 +376,8 @@ def write_folder_hash_to_neo4j_env(
     hash_value: str,
     bucket_name: str = "",
     producer_component_key: str = "",
+    source_folder_path: str = "",
+    source_folder_hash: str = "",
 ) -> bool:
     """Write FolderHash using Neo4j connection settings from environment variables."""
     _load_env_file_if_present()
@@ -382,6 +399,8 @@ def write_folder_hash_to_neo4j_env(
             neo4j_database=neo4j_database,
             bucket_name=bucket_name,
             producer_component_key=producer_component_key,
+            source_folder_path=source_folder_path,
+            source_folder_hash=source_folder_hash,
         )
     except Exception:
         return False
@@ -486,6 +505,95 @@ def create_main_pipeline_linkage(
 
     except Exception as exc:
         return False, f"Failed to create main pipeline linkage: {exc}"
+
+
+def query_folder_hash_derived_from(
+    target_folder_path: str,
+    source_folder_path: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str = "neo4j",
+    bucket_name: str = "",
+) -> Optional[str]:
+    """Return the FolderHash for target_folder that was DERIVED_FROM the latest source_folder hash.
+
+    Traverses the DERIVED_FROM graph: finds the chain tip of source_folder, then returns
+    the target_folder hash that has a DERIVED_FROM edge pointing to that source tip.
+    This enables version-chain-aware queries — each job finds its input hash from the
+    same version chain as the upstream job that produced the data it should process.
+    """
+    query = """
+    MATCH (source:FolderHash {folder_path: $source_folder_path})
+    WHERE NOT EXISTS {
+        MATCH (:FolderHash)-[:PREVIOUS_FOLDER_HASH]->(source)
+    }
+    MATCH (target:FolderHash {folder_path: $target_folder_path})-[:DERIVED_FROM]->(source)
+    RETURN target.hash_value AS hash_value, target.updated_at AS updated_at
+    ORDER BY target.updated_at DESC
+    LIMIT 1
+    """
+
+    driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
+
+    with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
+        with driver.session(database=neo4j_database) as session:
+            records = session.run(
+                query,
+                source_folder_path=source_folder_path,
+                target_folder_path=target_folder_path,
+            ).data()
+
+            if not records:
+                return None
+
+            if bucket_name:
+                client = storage.Client()
+                for record in records:
+                    value = record.get("hash_value")
+                    if not isinstance(value, str) or not value.strip():
+                        continue
+                    prefix = f"{target_folder_path.rstrip('/')}/{value.strip()}/"
+                    try:
+                        blob = next(client.list_blobs(bucket_name, prefix=prefix, max_results=1), None)
+                    except Exception:
+                        blob = None
+                    if blob is not None:
+                        return value.strip()
+                value = records[0].get("hash_value")
+                return value.strip() if isinstance(value, str) and value.strip() else None
+
+            value = records[0].get("hash_value")
+            return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def query_folder_hash_derived_from_env(
+    target_folder_path: str,
+    source_folder_path: str,
+    bucket_name: str = "",
+) -> Optional[str]:
+    """Return target FolderHash derived from the latest source FolderHash, using env-based Neo4j config."""
+    _load_env_file_if_present()
+    neo4j_uri = os.environ.get("NEO4J_URI", "").strip()
+    neo4j_user = os.environ.get("NEO4J_USER", "").strip()
+    neo4j_password = os.environ.get("NEO4J_PASSWORD", "").strip()
+    neo4j_database = os.environ.get("NEO4J_DATABASE", "neo4j").strip() or "neo4j"
+
+    if not neo4j_uri or not neo4j_user or not neo4j_password:
+        return None
+
+    try:
+        return query_folder_hash_derived_from(
+            target_folder_path=target_folder_path,
+            source_folder_path=source_folder_path,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            neo4j_database=neo4j_database,
+            bucket_name=bucket_name,
+        )
+    except Exception:
+        return None
 
 
 def create_main_pipeline_linkage_env() -> tuple[bool, str]:

@@ -26,6 +26,7 @@ if "/workspace" not in sys.path:
 from utils.neo4j_utils import (
     query_latest_hash_from_neo4j_env,
     query_latest_folder_hash_from_neo4j_env,
+    query_folder_hash_derived_from_env,
     write_folder_hash_to_neo4j_env,
 )
 
@@ -168,8 +169,13 @@ def fetch_cleaned_articles(bucket_name: str, date_str: str,
 
         source_hash = os.environ.get("SOURCE_CONTENT_HASH", "").strip()
         if not source_hash:
-            # Query the latest cleaned folder hash directly from Neo4j.
-            source_hash = query_latest_folder_hash_from_neo4j_env("dvb_cleaned/", bucket_name) or ""
+            # Traverse DERIVED_FROM from the latest dvb/ hash to find the matching dvb_cleaned/ hash.
+            # Falls back to chain-tip query for backwards compatibility before edges are written.
+            source_hash = (
+                query_folder_hash_derived_from_env("dvb_cleaned/", "dvb/", bucket_name=bucket_name)
+                or query_latest_folder_hash_from_neo4j_env("dvb_cleaned/", bucket_name)
+                or ""
+            )
         if not source_hash:
             source_hash = resolve_latest_hash_for_date(bucket, prefix_path, date_str) or ""
         if not source_hash:
@@ -314,26 +320,44 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
                 if upload_status == "uploaded":
                     stats['crisis'] += 1
                     logger.info(f"  CRISIS (confidence: {confidence:.2%}) - Saved to pending_review")
+                    try:
+                        storage.Client().bucket(source_bucket).blob(article['blob_name']).delete()
+                        logger.info(f"  🗑️  Deleted source: {article['blob_name']}")
+                    except Exception as del_err:
+                        logger.warning(f"  ⚠️  Could not delete source: {del_err}")
                 elif upload_status == "exists":
                     stats['skipped_existing'] += 1
                     logger.info(f"  ⏭️  CRISIS (confidence: {confidence:.2%}) - Output already exists, skipped")
+                    try:
+                        storage.Client().bucket(source_bucket).blob(article['blob_name']).delete()
+                        logger.info(f"  🗑️  Deleted source: {article['blob_name']}")
+                    except Exception as del_err:
+                        logger.warning(f"  ⚠️  Could not delete source: {del_err}")
                 else:
                     stats['errors'] += 1
                     logger.error("  CRISIS but upload failed")
             else:
-                logger.info(f"  Non-crisis (confidence: {confidence:.2%}) - Skipped")
+                logger.info(f"  Non-crisis (confidence: {confidence:.2%}) - Removing from cleaned")
+                try:
+                    storage.Client().bucket(source_bucket).blob(article['blob_name']).delete()
+                    logger.info(f"  🗑️  Deleted non-crisis source: {article['blob_name']}")
+                except Exception as del_err:
+                    logger.warning(f"  ⚠️  Could not delete source: {del_err}")
 
         except Exception as e:
             stats['errors'] += 1
             logger.error(f"  ❌ Classification error: {e}")
 
-    # Save the output folder hash to Neo4j ONLY if articles were actually written
+    # Save the output folder hash to Neo4j ONLY if articles were actually written.
+    # Include DERIVED_FROM so the admin and annotator can traverse from dvb_cleaned/ → pending_review/.
     if stats['crisis'] > 0:
         if write_folder_hash_to_neo4j_env(
             folder_path="pending_review/",
             hash_value=output_hash,
             bucket_name=crisis_bucket,
             producer_component_key="job:crisis-classifier-job",
+            source_folder_path="dvb_cleaned/",
+            source_folder_hash=source_hash,
         ):
             logger.info(f"✅ Output folder hash saved to Neo4j: pending_review/ → {output_hash}")
         else:

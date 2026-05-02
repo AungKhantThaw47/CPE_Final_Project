@@ -11,7 +11,11 @@ from google.cloud import storage
 
 # Add utils to path for Neo4j utilities
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils.neo4j_utils import query_latest_folder_hash_from_neo4j_env, create_main_pipeline_linkage_env
+from utils.neo4j_utils import (
+    query_latest_folder_hash_from_neo4j_env,
+    query_folder_hash_derived_from_env,
+    write_folder_hash_to_neo4j_env,
+)
 
 TIMEOUT_SECONDS = 10
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -1089,10 +1093,14 @@ def seed_folder_created_markers(generated_graph_path: Path, outputs: dict) -> li
 
     The admin UI treats only .txt files as reviewable content, so the marker
     keeps a folder path present in GCS without changing the visible article list.
-    
-    For each folder path, this function first attempts to query Neo4j for the actual 
+
+    For each folder path, this function first attempts to query Neo4j for the actual
     runtime FolderHash. If found, it uses that hash value. If not found in Neo4j,
     it falls back to the computed deployment-time hash.
+
+    Also writes DERIVED_FROM edges in Neo4j for the static deployment-time pipeline
+    stages so the first runtime run can use traversal-based queries without falling
+    back to the chain-tip query.
     """
     gcs_bucket = (outputs.get("gcs_output_bucket") or "").strip()
     if not gcs_bucket:
@@ -1102,6 +1110,43 @@ def seed_folder_created_markers(generated_graph_path: Path, outputs: dict) -> li
     folder_nodes = [node for node in manifest.get("nodes", []) if node.get("label") == "FolderHash"]
     if not folder_nodes:
         return []
+
+    # Build a folder_path → computed_hash map from the manifest for DERIVED_FROM seeding.
+    computed_hash_by_folder: dict[str, str] = {}
+    for node in folder_nodes:
+        props = node.get("properties", {}) or {}
+        fp = (props.get("folder_path") or "").strip()
+        hv = (props.get("hash_value") or "").strip()
+        if fp and hv:
+            computed_hash_by_folder[fp] = hv
+
+    # The ordered pipeline stages and the folder that each stage is derived from.
+    # Matches the runtime DERIVED_FROM chain written by the job scripts.
+    pipeline_derived_from: list[tuple[str, str]] = [
+        ("dvb_cleaned/",               "dvb/"),
+        ("pending_review/",            "dvb_cleaned/"),
+        ("crisis_articles/",           "pending_review/"),
+        ("pending_review_annotation/", "crisis_articles/"),
+        ("annotated_articles/",        "pending_review_annotation/"),
+        ("events/",                    "annotated_articles/"),
+    ]
+
+    for target_folder, source_folder in pipeline_derived_from:
+        target_hash = computed_hash_by_folder.get(target_folder, "")
+        source_hash = computed_hash_by_folder.get(source_folder, "")
+        if not target_hash or not source_hash:
+            continue
+        # Skip if a runtime DERIVED_FROM edge already exists for this target folder.
+        existing = query_folder_hash_derived_from_env(target_folder, source_folder, bucket_name=gcs_bucket)
+        if existing:
+            continue
+        write_folder_hash_to_neo4j_env(
+            folder_path=target_folder,
+            hash_value=target_hash,
+            bucket_name=gcs_bucket,
+            source_folder_path=source_folder,
+            source_folder_hash=source_hash,
+        )
 
     client = storage.Client()
     bucket = client.bucket(gcs_bucket)
@@ -1114,14 +1159,13 @@ def seed_folder_created_markers(generated_graph_path: Path, outputs: dict) -> li
         if not folder_path or not computed_hash:
             continue
 
-        # First, try to query Neo4j for the actual runtime FolderHash for this folder
-        hash_value = computed_hash  # default to computed hash
+        # Prefer the actual runtime FolderHash from Neo4j; fall back to deployment-time hash.
+        hash_value = computed_hash
         try:
             neo4j_hash = query_latest_folder_hash_from_neo4j_env(folder_path, gcs_bucket)
             if neo4j_hash:
                 hash_value = neo4j_hash
-        except Exception as e:
-            # If Neo4j query fails, silently fall back to computed hash
+        except Exception:
             pass
 
         marker_name = f"{folder_path.rstrip('/')}/{hash_value}/.FOLDER_CREATED"
@@ -1216,14 +1260,6 @@ def main() -> int:
         generated_graph_path = write_generated_graph(outputs)
         neo4j_status = sync_graph_to_neo4j(generated_graph_path)
         marker_files = seed_folder_created_markers(generated_graph_path, outputs)
-        
-        # NOTE: Main pipeline linkage is now handled by terraform_post_action.py graph generation
-        # The special-case logic creates DEPENDS_ON_DATA_FROM relationships during the graph build phase
-        # Calling create_main_pipeline_linkage_env() after graph sync was creating duplicate/conflicting edges
-        # linkage_success, linkage_msg = create_main_pipeline_linkage_env()
-        # if linkage_success:
-        #     print_line(f"Neo4j pipeline linkage: {linkage_msg}")
-        
         print_summary(outputs, generated_graph_path, neo4j_status)
         if marker_files:
             print_line(f"Folder markers created: {len(marker_files)}")
@@ -1231,19 +1267,11 @@ def main() -> int:
         if exc.code == 0 and GENERATED_GRAPH_MANIFEST.exists():
             generated_graph_path = refresh_generated_graph_from_existing_file()
             neo4j_status = sync_graph_to_neo4j(generated_graph_path)
-            
-            # Main pipeline linkage handled by existing terraform_post_action.py special-case logic
-            # linkage_success, linkage_msg = create_main_pipeline_linkage_env()
-            
             print_line("Terraform post-action summary")
             print_line("==============================")
             print_line("Terraform outputs were unavailable; reused existing generated graph manifest.")
             print_line(f"Generated graph manifest: {generated_graph_path}")
             print_line(f"Neo4j sync: {neo4j_status}")
-            # if linkage_success:
-            #     print_line(f"Neo4j pipeline linkage: {linkage_msg}")
-            # else:
-            #     print_line(f"Warning: Neo4j pipeline linkage - {linkage_msg}")
             return 0
         raise
     return 0

@@ -18,7 +18,11 @@ from utils.firestore_schema import (
     build_event_document,
     build_event_id,
 )
-from utils.neo4j_utils import query_latest_folder_hash_from_neo4j_env, write_folder_hash_to_neo4j_env
+from utils.neo4j_utils import (
+    query_latest_folder_hash_from_neo4j_env,
+    query_folder_hash_derived_from_env,
+    write_folder_hash_to_neo4j_env,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -206,14 +210,23 @@ def process_annotated_articles():
         bucket = storage_client.bucket(crisis_bucket)
         firestore_client = firestore.Client()
 
-        source_hash = query_latest_folder_hash_from_neo4j_env("annotated_articles/", crisis_bucket) or ""
+        # Traverse DERIVED_FROM from the latest pending_review_annotation/ hash to find the matching
+        # annotated_articles/ hash. Falls back to chain-tip query for backwards compatibility.
+        source_hash = (
+            query_folder_hash_derived_from_env(
+                "annotated_articles/", "pending_review_annotation/", bucket_name=crisis_bucket
+            )
+            or query_latest_folder_hash_from_neo4j_env("annotated_articles/", crisis_bucket)
+            or ""
+        )
         if not source_hash:
-            logger.error("❌ No latest annotated_articles/ hash found in Neo4j")
+            logger.error("❌ No annotated_articles/ hash found in Neo4j (via DERIVED_FROM or chain tip)")
             return False
 
         logger.info(f"🔎 Neo4j source hash: {source_hash}")
 
-        output_hash = query_latest_folder_hash_from_neo4j_env("events/", crisis_bucket) or source_hash
+        # events/ output hash mirrors the annotated_articles/ source hash for version isolation
+        output_hash = source_hash
 
         # List only the latest annotated batch resolved from Neo4j.
         blobs = bucket.list_blobs(prefix=f'annotated_articles/{source_hash}/')
@@ -283,22 +296,26 @@ def process_annotated_articles():
                         logger.warning(f"⚠️  Firestore sync for existing output failed: {firestore_sync_error}")
 
                     skipped_count += 1
+                    blob.delete()
+                    logger.info(f"🗑️  Deleted source: {blob.name}")
                     continue
-                
+
                 # Download and extract
                 logger.info(f"📄 Processing: {blob.name}")
                 article_text = blob.download_as_text(encoding='utf-8')
                 logger.info(f"✅ Downloaded ({len(article_text)} chars)")
-                
+
                 logger.info("🤖 Extracting with Gemini...")
                 result = extract_events(article_text, gemini_api_key)
                 logger.info("✅ Extraction complete")
 
                 events = parse_extracted_events(result)
-                
-                # Save extracted output
+
+                # Save extracted output, then remove source
                 extracted_blob.upload_from_string(result, content_type='application/json')
                 logger.info(f"✅ Saved to gs://{crisis_bucket}/{extracted_blob_name}")
+                blob.delete()
+                logger.info(f"🗑️  Deleted source: {blob.name}")
 
                 firestore_written = write_events_to_firestore(
                     firestore_client=firestore_client,
@@ -311,7 +328,7 @@ def process_annotated_articles():
                     filename=filename,
                 )
                 logger.info(f"✅ Upserted {firestore_written} event document(s) to Firestore collection '{firestore_collection}'")
-                
+
                 processed_count += 1
                 
             except Exception as e:
@@ -328,6 +345,8 @@ def process_annotated_articles():
             hash_value=output_hash,
             bucket_name=crisis_bucket,
             producer_component_key="job:dvb-extractor-job",
+            source_folder_path="annotated_articles/",
+            source_folder_hash=source_hash,
         ):
             logger.info(f"✅ Output folder hash saved to Neo4j: events/ → {output_hash}")
         else:
