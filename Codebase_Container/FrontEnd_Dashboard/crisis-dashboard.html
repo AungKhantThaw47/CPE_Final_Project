@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Myanmar Crisis Dashboard · 2023</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+/* ── TOKENS ── */
+:root{
+  --ink:#0d1117;--ink2:#161b27;--ink3:#1e2538;
+  --glass:rgba(255,255,255,0.07);--glass2:rgba(255,255,255,0.12);
+  --border:rgba(255,255,255,0.14);--border2:rgba(255,255,255,0.25);
+  --tx:#f0f3fa;--tx2:#b0bbd0;--tx3:#7a8ba8;
+  --red:#ef4444;--orange:#f97316;--yellow:#eab308;--blue:#3b82f6;--green:#22c55e;
+  --red-g:rgba(239,68,68,.25);--orange-g:rgba(249,115,22,.25);
+  --yellow-g:rgba(234,179,8,.25);--blue-g:rgba(59,130,246,.25);
+  --accent:#e2a84b;--accent-g:rgba(226,168,75,.2);
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'IBM Plex Sans',sans-serif;
+  --r:8px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-size:13px;background:var(--ink);color:var(--tx);font-family:var(--sans)}
+
+/* ── LAYOUT ── */
+.shell{display:grid;grid-template-rows:52px 1fr;height:100vh;overflow:hidden}
+.topbar{background:var(--ink2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:16px;flex-shrink:0;z-index:100}
+.tb-logo{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:-.02em;white-space:nowrap;color:var(--tx)}
+.tb-logo span{color:var(--accent)}
+.tb-divider{width:1px;height:20px;background:var(--border2);flex-shrink:0}
+.tb-filters{display:flex;align-items:center;gap:8px;flex:1;flex-wrap:nowrap;overflow:hidden}
+.tb-label{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx3);white-space:nowrap}
+.tb-count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--tx2);white-space:nowrap;background:var(--glass2);border:1px solid var(--border);padding:3px 10px;border-radius:20px}
+
+/* FILTER CONTROLS */
+.f-date{display:flex;align-items:center;gap:4px}
+.f-input{background:var(--ink3);border:1px solid var(--border2);border-radius:5px;padding:4px 8px;color:var(--tx);font-family:var(--mono);font-size:10px;outline:none;width:100px}
+.f-input:focus{border-color:var(--accent)}
+.f-input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.5);cursor:pointer}
+.f-select{background:var(--ink3);border:1px solid var(--border2);border-radius:5px;padding:4px 8px;color:var(--tx);font-family:var(--mono);font-size:10px;outline:none;cursor:pointer}
+.f-select:focus{border-color:var(--accent)}
+
+/* TYPE CHIPS */
+.chip-wrap{display:flex;gap:4px}
+.chip{font-family:var(--mono);font-size:9px;padding:4px 9px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--tx2);cursor:pointer;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.chip:hover{color:var(--tx);border-color:var(--border2)}
+.chip.on{color:#fff;border-color:transparent}
+.chip-dot{width:6px;height:6px;border-radius:50%}
+.chip[data-t="Violent_incident"].on{background:var(--red);border-color:var(--red)}
+.chip[data-t="Fire"].on{background:var(--orange);border-color:var(--orange)}
+.chip[data-t="Explosion event"].on{background:var(--yellow);border-color:var(--yellow);color:#000}
+.chip[data-t="Natural disaster"].on{background:var(--blue);border-color:var(--blue)}
+
+/* RESET BTN */
+.btn-reset{font-family:var(--mono);font-size:9px;padding:4px 10px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--tx3);cursor:pointer;white-space:nowrap;transition:all .15s}
+.btn-reset:hover{color:var(--accent);border-color:var(--accent)}
+
+/* ── MAIN CONTENT ── */
+.body{display:grid;grid-template-columns:300px 1fr;height:100%;overflow:hidden}
+.left-col{display:flex;flex-direction:column;gap:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--ink2)}
+.right-col{display:flex;flex-direction:column;overflow:hidden}
+
+/* ── CARDS ── */
+.card{background:var(--glass);border-bottom:1px solid var(--border);padding:16px}
+.card-title{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+
+/* OVERVIEW CARDS */
+.ov-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ov-card{background:var(--ink3);border:1px solid var(--border);border-radius:var(--r);padding:12px;position:relative;overflow:hidden;cursor:default;transition:border-color .2s}
+.ov-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--c,transparent)}
+.ov-card:hover{border-color:var(--border2)}
+.ov-label{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);margin-bottom:6px}
+.ov-val{font-family:var(--mono);font-size:22px;font-weight:600;letter-spacing:-.04em;line-height:1;color:var(--cv,var(--tx))}
+.ov-sub{font-family:var(--mono);font-size:8px;color:var(--tx3);margin-top:3px}
+
+/* CHART AREAS */
+.ch-wrap{position:relative}
+.ch-160{height:160px}
+.ch-120{height:120px}
+.ch-180{height:180px}
+
+/* TOP LOCATIONS */
+.loc-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.loc-row:last-child{border-bottom:none}
+.loc-row:hover{background:var(--glass2);margin:0 -16px;padding:6px 16px}
+.loc-rank{font-family:var(--mono);font-size:9px;color:var(--tx3);width:16px;flex-shrink:0;text-align:right}
+.loc-bar-wrap{flex:1}
+.loc-name{font-size:11px;color:var(--tx);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.loc-track{height:3px;background:var(--ink3);border-radius:2px;overflow:hidden}
+.loc-fill{height:100%;border-radius:2px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+.loc-count{font-family:var(--mono);font-size:10px;color:var(--tx2);flex-shrink:0;min-width:18px;text-align:right}
+
+/* ── MAP ── */
+.map-area{flex:1;position:relative;min-height:0}
+#map{height:100%;width:100%}
+.leaflet-container{background:#c8cdd6!important}
+.leaflet-tile{filter:brightness(.78) saturate(.8)}
+
+/* CUSTOM TOOLTIP */
+.crisis-tooltip{background:var(--ink2)!important;border:1px solid var(--border2)!important;color:var(--tx)!important;font-family:var(--mono)!important;font-size:11px!important;padding:8px 12px!important;border-radius:6px!important;box-shadow:0 8px 24px rgba(0,0,0,.5)!important;line-height:1.6!important}
+.crisis-tooltip::before{display:none!important}
+.tt-type{font-size:9px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px}
+.tt-loc{font-weight:500;font-size:12px;margin-bottom:6px;color:var(--tx)}
+.tt-row{display:flex;gap:12px;flex-wrap:wrap}
+.tt-item{font-size:9px;color:var(--tx2)}
+.tt-item span{color:var(--tx);font-weight:500}
+
+/* ── BOTTOM AREA ── */
+.bottom-area{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border);flex-shrink:0}
+.bottom-card{padding:14px 16px;overflow:hidden}
+.bottom-card+.bottom-card{border-left:1px solid var(--border)}
+
+/* ── TABLE ── */
+.tbl-wrap{overflow:auto;max-height:180px}
+table{width:100%;border-collapse:collapse;font-size:11px}
+thead th{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--ink2);position:sticky;top:0;z-index:2;cursor:pointer;white-space:nowrap;user-select:none;font-weight:400}
+thead th:hover{color:var(--tx)}
+thead th.asc::after{content:' ↑';color:var(--accent)}
+thead th.desc::after{content:' ↓';color:var(--accent)}
+tbody td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--tx2);white-space:nowrap;vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr{cursor:pointer;transition:background .1s}
+tbody tr:hover{background:var(--glass2)}
+tbody tr:hover td{color:var(--tx)}
+.badge{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:8px;padding:2px 7px;border-radius:20px;border:1px solid;white-space:nowrap}
+.b-violent{background:var(--red-g);border-color:rgba(239,68,68,.6);color:#fc8181}
+.b-fire{background:var(--orange-g);border-color:rgba(249,115,22,.6);color:#fda06a}
+.b-explosion{background:var(--yellow-g);border-color:rgba(234,179,8,.6);color:#fde047}
+.b-natural{background:var(--blue-g);border-color:rgba(59,130,246,.6);color:#93c5fd}
+.flag-y{color:var(--green);font-family:var(--mono);font-size:10px}
+.flag-n{color:var(--tx3);font-family:var(--mono);font-size:10px}
+.flag-na{color:var(--tx3);font-family:var(--mono);font-size:10px;opacity:.6}
+
+/* ── TIMELINE CHART ── */
+.tl-card{border-left:1px solid var(--border)}
+
+/* ── DETAIL PANEL ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:none;backdrop-filter:blur(2px)}
+.overlay.open{display:block}
+.detail{position:fixed;right:0;top:0;bottom:0;width:360px;background:var(--ink2);border-left:1px solid var(--border2);z-index:1001;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
+.detail.open{transform:translateX(0)}
+.det-head{padding:16px 18px;border-bottom:1px solid var(--border);flex-shrink:0}
+.det-close{position:absolute;top:14px;right:16px;width:26px;height:26px;border-radius:5px;border:1px solid var(--border2);background:none;color:var(--tx2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .14s}
+.det-close:hover{background:var(--glass2);color:var(--tx)}
+.det-body{padding:16px 18px;overflow-y:auto;flex:1}
+.det-section{font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:14px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.det-row{display:flex;justify-content:space-between;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border)}
+.det-row:last-child{border-bottom:none}
+.det-k{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3)}
+.det-v{font-family:var(--mono);font-size:10px;color:var(--tx);text-align:right;max-width:200px;word-break:break-word}
+.det-entity{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border)}
+.det-entity:last-child{border-bottom:none}
+.ent-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0}
+
+/* LEAFLET OVERRIDES */
+.leaflet-popup-content-wrapper{background:var(--ink2)!important;border:1px solid var(--border2)!important;border-radius:8px!important;box-shadow:0 8px 32px rgba(0,0,0,.6)!important;color:var(--tx)!important;font-family:var(--mono)!important}
+.leaflet-popup-tip{background:var(--ink2)!important}
+.leaflet-popup-content{margin:10px 14px!important;font-size:11px!important;line-height:1.6!important}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--ink3);border-radius:2px}
+
+/* NO DATA */
+.no-data{display:flex;align-items:center;justify-content:center;height:80px;font-family:var(--mono);font-size:10px;color:var(--tx3)}
+
+/* MAP STATUS BADGE (geocoding indicator) */
+.map-status{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1000;background:var(--ink2);border:1px solid var(--border2);border-radius:20px;padding:5px 14px;font-family:var(--mono);font-size:10px;color:var(--tx2);pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:7px}
+.map-status::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0;animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── THEME TOGGLE ── */
+.btn-theme{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--tx2);cursor:pointer;transition:all .15s;flex-shrink:0}
+.btn-theme:hover{color:var(--accent);border-color:var(--accent)}
+
+/* ── LIGHT MODE ── */
+[data-theme="light"]{
+  --ink:#f0f4fb;--ink2:#ffffff;--ink3:#e4e9f5;
+  --glass:rgba(0,0,0,0.03);--glass2:rgba(0,0,0,0.07);
+  --border:rgba(0,0,0,0.10);--border2:rgba(0,0,0,0.18);
+  --tx:#0f1623;--tx2:#4a5568;--tx3:#7a8ba8;
+  --red-g:rgba(239,68,68,.12);--orange-g:rgba(249,115,22,.12);
+  --yellow-g:rgba(234,179,8,.14);--blue-g:rgba(59,130,246,.12);
+  --accent:#b8721a;--accent-g:rgba(184,114,26,.12);
+}
+[data-theme="light"] .leaflet-container{background:#f5f5f5!important}
+[data-theme="light"] .leaflet-tile{filter:none!important}
+[data-theme="light"] .f-input[type=date]::-webkit-calendar-picker-indicator{filter:none}
+[data-theme="light"] .leaflet-popup-content-wrapper{box-shadow:0 4px 20px rgba(0,0,0,.12)!important}
+[data-theme="light"] .b-violent{color:#dc2626}
+[data-theme="light"] .b-fire{color:#c2410c}
+[data-theme="light"] .b-explosion{color:#92400e}
+[data-theme="light"] .b-natural{color:#1d4ed8}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.fi{animation:fadeIn .3s ease both}
+</style>
+</head>
+<body>
+<div class="overlay" id="overlay" onclick="closeDetail()"></div>
+
+
+<!-- DETAIL PANEL -->
+<div class="detail" id="detail">
+  <div class="det-head">
+    <div id="det-badge" style="margin-bottom:6px"></div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:2px" id="det-title"></div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--tx2)" id="det-date"></div>
+    <button class="det-close" onclick="closeDetail()">
+      <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="det-body" id="det-body"></div>
+</div>
+
+<div class="shell">
+  <!-- ═══ TOPBAR ═══ -->
+  <header class="topbar">
+    <div class="tb-logo">Crisis<span>Intel</span></div>
+    <div class="tb-divider"></div>
+
+    <!-- DATE RANGE -->
+    <div class="tb-label">Date</div>
+    <div class="f-date">
+      <input class="f-input" type="date" id="f-from" value="2023-01-01" onchange="applyFilters()">
+      <span style="color:var(--tx3);font-size:10px">–</span>
+      <input class="f-input" type="date" id="f-to" value="2023-12-31" onchange="applyFilters()">
+    </div>
+
+    <div class="tb-divider"></div>
+
+    <!-- CRISIS TYPE MULTI-SELECT -->
+    <div class="tb-label">Type</div>
+    <div class="chip-wrap" id="type-chips">
+      <button class="chip on" data-t="Violent_incident" onclick="toggleChip(this)"><span class="chip-dot" style="background:var(--red)"></span>Violent</button>
+      <button class="chip on" data-t="Fire" onclick="toggleChip(this)"><span class="chip-dot" style="background:var(--orange)"></span>Fire</button>
+      <button class="chip on" data-t="Explosion event" onclick="toggleChip(this)"><span class="chip-dot" style="background:var(--yellow)"></span>Explosion</button>
+      <button class="chip on" data-t="Natural disaster" onclick="toggleChip(this)"><span class="chip-dot" style="background:var(--blue)"></span>Natural</button>
+    </div>
+
+    <div class="tb-divider"></div>
+
+    <!-- LOCATION FILTER -->
+    <div class="tb-label">Location</div>
+    <select class="f-select" id="f-location" onchange="applyFilters()">
+      <option value="">All regions</option>
+    </select>
+
+    <button class="btn-reset" onclick="resetFilters()">Reset</button>
+    <div class="tb-divider"></div>
+    <input type="file" id="json-file" accept=".json" multiple style="display:none" onchange="handleFileUpload(event)">
+    <button onclick="document.getElementById('json-file').click()" title="Load a JSON data file" style="
+      font-family:var(--mono);font-size:10px;padding:5px 14px;border-radius:5px;
+      border:1px solid var(--accent);background:var(--accent-g);
+      color:var(--accent);cursor:pointer;white-space:nowrap;transition:all .15s;"
+      onmouseover="this.style.background='rgba(226,168,75,0.3)'"
+      onmouseout="this.style.background='var(--accent-g)'">
+      + Load JSON
+    </button>
+    <div class="tb-count" id="tb-count">0 events</div>
+    <div class="tb-divider"></div>
+    <button class="btn-theme" id="btn-theme" onclick="toggleTheme()" title="Toggle light / dark mode">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    </button>
+  </header>
+
+  <!-- ═══ BODY ═══ -->
+  <div class="body">
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+
+      <!-- OVERVIEW CARDS -->
+      <div class="card">
+        <div class="card-title">Overview</div>
+        <div class="ov-grid">
+          <div class="ov-card" style="--c:var(--accent)">
+            <div class="ov-label">Total events</div>
+            <div class="ov-val" id="ov-total" style="--cv:var(--accent)">—</div>
+            <div class="ov-sub">incidents</div>
+          </div>
+          <div class="ov-card" style="--c:var(--red)">
+            <div class="ov-label">Civ. fatalities</div>
+            <div class="ov-val" id="ov-cfat" style="--cv:var(--red)">—</div>
+            <div class="ov-sub">confirmed deaths</div>
+          </div>
+          <div class="ov-card" style="--c:var(--orange)">
+            <div class="ov-label">Non-civ. deaths</div>
+            <div class="ov-val" id="ov-ncfat" style="--cv:var(--orange)">—</div>
+            <div class="ov-sub">armed personnel</div>
+          </div>
+          <div class="ov-card" style="--c:var(--yellow)">
+            <div class="ov-label">Displaced</div>
+            <div class="ov-val" id="ov-disp" style="--cv:var(--yellow)">—</div>
+            <div class="ov-sub">people (known)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CRISIS TYPE CHART -->
+      <div class="card">
+        <div class="card-title">Crisis type breakdown</div>
+        <div class="ch-wrap" style="height:200px">
+          <canvas id="typeChart" role="img" aria-label="Crisis type breakdown chart">Type breakdown.</canvas>
+        </div>
+      </div>
+
+      <!-- TOP LOCATIONS -->
+      <div class="card" style="flex:1;border-bottom:none">
+        <div class="card-title">
+          Top locations <span style="color:var(--tx3);font-weight:400">by events</span>
+          <span id="township-filter-badge" style="display:none;align-items:center;gap:4px;
+            font-family:var(--mono);font-size:9px;background:var(--accent-g);
+            border:1px solid var(--accent);border-radius:20px;padding:2px 8px;color:var(--accent)">
+            <span id="township-filter-label"></span>
+            <span onclick="clearTownshipFilter()" style="cursor:pointer;font-size:11px;margin-left:2px">×</span>
+          </span>
+        </div>
+        <div id="top-locs" style="overflow-y:auto;max-height:300px"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+
+      <!-- MAP -->
+      <div class="map-area">
+        <div id="map"></div>
+      </div>
+
+      <!-- BOTTOM: TIMELINE + TABLE -->
+      <div class="bottom-area" style="height:230px">
+
+        <!-- TIMELINE -->
+        <div class="bottom-card">
+          <div class="card-title" style="margin-bottom:8px">Timeline <span style="color:var(--tx3);font-weight:400">events per day</span></div>
+          <div class="ch-wrap" style="height:170px">
+            <canvas id="timelineChart" role="img" aria-label="Events timeline over time">Timeline.</canvas>
+          </div>
+        </div>
+
+        <!-- EVENT TABLE -->
+        <div class="bottom-card tl-card" style="display:flex;flex-direction:column;overflow:hidden">
+          <div class="card-title" style="margin-bottom:8px;flex-shrink:0">
+            Events
+            <span id="tbl-count" style="color:var(--tx3);font-weight:400;font-size:9px">— records</span>
+          </div>
+          <div class="tbl-wrap" style="flex:1">
+            <table>
+              <thead>
+                <tr>
+                  <th onclick="sortBy('date')">Date</th>
+                  <th onclick="sortBy('location')">Location</th>
+                  <th onclick="sortBy('crisis_type')">Type</th>
+                  <th onclick="sortBy('displacement')">Displaced</th>
+                  <th onclick="sortBy('infrastructure_damage')">Infra.</th>
+                </tr>
+              </thead>
+              <tbody id="tbl-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   DATA — auto-fetched from GCS bucket on page load
+   ================================================================ */
+const RAW = [];
+
+/* Coordinate cache — populated at runtime via Nominatim geocoding.
+   Results are stored here so repeated renders skip redundant API calls. */
+const coordCache = {};
+
+const TYPE_COLOR = {
+  "Violent_incident": "#ef4444",
+  "Fire":             "#f97316",
+  "Explosion event":  "#eab308",
+  "Natural disaster": "#3b82f6",
+};
+const TYPE_LABEL = {
+  "Violent_incident": "Violent incident",
+  "Fire":             "Fire",
+  "Explosion event":  "Explosion",
+  "Natural disaster": "Natural disaster",
+};
+const BADGE_CLS = {
+  "Violent_incident": "b-violent",
+  "Fire":             "b-fire",
+  "Explosion event":  "b-explosion",
+  "Natural disaster": "b-natural",
+};
+
+/* ================================================================
+   STATE
+   ================================================================ */
+let DATA = RAW;           // original
+let filtered = [];        // after filters
+let activeTypes = new Set(); // populated dynamically from loaded data
+let sortCol = "date", sortDir = 1;
+let activeTownship = ""; // township-level filter set by clicking top locations
+let typeChartInst = null, tlChartInst = null;
+let mapMarkers = [];
+let leafMap = null;
+let tileLayer = null;
+let mapRenderToken = 0;
+
+/* ================================================================
+   HELPERS
+   ================================================================ */
+function parseDate(s) {
+  if (!s || s === "NA") return null;
+  const [d,m,y] = s.split("/");
+  return new Date(+y, +m-1, +d);
+}
+function toISO(d) {
+  if (!d) return "";
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function fmtNum(v) { const n = parseInt(v); return isNaN(n) ? null : n; }
+function getRegion(loc) { return ((loc||"").split(",")[1]||"").trim(); }
+function getTownship(loc) { return ((loc||"").split(",")[0]||"").trim(); }
+function sum(arr, k) { return arr.reduce((s,d)=>{ const v=fmtNum(d[k]); return v!==null?s+v:s; }, 0); }
+function flag(v) {
+  if (v==="TRUE")  return '<span class="flag-y">Yes</span>';
+  if (v==="FALSE") return '<span class="flag-n">No</span>';
+  return '<span class="flag-na">–</span>';
+}
+function badge(t) {
+  return `<span class="badge ${BADGE_CLS[t]||''}">${TYPE_LABEL[t]||t}</span>`;
+}
+function colorVal(k, v) {
+  if ((k==="civilian_fatalities"||k==="non-civilian_fatalities") && parseInt(v)>0) return k.includes("civ")&&!k.includes("non") ? "var(--red)" : "var(--orange)";
+  if (v==="TRUE") return "var(--green)";
+  if (v==="FALSE") return "var(--tx3)";
+  return "var(--tx)";
+}
+
+/* ================================================================
+   FILTERS
+   ================================================================ */
+function toggleChip(btn) {
+  const t = btn.dataset.t;
+  if (activeTypes.has(t)) {
+    if (activeTypes.size === 1) return; // keep at least one
+    activeTypes.delete(t);
+    btn.classList.remove("on");
+  } else {
+    activeTypes.add(t);
+    btn.classList.add("on");
+  }
+  applyFilters();
+}
+
+function applyFilters() {
+  const from = parseDate(document.getElementById("f-from").value.split("-").reverse().join("/"));
+  const to   = parseDate(document.getElementById("f-to").value.split("-").reverse().join("/"));
+  const loc  = document.getElementById("f-location").value;
+
+  if (loc) activeTownship = ""; // region dropdown overrides township filter
+
+  filtered = DATA.filter(d => {
+    const dt = parseDate(d.date);
+    if (from && dt && dt < from) return false;
+    if (to   && dt && dt > to)   return false;
+    if (activeTypes.size && !activeTypes.has(d.crisis_type)) return false;
+    if (loc && !(d.location||"").includes(loc)) return false;
+    if (activeTownship && getTownship(d.location) !== activeTownship) return false;
+    return true;
+  });
+
+  document.getElementById("tb-count").textContent = filtered.length + " events";
+  renderAll();
+}
+
+function resetFilters() {
+  const dates = DATA.map(d => parseDate(d.date)).filter(Boolean);
+  document.getElementById("f-from").value = dates.length ? toISO(new Date(Math.min(...dates))) : "";
+  document.getElementById("f-to").value   = dates.length ? toISO(new Date(Math.max(...dates))) : "";
+  document.getElementById("f-location").value = "";
+  activeTownship = "";
+  updateTownshipBadge();
+  activeTypes = new Set(DATA.map(d => d.crisis_type).filter(Boolean));
+  document.querySelectorAll(".chip").forEach(c => c.classList.add("on"));
+  applyFilters();
+}
+
+/* ================================================================
+   RENDER ALL
+   ================================================================ */
+function renderAll() {
+  renderOverview();
+  renderTypeChart();
+  renderTopLocations();
+  renderMap();
+  renderTimeline();
+  renderTable();
+}
+
+/* ── OVERVIEW CARDS ── */
+function renderOverview() {
+  const n = filtered.length;
+  const cf  = sum(filtered, "civilian_fatalities");
+  const ncf = sum(filtered, "non-civilian_fatalities");
+  const dp  = sum(filtered, "number_of_people_displaced");
+  document.getElementById("ov-total").textContent = n;
+  document.getElementById("ov-cfat").textContent  = cf  || "NA";
+  document.getElementById("ov-ncfat").textContent = ncf || "NA";
+  document.getElementById("ov-disp").textContent  = dp > 0 ? dp.toLocaleString() : "NA";
+}
+
+/* ── CRISIS TYPE CHART ── */
+function renderTypeChart() {
+  const tc = {};
+  filtered.forEach(d => { if(d.crisis_type) tc[d.crisis_type] = (tc[d.crisis_type]||0)+1; });
+  const types = Object.keys(tc);
+  const counts = types.map(t => tc[t]);
+  const colors = types.map(t => TYPE_COLOR[t]||"#888");
+
+  if (typeChartInst) typeChartInst.destroy();
+  const ctx = document.getElementById("typeChart");
+  if (!types.length) { ctx.getContext("2d").clearRect(0,0,ctx.width,ctx.height); return; }
+
+  const cc = getChartColors();
+  typeChartInst = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: types.map(t => TYPE_LABEL[t]||t),
+      datasets: [{
+        data: counts,
+        backgroundColor: colors,
+        borderColor: cc.sliceBorder,
+        borderWidth: 2,
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: "65%",
+      plugins: {
+        legend: {
+          display: true,
+          position: "bottom",
+          labels: {
+            color: cc.tx,
+            font: { size: 10, family: "'IBM Plex Mono'" },
+            boxWidth: 10, boxHeight: 10,
+            padding: 14,
+            generateLabels: chart => {
+              const ds = chart.data.datasets[0];
+              return chart.data.labels.map((l,i) => ({
+                text: `${l}  ${ds.data[i]}`,
+                fillStyle: ds.backgroundColor[i],
+                strokeStyle: "transparent",
+                color: ds.backgroundColor[i],
+                index: i,
+              }));
+            }
+          }
+        },
+        tooltip: {
+          backgroundColor: cc.tooltipBg,
+          borderColor: cc.tooltipBorder,
+          borderWidth: 1,
+          titleFont: { family: "'IBM Plex Mono'", size: 10 },
+          bodyFont:  { family: "'IBM Plex Mono'", size: 10 },
+          titleColor: cc.tx,
+          bodyColor:  cc.tx2,
+        }
+      }
+    }
+  });
+}
+
+/* ── TOP LOCATIONS ── */
+function renderTopLocations() {
+  const lc = {};
+  filtered.forEach(d => {
+    const t = getTownship(d.location);
+    if (t) lc[t] = (lc[t]||0)+1;
+  });
+  const sorted = Object.entries(lc).sort((a,b)=>b[1]-a[1]);
+  const max = sorted[0]?.[1]||1;
+  const el = document.getElementById("top-locs");
+  if (!sorted.length) { el.innerHTML = '<div class="no-data">No data</div>'; return; }
+  el.innerHTML = sorted.map(([name,cnt],i) => `
+    <div class="loc-row" onclick="filterByLocation('${name}')">
+      <span class="loc-rank">${i+1}</span>
+      <div class="loc-bar-wrap">
+        <div class="loc-name">${name}</div>
+        <div class="loc-track">
+          <div class="loc-fill" style="width:${Math.round(cnt/max*100)}%;background:var(--accent)"></div>
+        </div>
+      </div>
+      <span class="loc-count">${cnt}</span>
+    </div>`).join("");
+}
+
+function filterByLocation(township) {
+  activeTownship = township;
+  document.getElementById("f-location").value = "";
+  updateTownshipBadge();
+  applyFilters();
+}
+
+function clearTownshipFilter() {
+  activeTownship = "";
+  updateTownshipBadge();
+  applyFilters();
+}
+
+function updateTownshipBadge() {
+  const badge = document.getElementById("township-filter-badge");
+  const label = document.getElementById("township-filter-label");
+  if (activeTownship) {
+    label.textContent = activeTownship;
+    badge.style.display = "inline-flex";
+  } else {
+    badge.style.display = "none";
+  }
+}
+
+/* ── MYANMAR TOWNSHIP + REGION COORDINATES ── */
+
+// ~200 townships: township bare-name (lowercase) → [lat, lon]
+const MYANMAR_TOWNSHIP_COORDS = {
+  // Sagaing Region
+  "sagaing":      [21.88, 95.97], "shwebo":       [22.57, 95.70],
+  "monywa":       [22.11, 95.13], "kale":         [23.19, 94.07],
+  "kalay":        [23.19, 94.07], "tamu":         [24.21, 94.30],
+  "pale":         [22.12, 95.10], "yinmarbin":    [21.96, 95.17],
+  "ayadaw":       [22.40, 95.42], "khin-u":       [22.77, 95.68],
+  "khinu":        [22.77, 95.68], "wetlet":       [22.52, 95.55],
+  "budalin":      [22.36, 95.08], "kantbalu":     [23.40, 95.85],
+  "banmauk":      [23.98, 95.97], "indaw":        [24.23, 96.11],
+  "pinlebu":      [24.07, 95.47], "mawlaik":      [23.64, 94.41],
+  "homaling":     [24.10, 94.89], "hkamti":       [26.02, 95.68],
+  "kawlin":       [23.79, 95.79], "wuntho":       [23.92, 95.69],
+  "kalewa":       [23.20, 94.31], "mingin":       [22.75, 94.85],
+  "yinmarbin":    [21.96, 95.17], "chaung-u":     [22.00, 95.15],
+  "taze":         [22.97, 95.39], "depayin":      [22.64, 95.27],
+  "kyunhla":      [23.09, 95.54], "kanbalu":      [23.40, 95.85],
+  "tigyaing":     [23.65, 96.14], "katha":        [24.18, 96.33],
+  "nanyun":       [26.73, 98.29], "homalin":      [24.87, 94.91],
+  "lahe":         [25.50, 95.17], "namyun":       [26.73, 98.29],
+
+  // Mandalay Region
+  "mandalay":     [21.97, 96.08], "myingyan":     [21.46, 95.39],
+  "meiktila":     [20.88, 95.86], "kyaukse":      [21.61, 96.13],
+  "mogok":        [22.92, 96.51], "pyin oo lwin": [22.04, 96.47],
+  "pyinoolwin":   [22.04, 96.47], "maymyo":       [22.04, 96.47],
+  "thabeikkyin":  [22.85, 95.95], "sintgaing":    [21.72, 95.97],
+  "mahlaing":     [21.05, 95.68], "myittha":      [21.28, 95.80],
+  "wundwin":      [20.76, 96.07], "pyawbwe":      [20.63, 96.06],
+  "ngazun":       [21.67, 95.82], "patheingyi":   [21.95, 96.04],
+  "tada-u":       [21.82, 96.15], "tadau":        [21.82, 96.15],
+  "singu":        [22.78, 96.13], "madaya":       [22.27, 96.13],
+  "kyaukpadaung": [20.84, 95.13], "natogyi":      [21.45, 95.71],
+  "yamethin":     [20.43, 96.14], "pyinmana":     [19.74, 96.21],
+  "nganzun":      [21.70, 95.82], "amarapura":    [21.91, 96.06],
+  "chanayethazan":[21.97, 96.08], "chanmyathazi": [21.97, 96.08],
+  "aungmyethazan":[21.97, 96.08], "mahaaungmye":  [21.97, 96.08],
+  "paung-bwa":    [21.97, 96.08],
+
+  // Magway Region
+  "magway":       [20.15, 94.93], "pakokku":      [21.33, 95.09],
+  "minbu":        [20.18, 94.88], "yenangyaung":  [20.46, 94.88],
+  "chauk":        [20.88, 94.82], "myaing":       [21.45, 94.98],
+  "gangaw":       [22.17, 94.14], "saw":          [21.84, 95.18],
+  "tilin":        [21.70, 94.10], "pauk":         [21.45, 94.47],
+  "yesagyo":      [21.63, 95.04], "natmauk":      [20.43, 95.42],
+  "taungdwingyi": [20.01, 95.55], "sidoktaya":    [20.32, 94.93],
+  "seikphyu":     [21.17, 94.74], "kamma":        [22.54, 94.78],
+  "minhla":       [20.01, 95.07], "pwintbyu":     [20.31, 94.91],
+  "thayet":       [19.43, 95.08], "mindon":       [19.21, 94.80],
+  "sinbaungwe":   [20.05, 95.15], "ngape":        [20.09, 94.37],
+  "htilin":       [21.70, 94.10], "kyaukpadaung": [20.84, 95.13],
+  "aunglan":      [19.22, 95.23], "okkan":        [17.79, 95.90],
+  "ганkaw":       [22.17, 94.14],
+
+  // Yangon Region
+  "yangon":       [16.87, 96.19], "insein":       [16.90, 96.10],
+  "hlegu":        [17.27, 96.28], "hmawbi":       [17.06, 96.03],
+  "thongwa":      [16.76, 96.52], "kyauktan":     [16.74, 96.37],
+  "twante":       [16.70, 95.93], "dala":         [16.78, 96.17],
+  "taikkyi":      [17.39, 95.89], "htantabin":    [17.35, 96.05],
+  "bahan":        [16.82, 96.16], "tamwe":        [16.85, 96.20],
+  "thingangyun":  [16.85, 96.24], "thaketa":      [16.82, 96.24],
+
+  // Bago Region
+  "bago":         [17.33, 96.48], "taungoo":      [19.05, 96.43],
+  "pyay":         [18.82, 95.22], "thayarwady":   [17.73, 95.79],
+  "tharrawaddy":  [17.65, 95.79], "letpadan":     [17.78, 95.75],
+  "nyaunglebin":  [17.95, 96.73], "thanatpin":    [17.20, 96.64],
+  "kawa":         [17.09, 96.59], "waw":          [17.82, 96.74],
+  "daik-u":       [17.83, 96.55], "daiku":        [17.83, 96.55],
+  "shwegyin":     [17.97, 96.97], "kyaukkyi":     [18.65, 96.84],
+  "yedashe":      [19.45, 96.44], "phyu":         [18.49, 96.45],
+  "oktwin":       [18.89, 96.46], "zigon":        [17.97, 95.58],
+  "nattalin":     [17.97, 95.49], "padaung":      [18.38, 95.46],
+  "paungde":      [18.50, 95.50], "gyobingauk":   [18.20, 95.65],
+  "shwedaung":    [18.68, 95.22], "minhla":       [19.09, 95.35],
+  "paukkaung":    [18.69, 95.69], "monyo":        [17.97, 95.65],
+
+  // Ayeyarwady Region
+  "pathein":      [16.78, 94.73], "maubin":       [16.73, 95.66],
+  "myaungmya":    [16.59, 94.93], "bogale":       [16.29, 95.40],
+  "kyaiklat":     [16.44, 95.73], "wakema":       [16.60, 95.18],
+  "danubyu":      [17.25, 95.57], "pantanaw":     [16.98, 95.46],
+  "einme":        [17.13, 95.07], "kyangin":      [17.91, 95.23],
+  "hinthada":     [17.64, 95.46], "zalun":        [17.54, 95.53],
+  "ingapu":       [17.38, 95.38], "myanaung":     [18.29, 95.34],
+  "thabaung":     [17.13, 94.85], "ngaputaw":     [16.37, 94.47],
+  "kyonpyaw":     [17.30, 95.20], "yegyi":        [17.05, 95.27],
+  "laputta":      [16.21, 94.77], "mawlamyinegyun":[16.45, 95.17],
+
+  // Mon State
+  "mawlamyine":   [16.49, 97.63], "mawlamyaing":  [16.49, 97.63],
+  "moulmein":     [16.49, 97.63], "thaton":       [16.93, 97.37],
+  "kyaikto":      [17.30, 97.02], "bilin":        [17.22, 97.19],
+  "ye":           [15.25, 97.86], "mudon":        [16.28, 97.73],
+  "chaungzon":    [16.69, 97.57], "kyaikmayaw":   [16.43, 97.57],
+  "thanbyuzayat": [16.07, 97.74], "paung":        [16.74, 97.46],
+
+  // Kayin (Karen) State
+  "hpa-an":       [16.89, 97.63], "hpaan":        [16.89, 97.63],
+  "kawkareik":    [16.54, 98.24], "myawaddy":     [16.70, 98.50],
+  "hlaingbwe":    [17.39, 97.90], "thandaunggyi": [19.02, 96.72],
+  "papun":        [18.05, 97.44], "mutraw":       [18.05, 97.44],
+  "kyainseikgyi": [17.06, 97.89], "waw lay":      [16.75, 98.40],
+  "klawlaw":      [16.54, 98.24],
+
+  // Kayah (Karenni) State
+  "loikaw":       [19.67, 97.21], "bawlakhe":     [19.18, 97.26],
+  "demoso":       [19.55, 97.08], "hpruso":       [19.36, 96.88],
+  "mese":         [19.52, 97.53], "shadaw":       [19.99, 97.25],
+  "pasaung":      [19.63, 97.16],
+
+  // Shan State — Northern
+  "lashio":       [22.93, 97.75], "namtu":        [23.08, 97.39],
+  "hsipaw":       [22.63, 97.30], "kyaukme":      [22.54, 97.02],
+  "namhsan":      [22.89, 97.57], "muse":         [23.99, 97.71],
+  "kutkai":       [23.52, 97.77], "nawnghkio":    [22.45, 97.01],
+  "thibaw":       [22.62, 96.90], "hsenwi":       [23.37, 97.98],
+  "namhkam":      [23.84, 97.72], "wanting":      [23.80, 98.08],
+  "mogok":        [22.92, 96.51], "mongmit":      [23.02, 96.68],
+  "kholam":       [23.02, 98.62], "pangkham":     [23.63, 98.68],
+  "laukkai":      [23.79, 98.82], "konkyan":      [23.36, 98.55],
+  "mongyang":     [22.89, 98.31],
+
+  // Shan State — Southern
+  "taunggyi":     [20.79, 97.04], "loilen":       [21.09, 97.68],
+  "panglong":     [20.66, 97.36], "pinlaung":     [19.87, 96.82],
+  "pekon":        [19.64, 96.99], "moebye":       [19.87, 97.47],
+  "nansang":      [20.89, 98.10], "mongpai":      [21.32, 98.04],
+  "kunhing":      [21.01, 98.76], "mongkaung":    [22.57, 98.35],
+  "mongnai":      [20.54, 97.62], "mongton":      [20.10, 98.77],
+  "mongpawn":     [20.30, 97.26], "hopong":       [20.81, 97.17],
+  "hsi-hseng":    [20.05, 96.72], "kalaw":        [20.63, 96.57],
+  "nyaungshwe":   [20.63, 96.97], "inle":         [20.53, 96.91],
+  "pindaya":      [20.55, 96.56], "hsiseng":      [20.05, 96.72],
+
+  // Shan State — Eastern (Kengtung / Golden Triangle area)
+  "kengtung":     [21.29, 99.60], "tachileik":    [20.45, 99.88],
+  "monghsat":     [20.53, 99.24], "mongsat":      [20.53, 99.24],
+  "mongla":       [21.46, 101.16],"monglon":      [21.43, 99.74],
+  "mong long":    [21.43, 99.74], "monglong":     [21.43, 99.74],
+  "mong hsat":    [20.53, 99.24], "mong ton":     [20.10, 98.77],
+  "mong nai":     [20.54, 97.62], "mong pai":     [21.32, 98.04],
+  "mong kung":    [21.01, 98.76], "mong kaing":   [22.57, 98.35],
+  "mong mit":     [23.02, 96.68], "mong yai":     [22.89, 98.31],
+  "mongkok":      [21.87, 98.75], "mong kok":     [21.87, 98.75],
+  "kyauktal":     [20.45, 99.88],
+
+  // Kachin State
+  "myitkyina":    [25.38, 97.40], "bhamo":        [24.27, 97.25],
+  "putao":        [27.33, 97.41], "mogaung":      [25.29, 96.94],
+  "hpakant":      [25.39, 96.18], "shwegu":       [24.22, 96.74],
+  "mansi":        [24.96, 96.67], "mohnyin":      [24.77, 96.37],
+  "hopin":        [25.15, 96.49], "waingmaw":     [25.37, 97.46],
+  "chipwi":       [26.24, 97.70], "machanbaw":    [27.58, 97.67],
+  "tanai":        [26.03, 96.33], "ingyanyang":   [26.19, 96.06],
+  "chibwe":       [26.24, 97.70],
+
+  // Chin State
+  "hakha":        [22.65, 93.60], "falam":        [22.92, 93.68],
+  "mindat":       [21.36, 93.38], "kanpetlet":    [21.17, 93.99],
+  "matupi":       [23.01, 92.93], "tedim":        [23.36, 93.64],
+  "tonzang":      [23.63, 93.62], "thantlang":    [22.30, 93.13],
+  "paletwa":      [21.32, 92.86], "rezua":        [22.60, 93.38],
+  "rih":          [23.29, 93.55],
+
+  // Rakhine State
+  "sittwe":       [20.15, 92.90], "kyaukpyu":     [19.44, 93.55],
+  "thandwe":      [18.47, 94.37], "sandoway":     [18.47, 94.37],
+  "taungup":      [18.87, 94.24], "gwa":          [17.60, 94.58],
+  "maungdaw":     [20.82, 92.37], "buthidaung":   [20.87, 92.53],
+  "rathedaung":   [20.49, 92.78], "minbya":       [20.07, 93.28],
+  "myebon":       [19.73, 93.36], "ann":          [19.73, 94.02],
+  "pauktaw":      [20.14, 92.91], "ponnagyun":    [20.24, 92.83],
+  "mrauk-u":      [20.59, 93.20], "mraukoo":      [20.59, 93.20],
+  "kyauktaw":     [20.84, 93.00], "ramree":       [19.11, 93.80],
+  "munaung":      [19.42, 93.59], "yanbye":       [19.54, 93.49],
+  "toungup":      [18.87, 94.24], "man aung":     [19.42, 93.59],
+
+  // Tanintharyi Region
+  "dawei":        [14.09, 98.20], "myeik":        [12.44, 98.60],
+  "kawthaung":    [10.02, 98.55], "thayetchaung": [14.57, 98.12],
+  "launglon":     [13.62, 98.28], "yebyu":        [14.93, 98.16],
+  "kyunsu":       [11.59, 98.58], "bokpyin":      [11.29, 98.74],
+  "tanintharyi":  [12.09, 99.03], "palaw":        [12.56, 98.68],
+
+  // Naypyidaw Union Territory
+  "naypyidaw":    [19.74, 96.13], "lewe":         [19.64, 96.12],
+  "tatkon":       [19.86, 96.18], "pyinmana":     [19.74, 96.21],
+  "oattara thiri":[19.74, 96.13], "pobbathiri":   [19.74, 96.13],
+  "zabuthiri":    [19.74, 96.13], "zeyathiri":    [19.74, 96.13],
+  "ottersein":    [19.74, 96.13],
+};
+
+const MYANMAR_REGION_COORDS = {
+  "Sagaing":     [22.5,  95.5],  "Mandalay":    [21.5,  96.0],
+  "Magway":      [20.5,  94.9],  "Yangon":      [16.9,  96.1],
+  "Bago":        [17.3,  96.5],  "Ayeyarwady":  [16.5,  95.3],
+  "Tanintharyi": [13.5,  98.5],  "Mon":         [16.5,  97.6],
+  "Kayin":       [17.0,  97.8],  "Kayah":       [19.0,  97.3],
+  "Shan":        [21.0,  98.0],  "Kachin":      [25.0,  97.5],
+  "Chin":        [22.0,  93.5],  "Rakhine":     [20.0,  93.0],
+  "Naypyidaw":   [19.7,  96.1],
+};
+
+// Look up township coordinates from the hardcoded table
+function townshipLookup(township) {
+  if (!township) return null;
+  const key = township.toLowerCase()
+    .replace(/\s+township$/i, "").replace(/\s+district$/i, "")
+    .replace(/\s+sub-township$/i, "").trim();
+  return MYANMAR_TOWNSHIP_COORDS[key] || null;
+}
+
+function regionFallback(location) {
+  const str = (location || "").toLowerCase();
+  for (const [name, coords] of Object.entries(MYANMAR_REGION_COORDS)) {
+    if (str.includes(name.toLowerCase())) return coords;
+  }
+  return [21.0, 95.5]; // geographic center of Myanmar
+}
+
+/* ── GEOCODER ── */
+
+const MM_VIEWBOX = "92.17,28.54,101.18,9.78";
+
+function stripSuffix(name, suffix) {
+  return name.endsWith(suffix) ? name.slice(0, -suffix.length).trim() : name;
+}
+
+// Normalise a state/region string for comparison: strip "State"/"Region", lowercase
+function normState(s) {
+  return (s || "").toLowerCase()
+    .replace(/\s+state$/, "").replace(/\s+region$/, "").trim();
+}
+
+async function nominatimFetch(q, bounded, expectedState) {
+  const params = new URLSearchParams({
+    q, format: "json", limit: "5",
+    countrycodes: "mm",          // hard-restrict to Myanmar at the API level
+    viewbox: MM_VIEWBOX,
+    bounded: bounded ? "1" : "0",
+    addressdetails: "1",
+  });
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`,
+      { headers: { "Accept-Language": "en" } });
+    const items = await res.json();
+    await new Promise(r => setTimeout(r, 1100));
+    if (!items.length) return null;
+
+    if (expectedState) {
+      const want = normState(expectedState);
+      // prefer items whose returned address.state matches the expected state
+      for (const item of items) {
+        const got = normState((item.address || {}).state || "");
+        if (got && (got.includes(want) || want.includes(got))) {
+          return [+item.lat, +item.lon];
+        }
+      }
+      // no match found — return null so the caller can try a coarser query
+      return null;
+    }
+    return [+items[0].lat, +items[0].lon];
+  } catch(e) {
+    await new Promise(r => setTimeout(r, 1100));
+    return null;
+  }
+}
+
+// Structured query (city + state separately) — often more accurate than free text
+async function nominatimStructured(city, state) {
+  const params = new URLSearchParams({
+    city, state, country: "Myanmar",
+    format: "json", limit: "5",
+    countrycodes: "mm",
+    addressdetails: "1",
+  });
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`,
+      { headers: { "Accept-Language": "en" } });
+    const items = await res.json();
+    await new Promise(r => setTimeout(r, 1100));
+    if (!items.length) return null;
+    const want = normState(state);
+    for (const item of items) {
+      const got = normState((item.address || {}).state || "");
+      if (!got || got.includes(want) || want.includes(got)) {
+        return [+item.lat, +item.lon];
+      }
+    }
+    return null;
+  } catch(e) {
+    await new Promise(r => setTimeout(r, 1100));
+    return null;
+  }
+}
+
+async function geocodeLocation(location) {
+  if (!location) return null;
+  if (location in coordCache) return coordCache[location];
+
+  const parts     = location.split(",").map(s => s.trim()).filter(Boolean);
+  const township  = parts[0] || "";
+  const state     = parts[1] || "";
+  const bare      = stripSuffix(stripSuffix(township, "Township"), "District");
+  const bareState = stripSuffix(stripSuffix(state, "Region"), "State");
+
+  let coords = null;
+
+  // 0) Hardcoded township lookup — most reliable for Myanmar names
+  coords = townshipLookup(bare) || townshipLookup(township);
+
+  // 1) Structured query — separate city/state params, Nominatim parses these better
+  if (!coords && bare && bareState) {
+    coords = await nominatimStructured(bare, bareState);
+  }
+
+  // 2) Free-text fallback chain, always passing expected state for validation
+  if (!coords) {
+    const queries = [
+      township && state ? `${township}, ${state}, Myanmar` : null,
+      bare && bareState ? `${bare}, ${bareState}, Myanmar` : null,
+      township          ? `${township}, Myanmar`            : null,
+      bare              ? `${bare}, Myanmar`                : null,
+    ].filter(Boolean);
+
+    for (const q of queries) {
+      coords = await nominatimFetch(q, true, bareState || state);
+      if (!coords) coords = await nominatimFetch(q, false, bareState || state);
+      if (coords) break;
+    }
+  }
+
+  // 3) Region-level fallback (no state validation needed)
+  if (!coords && state) {
+    coords = await nominatimFetch(`${state}, Myanmar`, false, null);
+  }
+
+  coordCache[location] = coords || regionFallback(location);
+  return coordCache[location];
+}
+
+/* ── MAP ── */
+async function renderMap() {
+  // Increment token so any in-flight render for a previous filter knows to abort
+  const token = ++mapRenderToken;
+  mapMarkers.forEach(m => leafMap.removeLayer(m));
+  mapMarkers = [];
+
+  for (const d of filtered) {
+    if (token !== mapRenderToken) return; // newer render started, abort this one
+
+    const coords = await geocodeLocation(d.location);
+
+    if (token !== mapRenderToken) return;
+    if (!coords) continue;
+
+    const color = TYPE_COLOR[d.crisis_type] || "#888";
+    const cf    = fmtNum(d.civilian_fatalities);
+    const ncf   = fmtNum(d["non-civilian_fatalities"]);
+    const infra  = d.infrastructure_damage;
+
+    const idx = DATA.indexOf(d);
+    const jitter = (seed) => (Math.sin(seed * 127.1 + idx * 311.7) * 0.5) * 0.03;
+    const marker = L.circleMarker([coords[0] + jitter(1), coords[1] + jitter(2)], {
+      radius: 8,
+      fillColor: color,
+      fillOpacity: 0.85,
+      color: "#fff",
+      weight: 1.5,
+      opacity: 0.9,
+    });
+
+    const popupHtml = `
+      <div>
+        <div style="font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:${color};margin-bottom:4px">${TYPE_LABEL[d.crisis_type]||d.crisis_type}</div>
+        <div style="font-size:12px;font-weight:500;margin-bottom:6px;color:var(--tx)">${getTownship(d.location)}</div>
+        <div style="font-size:10px;color:var(--tx2);margin-bottom:8px">${getRegion(d.location)} · ${d.date}</div>
+        <div style="display:flex;flex-direction:column;gap:3px;font-size:10px">
+          <div><span style="color:var(--tx3)">Civ. fatalities: </span><span style="color:${cf!==null&&cf>0?"var(--red)":"var(--tx)"}">${cf!==null?cf:"NA"}</span></div>
+          <div><span style="color:var(--tx3)">Non-civ. fatalities: </span><span style="color:${ncf!==null&&ncf>0?"var(--orange)":"var(--tx)"}">${ncf!==null?ncf:"NA"}</span></div>
+          <div><span style="color:var(--tx3)">Infra. damage: </span><span style="color:${infra==="TRUE"?"var(--green)":infra==="FALSE"?"var(--tx3)":"var(--tx)"}">${infra==="TRUE"?"Yes":infra==="FALSE"?"No":"NA"}</span></div>
+        </div>
+        <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">
+          <span style="font-size:9px;color:var(--tx2);cursor:pointer;text-decoration:underline" onclick="openDetailFromMap(${DATA.indexOf(d)})">View full details →</span>
+        </div>
+      </div>`;
+
+    marker.bindPopup(popupHtml, { maxWidth: 220 });
+    marker.on("click", () => marker.openPopup());
+    marker.addTo(leafMap);
+    mapMarkers.push(marker);
+  }
+}
+
+/* ── TIMELINE CHART ── */
+function renderTimeline() {
+  // Group by date
+  const dc = {};
+  filtered.forEach(d => {
+    if (d.date && d.date !== "NA") {
+      const [day,mo,yr] = d.date.split("/");
+      const key = `${yr}-${mo}-${day}`;
+      dc[key] = (dc[key]||0)+1;
+    }
+  });
+  const keys = Object.keys(dc).sort();
+  const labels = keys.map(k => {
+    const [y,m,d] = k.split("-");
+    return `${d}/${m}`;
+  });
+  const values = keys.map(k => dc[k]);
+
+  if (tlChartInst) tlChartInst.destroy();
+  const ctx = document.getElementById("timelineChart");
+  if (!keys.length) { ctx.getContext("2d").clearRect(0,0,ctx.width,ctx.height); return; }
+
+  const cc = getChartColors();
+  tlChartInst = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: "#e2a84b",
+        backgroundColor: "rgba(226,168,75,0.10)",
+        borderWidth: 1.5,
+        pointRadius: 3,
+        pointBackgroundColor: "#e2a84b",
+        pointBorderColor: cc.sliceBorder,
+        pointBorderWidth: 1,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: cc.tooltipBg,
+          borderColor: cc.tooltipBorder,
+          borderWidth: 1,
+          titleFont: { family: "'IBM Plex Mono'", size: 9 },
+          bodyFont:  { family: "'IBM Plex Mono'", size: 10 },
+          titleColor: cc.tx2,
+          bodyColor:  cc.tx,
+          callbacks: {
+            title: items => "Date: " + items[0].label,
+            label: item => "Events: " + item.raw,
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: cc.grid, drawTicks: false },
+          ticks: { color: cc.tx3, font: { size: 9, family: "'IBM Plex Mono'" }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+          border: { display: false }
+        },
+        y: {
+          grid: { color: cc.grid, drawTicks: false },
+          ticks: { color: cc.tx3, font: { size: 9, family: "'IBM Plex Mono'" }, stepSize: 1, maxTicksLimit: 4 },
+          border: { display: false },
+          min: 0,
+        }
+      }
+    }
+  });
+}
+
+/* ── EVENT TABLE ── */
+function renderTable() {
+  let data = [...filtered];
+
+  // sort
+  data.sort((a,b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (sortCol === "date") { av = parseDate(av)||new Date(0); bv = parseDate(bv)||new Date(0); return (av-bv)*sortDir; }
+    av = String(av||""); bv = String(bv||"");
+    return av.localeCompare(bv)*sortDir;
+  });
+
+  document.getElementById("tbl-count").textContent = data.length + " records";
+  document.getElementById("tbl-body").innerHTML = data.map(d => {
+    const idx = DATA.indexOf(d);
+    return `<tr onclick="openDetail(${idx})">
+      <td class="td-mono" style="font-family:var(--mono);font-size:10px;color:var(--tx2)">${d.date||"—"}</td>
+      <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${getTownship(d.location)||"—"}</td>
+      <td>${badge(d.crisis_type)}</td>
+      <td>${flag(d.displacement)}</td>
+      <td>${flag(d.infrastructure_damage)}</td>
+    </tr>`;
+  }).join("");
+
+  // update sort indicators
+  document.querySelectorAll("thead th").forEach(th => th.classList.remove("asc","desc"));
+}
+
+function sortBy(col) {
+  if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+  renderTable();
+  // mark header
+  const headers = ["date","location","crisis_type","displacement","infrastructure_damage"];
+  document.querySelectorAll("thead th").forEach((th,i) => {
+    th.classList.remove("asc","desc");
+    if (headers[i] === sortCol) th.classList.add(sortDir===1?"asc":"desc");
+  });
+}
+
+/* ================================================================
+   DETAIL PANEL
+   ================================================================ */
+function openDetail(idx) {
+  const d = DATA[idx]; if (!d) return;
+  if (leafMap) leafMap.closePopup();
+  document.getElementById("det-badge").innerHTML = badge(d.crisis_type);
+  document.getElementById("det-title").textContent = getTownship(d.location)||"—";
+  document.getElementById("det-date").textContent  = d.date + "  ·  " + getRegion(d.location);
+
+  const nc  = fmtNum(d["non-civilian_fatalities"]);
+  const cf  = fmtNum(d.civilian_fatalities);
+  const dp  = fmtNum(d.number_of_people_displaced);
+
+  const rows = [
+    { s: "Location & Date" },
+    { k:"Township",   v: getTownship(d.location) },
+    { k:"Region",     v: getRegion(d.location) },
+    { k:"Date",       v: d.date },
+    { s: "Casualties & Displacement" },
+    { k:"Civilian fatalities",   v: cf!==null?cf:"NA",  c: cf!==null&&cf>0?"var(--red)":undefined },
+    { k:"Non-civ. fatalities",   v: nc!==null?nc:"NA",  c: nc!==null&&nc>0?"var(--orange)":undefined },
+    { k:"People displaced",      v: dp!==null?dp.toLocaleString():"NA" },
+    { s: "Impact Flags" },
+    { k:"Civilians affected",  v: d.affected_civilian||"NA",  c: d.affected_civilian==="TRUE"?"var(--green)":undefined },
+    { k:"Women affected",      v: d.affected_women||"NA",     c: d.affected_women==="TRUE"?"var(--green)":undefined },
+    { k:"Children affected",   v: d.affected_children||"NA",  c: d.affected_children==="TRUE"?"var(--green)":undefined },
+    { k:"Infrastructure dmg.", v: d.infrastructure_damage||"NA", c: d.infrastructure_damage==="TRUE"?"var(--orange)":undefined },
+    { k:"Displacement",        v: d.displacement||"NA",        c: d.displacement==="TRUE"?"var(--yellow)":undefined },
+  ];
+
+  let html = rows.map(r => {
+    if (r.s) return `<div class="det-section">${r.s}</div>`;
+    return `<div class="det-row">
+      <span class="det-k">${r.k}</span>
+      <span class="det-v" style="color:${r.c||"var(--tx)"}">${r.v}</span>
+    </div>`;
+  }).join("");
+
+  html += `<div class="det-section">Entities Involved</div>`;
+  const ents = d.entities||[];
+  html += ents.length
+    ? ents.map(e => `<div class="det-entity"><span class="ent-dot"></span><span style="font-family:var(--mono);font-size:10px;color:var(--tx)">${e}</span></div>`).join("")
+    : `<div style="font-family:var(--mono);font-size:10px;color:var(--tx3);padding:6px 0">None recorded</div>`;
+
+  document.getElementById("det-body").innerHTML = html;
+  document.getElementById("detail").classList.add("open");
+  document.getElementById("overlay").classList.add("open");
+}
+
+function openDetailFromMap(idx) {
+  leafMap.closePopup();
+  openDetail(idx);
+}
+
+function closeDetail() {
+  document.getElementById("detail").classList.remove("open");
+  document.getElementById("overlay").classList.remove("open");
+}
+
+/* ================================================================
+   THEME
+   ================================================================ */
+const TILE_DARK  = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const TILE_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
+const MOON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+const SUN_SVG  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+
+function isLight() { return document.documentElement.dataset.theme === "light"; }
+
+function getChartColors() {
+  const l = isLight();
+  return {
+    tx:            l ? "#0f1623" : "#f0f3fa",
+    tx2:           l ? "#4a5568" : "#b0bbd0",
+    tx3:           l ? "#7a8ba8" : "#7a8ba8",
+    tooltipBg:     l ? "#ffffff" : "#161b27",
+    tooltipBorder: l ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.14)",
+    grid:          l ? "rgba(0,0,0,0.08)"  : "rgba(255,255,255,0.08)",
+    sliceBorder:   l ? "#f0f4fb" : "#0d1117",
+  };
+}
+
+function toggleTheme() {
+  const goLight = !isLight();
+  if (goLight) {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  // swap map tile
+  if (tileLayer && leafMap) {
+    leafMap.removeLayer(tileLayer);
+    tileLayer = L.tileLayer(goLight ? TILE_LIGHT : TILE_DARK, { maxZoom: 18, subdomains: "abcd" }).addTo(leafMap);
+  }
+  // update icon: sun in dark mode (click → light), moon in light mode (click → dark)
+  document.getElementById("btn-theme").innerHTML = goLight ? MOON_SVG : SUN_SVG;
+  // re-render charts with new colors
+  renderTypeChart();
+  renderTimeline();
+}
+
+/* ================================================================
+   MAP INIT
+   ================================================================ */
+function initMap() {
+  leafMap = L.map("map", {
+    center: [21.5, 95.5],
+    zoom: 7,
+    zoomControl: true,
+    attributionControl: false,
+  });
+
+  tileLayer = L.tileLayer(TILE_DARK, {
+    maxZoom: 18,
+    subdomains: "abcd",
+  }).addTo(leafMap);
+
+  // Attribution small
+  L.control.attribution({ prefix: false, position: "bottomright" })
+    .addAttribution('© <a href="https://carto.com" style="color:#7a8ba8">CARTO</a>')
+    .addTo(leafMap);
+}
+
+/* ================================================================
+   DATA LOADING + AUTO-GEOCODING
+   ================================================================ */
+
+/* Show/hide the pulsing status badge over the map */
+function showMapStatus(msg) {
+  let el = document.getElementById("map-status");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "map-status";
+    el.className = "map-status";
+    document.querySelector(".map-area").appendChild(el);
+  }
+  el.textContent = msg;
+}
+function hideMapStatus() {
+  const el = document.getElementById("map-status");
+  if (el) el.remove();
+}
+
+/* Geocode every unique location in `data` not already cached. Sequential to respect Nominatim rate limit. */
+async function preGeocodeAll(data) {
+  const unknowns = [...new Set(
+    data.map(d => d.location).filter(loc => loc && !(loc in coordCache))
+  )];
+  if (!unknowns.length) return;
+
+  for (let i = 0; i < unknowns.length; i++) {
+    showMapStatus(`Locating ${i + 1} / ${unknowns.length}: ${unknowns[i]}`);
+    await geocodeLocation(unknowns[i]);
+  }
+  hideMapStatus();
+}
+
+/* Append new records to DATA, geocode new locations, then re-render */
+async function loadData(jsonArray) {
+  const incoming = Array.isArray(jsonArray) ? jsonArray : (jsonArray.data || []);
+  if (!incoming.length) { alert("JSON loaded but contains no records."); return; }
+  DATA = DATA.concat(incoming);
+
+  // Auto-set date range from all data
+  const dates = DATA.map(d => parseDate(d.date)).filter(Boolean);
+  if (dates.length) {
+    document.getElementById("f-from").value = toISO(new Date(Math.min(...dates)));
+    document.getElementById("f-to").value   = toISO(new Date(Math.max(...dates)));
+  }
+
+  // Rebuild type chips and location dropdown from actual data
+  const allTypes = [...new Set(DATA.map(d => d.crisis_type).filter(Boolean))];
+  allTypes.forEach(t => activeTypes.add(t));
+  rebuildTypeChips(allTypes);
+  rebuildLocationDropdown();
+
+  await preGeocodeAll(incoming);
+  applyFilters();
+}
+
+function rebuildLocationDropdown() {
+  const regions = [...new Set(DATA.map(d => getRegion(d.location)).filter(Boolean))].sort();
+  const sel = document.getElementById("f-location");
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All regions</option>' +
+    regions.map(r => `<option value="${r}">${r}</option>`).join("");
+  if (regions.includes(current)) sel.value = current;
+}
+
+function rebuildTypeChips(types) {
+  const wrap = document.getElementById("type-chips");
+  wrap.innerHTML = types.map(t => {
+    const color = TYPE_COLOR[t] || "#888";
+    return `<button class="chip on" data-t="${t}" onclick="toggleChip(this)">
+      <span class="chip-dot" style="background:${color}"></span>${TYPE_LABEL[t] || t}
+    </button>`;
+  }).join("");
+}
+
+/* File-picker handler — supports multiple files */
+function handleFileUpload(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  e.target.value = "";
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      try {
+        await loadData(JSON.parse(ev.target.result));
+      } catch {
+        alert(`Could not parse ${file.name}. Make sure it is a valid JSON array.`);
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+/* ================================================================
+   DRAG-AND-DROP (ambient — no overlay)
+   ================================================================ */
+function handleDroppedFiles(files) {
+  const jsonFiles = Array.from(files).filter(f => f.name.endsWith(".json"));
+  if (!jsonFiles.length) { alert("Please drop .json files only."); return; }
+  jsonFiles.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      try { await loadData(JSON.parse(ev.target.result)); }
+      catch { alert(`Could not parse ${file.name}.`); }
+    };
+    reader.readAsText(file);
+  });
+}
+
+/* ================================================================
+   BOOT
+   ================================================================ */
+document.addEventListener("DOMContentLoaded", () => {
+  initMap();
+  applyFilters();
+
+  document.addEventListener("dragover", e => e.preventDefault());
+  document.addEventListener("drop", e => {
+    e.preventDefault();
+    handleDroppedFiles(e.dataTransfer.files);
+  });
+});
+</script>
+</body>
+</html>

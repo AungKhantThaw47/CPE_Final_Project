@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CrisisIntel Myanmar — A0 Poster</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap" rel="stylesheet">
+<style>
+
+@page { size: A0 portrait; margin: 0; }
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy:   #0d1f3c;
+  --blue2:  #2563eb;
+  --gold:   #c17d0e;
+  --gold2:  #e8a020;
+  --goldbg: #fef9ee;
+  --red:    #b71c1c;
+  --teal:   #0e7490;
+  --green:  #166534;
+  --orange: #9a3412;
+  --purple: #5b21b6;
+  --white:  #ffffff;
+  --bg:     #f4f6fb;
+  --bg2:    #edf0f8;
+  --tx:     #0d1f3c;
+  --tx2:    #374151;
+  --tx3:    #6b7280;
+  --border: #d1d9e8;
+  --sans:   'Inter', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background: #c8cede;
+  font-family: var(--sans);
+  color: var(--tx);
+  padding: 32px 24px 60px;
+}
+
+.poster {
+  width: 1240px;
+  height: 1753px;
+  margin: 0 auto;
+  background: var(--white);
+  box-shadow: 0 10px 50px rgba(13,31,60,.22);
+  display: flex;
+  flex-direction: column;
+}
+
+@media print {
+  body { background: white; padding: 0; margin: 0; }
+  .poster {
+    width: 1240px;
+    height: 1753px;
+    box-shadow: none; margin: 0;
+    zoom: 2.56;
+  }
+}
+
+/* ── HEADER ── */
+.hdr { background: var(--navy); padding: 18px 36px 0; }
+.hdr-top { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 10px; }
+.hdr-badge {
+  background: var(--gold2); color: var(--navy);
+  font-size: 9px; font-weight: 800; letter-spacing: .10em; text-transform: uppercase;
+  padding: 3px 12px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; margin-top: 5px;
+}
+.hdr-titles { flex: 1; }
+.hdr-title { font-size: 26px; font-weight: 900; color: var(--white); letter-spacing: -.02em; line-height: 1.12; }
+.hdr-title .accent { color: var(--gold2); }
+.hdr-subtitle { font-size: 11.5px; color: rgba(255,255,255,.60); margin-top: 6px; line-height: 1.5; max-width: 680px; }
+.hdr-right { flex-shrink: 0; text-align: right; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.uni-card { background: rgba(255,255,255,.10); border: 1.5px solid rgba(255,255,255,.22); border-radius: 7px; padding: 8px 16px; }
+.uni-name { font-size: 12px; font-weight: 700; color: white; }
+.uni-dept { font-size: 10px; color: rgba(255,255,255,.52); margin-top: 2px; }
+.tech-pills { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.tpill { font-size: 9px; font-weight: 500; padding: 2px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,.22); color: rgba(255,255,255,.75); background: rgba(255,255,255,.07); white-space: nowrap; }
+.hdr-stripe { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; border-top: 1px solid rgba(255,255,255,.12); margin: 0 -36px; }
+.hs-item { padding: 7px 18px 9px; border-right: 1px solid rgba(255,255,255,.10); display: flex; flex-direction: column; gap: 2px; }
+.hs-item:last-child { border-right: none; }
+.hs-lbl { font-size: 7.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.36); }
+.hs-val { font-size: 11px; font-weight: 600; color: rgba(255,255,255,.82); }
+.hs-val .accent { color: var(--gold2); }
+
+/* ── BODY ── */
+.body { flex: 1; display: grid; grid-template-columns: 305px 1fr 290px; gap: 0; min-height: 0; }
+.col { display: flex; flex-direction: column; }
+.col-inner { display: flex; flex-direction: column; gap: 7px; padding: 9px 11px; height: 100%; }
+.col:first-child { background: var(--white); border-right: 1px solid var(--border); }
+.col:nth-child(2) { background: var(--bg); border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.col:last-child  { background: var(--white); border-left: 1px solid var(--border); }
+
+/* ── CARD ── */
+.card { background: var(--white); border: 1px solid var(--border); border-radius: 9px; padding: 10px 13px; box-shadow: 0 1px 3px rgba(13,31,60,.06); flex-shrink: 0; }
+.card.grow { flex: 1; min-height: 0; }
+.col:nth-child(2) .card { background: var(--white); }
+
+/* ── SECTION HEADER ── */
+.sh { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding-bottom: 7px; border-bottom: 2px solid; }
+.sh-num { width: 23px; height: 23px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: white; }
+.sh-title { font-size: 12px; font-weight: 800; color: var(--tx); letter-spacing: -.01em; }
+
+/* ── TEXT ── */
+p { font-size: 10px; line-height: 1.6; color: var(--tx2); }
+p strong { color: var(--tx); font-weight: 600; }
+
+/* ── BULLETS ── */
+.bl { display: flex; flex-direction: column; gap: 4px; }
+.bi { display: flex; gap: 8px; align-items: flex-start; }
+.bd { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.bt { font-size: 10px; line-height: 1.5; color: var(--tx2); }
+.bt strong { color: var(--tx); font-weight: 600; }
+
+/* ── PIPELINE ── */
+.pipeline { display: flex; flex-direction: column; }
+.ps { display: flex; gap: 9px; }
+.ps-left { width: 28px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+.ps-circle { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: white; flex-shrink: 0; }
+.ps-line { flex: 1; width: 2px; margin: 2px 0; min-height: 5px; }
+.ps-body { padding: 1px 0 7px; flex: 1; }
+.ps-name { font-size: 11px; font-weight: 700; color: var(--tx); margin-bottom: 1px; }
+.ps-desc { font-size: 9.5px; color: var(--tx3); line-height: 1.45; }
+.ps-chip { display: inline-block; margin-top: 4px; margin-right: 3px; font-size: 7.5px; font-weight: 600; letter-spacing: .04em; padding: 1px 7px; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+
+/* ── ARCH FLOW ── */
+.af-row { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
+.af-box { flex: 1; border-radius: 7px; padding: 5px 8px; text-align: center; border: 1.5px solid; font-size: 9.5px; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.af-sub { font-size: 7.5px; font-weight: 400; opacity: .65; }
+.af-arr { font-size: 12px; color: var(--tx3); flex-shrink: 0; line-height: 1; }
+.gcs-strip { display: flex; gap: 4px; margin-bottom: 5px; }
+.gcs-box { flex: 1; border-radius: 5px; padding: 4px 5px; text-align: center; border: 1px dashed var(--border); background: var(--bg2); font-size: 7.5px; font-weight: 500; color: var(--tx3); }
+.infra-row { background: var(--bg); border-radius: 7px; padding: 7px 10px; border: 1px solid var(--border); margin-top: 2px; }
+.infra-lbl { font-size: 7.5px; font-weight: 700; letter-spacing: .10em; text-transform: uppercase; color: var(--tx3); margin-bottom: 5px; }
+
+/* ── TAGS ── */
+.tag { display: inline-block; white-space: nowrap; margin: 2px; font-size: 8.5px; font-weight: 500; padding: 1px 8px; border-radius: 20px; border: 1.5px solid var(--border); color: var(--tx2); background: var(--bg); }
+.tag.navy   { border-color: #93b4e8; color: var(--navy); background: #eef2ff; font-weight: 600; }
+.tag.blue   { border-color: #93c5fd; color: var(--blue2); background: #eff6ff; }
+.tag.red    { border-color: #fca5a5; color: var(--red); background: #fff5f5; }
+.tag.gold   { border-color: #f0d085; color: var(--gold); background: var(--goldbg); }
+.tag.green  { border-color: #86efac; color: var(--green); background: #f0fdf4; }
+.tag.teal   { border-color: #5eead4; color: var(--teal); background: #f0fdfa; }
+.tag.orange { border-color: #fdba74; color: var(--orange); background: #fff7ed; }
+.tag.purple { border-color: #c4b5fd; color: var(--purple); background: #f5f3ff; }
+
+/* ── DASHBOARD MOCK ── */
+.db { background: #0b1424; border-radius: 8px; overflow: hidden; border: 1px solid #1a2840; margin-bottom: 7px; }
+.db-bar { background: #111e32; padding: 5px 11px; display: flex; align-items: center; gap: 5px; border-bottom: 1px solid #1a2840; }
+.db-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.db-name { font-size: 8.5px; font-weight: 600; color: #e2a84b; margin-left: 7px; letter-spacing: .04em; }
+.db-right { margin-left: auto; font-size: 7.5px; color: #4a6080; }
+.db-body  { display: grid; grid-template-columns: 110px 1fr; height: 130px; }
+.db-side  { background: #0f1a2e; padding: 7px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid #1a2840; }
+.db-stat  { background: #182540; border-radius: 4px; padding: 5px 7px; }
+.db-lbl   { font-size: 6.5px; color: #3a5070; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.db-val   { font-size: 15px; font-weight: 700; letter-spacing: -.04em; line-height: 1.1; margin-top: 1px; }
+.db-map   { background: linear-gradient(135deg, #121f38 0%, #0d1829 100%); position: relative; overflow: hidden; }
+.db-pin   { position: absolute; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.4); }
+
+/* ── OUTCOME ITEMS ── */
+.oi { display: flex; gap: 9px; align-items: flex-start; padding: 7px 10px; background: var(--bg); border-radius: 7px; border: 1px solid var(--border); }
+.on { width: 23px; height: 23px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: white; }
+.ot { font-size: 10px; line-height: 1.45; color: var(--tx2); padding-top: 2px; }
+.ot strong { color: var(--tx); font-weight: 600; }
+
+/* ── HIGHLIGHT ── */
+.hl { border-radius: 7px; padding: 7px 11px; border-left: 3px solid; margin-bottom: 7px; font-size: 10px; line-height: 1.55; color: var(--tx2); }
+.hl strong { color: var(--tx); font-weight: 600; }
+
+/* ── CODE BLOCK ── */
+.codeblock { background: #f1f5f9; border-radius: 6px; padding: 7px 10px; border: 1px solid var(--border); font-size: 8.5px; line-height: 1.65; color: var(--tx2); margin-bottom: 7px; font-family: 'Courier New', monospace; }
+.c-comment { color: #6b7280; }
+.c-key     { color: var(--navy); font-weight: 600; }
+.c-val     { color: var(--blue2); }
+.c-tag     { color: var(--red); font-weight: 600; }
+
+/* ── FEAT GRID ── */
+.feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.feat-item { background: var(--bg); border-radius: 6px; padding: 6px 9px; border: 1px solid var(--border); }
+.feat-title { font-size: 9.5px; font-weight: 700; color: var(--tx); margin-bottom: 2px; }
+.feat-desc  { font-size: 9px; color: var(--tx2); line-height: 1.4; }
+
+/* ── FOOTER ── */
+.ftr { background: var(--navy); padding: 8px 28px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0; }
+.ftr-s { display: flex; flex-direction: column; gap: 1px; }
+.ftr-lbl { font-size: 7.5px; font-weight: 700; letter-spacing: .10em; text-transform: uppercase; color: rgba(255,255,255,.30); }
+.ftr-v   { font-size: 10px; color: rgba(255,255,255,.70); }
+.ftr-v strong { color: white; }
+.ftr-divider { width: 1px; height: 26px; background: rgba(255,255,255,.14); flex-shrink: 0; }
+
+</style>
+</head>
+<body>
+<div class="poster">
+
+  <!-- ════ HEADER ════ -->
+  <div class="hdr">
+    <div class="hdr-top">
+      <div class="hdr-badge">Senior Project 2026</div>
+      <div class="hdr-titles">
+        <div class="hdr-title">Automated Myanmar Crisis Event Monitoring<br>Using <span class="accent">NLP and Cloud Pipeline</span></div>
+        <div class="hdr-subtitle">From raw Burmese-language news to a structured, geolocated crisis event dashboard — fully automated on Google Cloud Platform.</div>
+      </div>
+      <div class="hdr-right">
+        <div class="uni-card">
+          <div class="uni-name">Chulalongkorn University</div>
+          <div class="uni-dept">Department of Computer Engineering</div>
+        </div>
+        <div class="tech-pills">
+          <span class="tpill">Google Cloud Platform</span>
+          <span class="tpill">Gemini AI</span>
+          <span class="tpill">Gemma 300M</span>
+          <span class="tpill">Terraform · Neo4j</span>
+        </div>
+      </div>
+    </div>
+    <div class="hdr-stripe">
+      <div class="hs-item">
+        <div class="hs-lbl">Data Source</div>
+        <div class="hs-val">DVB <span class="accent">Burmese News</span></div>
+      </div>
+      <div class="hs-item">
+        <div class="hs-lbl">Pipeline Stages</div>
+        <div class="hs-val"><span class="accent">7</span> automated stages</div>
+      </div>
+      <div class="hs-item">
+        <div class="hs-lbl">Infrastructure</div>
+        <div class="hs-val"><span class="accent">9</span> containers · 6 GCS buckets</div>
+      </div>
+      <div class="hs-item">
+        <div class="hs-lbl">Deployment</div>
+        <div class="hs-val">GCP <span class="accent">asia-southeast1</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ BODY ════ -->
+  <div class="body">
+
+    <!-- ── COL 1: Motivation + Pipeline ── -->
+    <div class="col">
+      <div class="col-inner">
+
+        <div class="card">
+          <div class="sh" style="border-color:var(--navy)">
+            <div class="sh-num" style="background:var(--navy)">A</div>
+            <div class="sh-title">Background &amp; Motivation</div>
+          </div>
+          <p>Myanmar faces an ongoing humanitarian crisis from <strong>armed conflict, airstrikes, and displacement</strong>. Burmese-language news reports remain scattered, unstructured, and inaccessible to international analysts.</p>
+          <div class="bl" style="margin-top:7px">
+            <div class="bi"><div class="bd" style="background:var(--red)"></div><div class="bt">No central aggregation across outlets</div></div>
+            <div class="bi"><div class="bd" style="background:var(--red)"></div><div class="bt">Plain text — not queryable or mappable</div></div>
+            <div class="bi"><div class="bd" style="background:var(--red)"></div><div class="bt">Burmese-only, limiting global reach</div></div>
+            <div class="bi"><div class="bd" style="background:var(--red)"></div><div class="bt">Manual analysis takes hours or days</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="sh" style="border-color:var(--blue2)">
+            <div class="sh-num" style="background:var(--blue2)">B</div>
+            <div class="sh-title">Objectives</div>
+          </div>
+          <div class="bl">
+            <div class="bi"><div class="bd" style="background:var(--blue2)"></div><div class="bt"><strong>Zero-touch pipeline</strong> — fully automated, daily execution</div></div>
+            <div class="bi"><div class="bd" style="background:var(--blue2)"></div><div class="bt"><strong>Burmese ML classification</strong> via Gemma multilingual embeddings</div></div>
+            <div class="bi"><div class="bd" style="background:var(--blue2)"></div><div class="bt"><strong>Gemini AI extraction</strong> — structured JSON from raw text</div></div>
+            <div class="bi"><div class="bd" style="background:var(--blue2)"></div><div class="bt"><strong>Geospatial dashboard</strong> — no backend, browser-only</div></div>
+            <div class="bi"><div class="bd" style="background:var(--blue2)"></div><div class="bt"><strong>Neo4j lineage graph</strong> — full infra dependency tracking</div></div>
+          </div>
+        </div>
+
+        <div class="card grow">
+          <div class="sh" style="border-color:var(--teal)">
+            <div class="sh-num" style="background:var(--teal)">C</div>
+            <div class="sh-title">7-Stage Data Pipeline</div>
+          </div>
+          <div class="pipeline">
+
+            <div class="ps">
+              <div class="ps-left"><div class="ps-circle" style="background:var(--blue2)">1</div><div class="ps-line" style="background:#bfcfe8"></div></div>
+              <div class="ps-body">
+                <div class="ps-name">Crawl</div>
+                <div class="ps-desc">Node.js scraper collects yesterday's DVB articles daily via Cloud Scheduler.</div>
+                <span class="ps-chip" style="border-color:#93c5fd;color:var(--blue2);background:#eff6ff">Node.js</span>
+                <span class="ps-chip" style="border-color:#93c5fd;color:var(--blue2);background:#eff6ff">Cloud Scheduler</span>
+              </div>
+            </div>
+
+            <div class="ps">
+              <div class="ps-left"><div class="ps-circle" style="background:var(--teal)">2</div><div class="ps-line" style="background:#bfcfe8"></div></div>
+              <div class="ps-body">
+                <div class="ps-name">Clean</div>
+                <div class="ps-desc">Strips HTML tags, ads, and duplicates — outputs clean Burmese plain-text.</div>
+                <span class="ps-chip" style="border-color:#5eead4;color:var(--teal);background:#f0fdfa">Python</span>
+                <span class="ps-chip" style="border-color:#5eead4;color:var(--teal);background:#f0fdfa">Cloud Run Job</span>
+              </div>
+            </div>
+
+            <div class="ps">
+              <div class="ps-left"><div class="ps-circle" style="background:var(--gold)">3</div><div class="ps-line" style="background:#bfcfe8"></div></div>
+              <div class="ps-body">
+                <div class="ps-name">Classify</div>
+                <div class="ps-desc">Gemma-300M embeddings feed a scikit-learn binary classifier (crisis / non-crisis).</div>
+                <span class="ps-chip" style="border-color:#f0d085;color:var(--gold);background:var(--goldbg)">Gemma 300M</span>
+                <span class="ps-chip" style="border-color:#f0d085;color:var(--gold);background:var(--goldbg)">sklearn · 16 GB</span>
+              </div>
+            </div>
+
+            <div class="ps">
+              <div class="ps-left"><div class="ps-circle" style="background:var(--orange)">4</div><div class="ps-line" style="background:#bfcfe8"></div></div>
+              <div class="ps-body">
+                <div class="ps-name">Admin Review</div>
+                <div class="ps-desc">Human-in-the-loop service — analysts confirm or reject classifier predictions.</div>
+                <span class="ps-chip" style="border-color:#fdba74;color:var(--orange);background:#fff7ed">Cloud Run Service</span>
+              </div>
+            </div>
+
+            <div class="ps">
+              <div class="ps-left"><div class="ps-circle" style="background:var(--red)">5</div><div class="ps-line" style="background:#bfcfe8"></div></div>
+              <div class="ps-body">
+                <div class="ps-name">Annotate</div>
+                <div class="ps-desc">Gemini 3 Flash wraps each event in &lt;event&gt; tags using a 13-rule structured prompt.</div>
+                <span class="ps-chip" style="border-color:#fca5a5;color:var(--red);background:#fff5f5">Gemini 3 Flash</span>
+                <span class="ps-chip" style="border-color:#fca5a5;color:var(--red);background:#fff5f5">Eventarc</span>
+              </div>
+            </div>
+
+            <div class="ps">
+              <div class="ps-left"><div class="ps-circle" style="background:var(--gold2)">6</div><div class="ps-line" style="background:#bfcfe8"></div></div>
+              <div class="ps-body">
+                <div class="ps-name">Extract</div>
+                <div class="ps-desc">Gemini converts annotated events into structured JSON: date, location, crisis type, casualties, displaced, entities.</div>
+                <span class="ps-chip" style="border-color:#f0d085;color:#92400e;background:#fffbf0">Structured JSON</span>
+              </div>
+            </div>
+
+            <div class="ps">
+              <div class="ps-left"><div class="ps-circle" style="background:var(--green)">7</div></div>
+              <div class="ps-body">
+                <div class="ps-name">Visualise</div>
+                <div class="ps-desc">Leaflet.js geospatial dashboard shows events on a map with filters and timeline.</div>
+                <span class="ps-chip" style="border-color:#86efac;color:var(--green);background:#f0fdf4">Leaflet.js</span>
+                <span class="ps-chip" style="border-color:#86efac;color:var(--green);background:#f0fdf4">Chart.js</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── COL 2: Architecture + Dashboard + Challenges ── -->
+    <div class="col">
+      <div class="col-inner">
+
+        <div class="card">
+          <div class="sh" style="border-color:var(--blue2)">
+            <div class="sh-num" style="background:var(--blue2)">D</div>
+            <div class="sh-title">System Architecture — Google Cloud Platform</div>
+          </div>
+
+          <div class="af-row">
+            <div class="af-box" style="border-color:#93c5fd;color:var(--blue2);background:#eff6ff;min-width:76px;flex:none;">DVB News<span class="af-sub">Source</span></div>
+            <div class="af-arr">&#8594;</div>
+            <div class="af-box" style="border-color:#93c5fd;color:var(--blue2);background:#eff6ff;">Crawler<span class="af-sub">Node.js · Cron</span></div>
+            <div class="af-arr">&#8594;</div>
+            <div class="af-box" style="border-color:#5eead4;color:var(--teal);background:#f0fdfa;">Cleaner<span class="af-sub">Python · Job</span></div>
+          </div>
+          <div style="display:flex;gap:4px;padding-left:88px;margin-bottom:4px;align-items:center;">
+            <span style="font-size:12px;color:var(--tx3)">&#8595;</span>
+            <div class="gcs-box" style="flex:1">GCS: raw-articles</div>
+            <span style="font-size:12px;color:var(--tx3)">&#8594;</span>
+            <div class="gcs-box" style="flex:1">GCS: cleaned-articles</div>
+          </div>
+          <div class="af-row">
+            <div class="af-box" style="border-color:#f0d085;color:var(--gold);background:var(--goldbg);">Classifier<span class="af-sub">Gemma · 4CPU/16GB</span></div>
+            <div class="af-arr">&#8594;</div>
+            <div class="af-box" style="border-color:#fdba74;color:var(--orange);background:#fff7ed;">Admin Review<span class="af-sub">Cloud Run</span></div>
+            <div class="af-arr">&#8594;</div>
+            <div class="af-box" style="border-color:#fca5a5;color:var(--red);background:#fff5f5;">Annotator<span class="af-sub">Gemini · Eventarc</span></div>
+          </div>
+          <div class="gcs-strip">
+            <div class="gcs-box">GCS: crisis-articles</div>
+            <div class="gcs-box">GCS: pending-review</div>
+            <div class="gcs-box">GCS: annotated</div>
+          </div>
+          <div class="af-row">
+            <div class="af-box" style="border-color:#f0d085;color:#92400e;background:#fffbf0;">Extractor<span class="af-sub">Gemini · JSON</span></div>
+            <div class="af-arr">&#8594;</div>
+            <div class="af-box" style="border-color:#86efac;color:var(--green);background:#f0fdf4;">Dashboard<span class="af-sub">Leaflet · Chart.js</span></div>
+            <div class="af-arr">&#8594;</div>
+            <div class="af-box" style="border-color:#c4b5fd;color:var(--purple);background:#f5f3ff;">Analyst<span class="af-sub">Crisis Response</span></div>
+          </div>
+          <div class="infra-row">
+            <div class="infra-lbl">Infrastructure &amp; DevOps</div>
+            <span class="tag navy">Terraform IaC</span>
+            <span class="tag navy">GitHub Actions CI/CD</span>
+            <span class="tag navy">Cloud Build + Docker</span>
+            <span class="tag navy">Neo4j Lineage Graph</span>
+            <span class="tag navy">MLflow Tracking</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="sh" style="border-color:var(--green)">
+            <div class="sh-num" style="background:var(--green)">E</div>
+            <div class="sh-title">Crisis Dashboard — Geospatial Visualisation</div>
+          </div>
+          <div class="db">
+            <div class="db-bar">
+              <div class="db-dot" style="background:#ef4444"></div>
+              <div class="db-dot" style="background:#f59e0b"></div>
+              <div class="db-dot" style="background:#22c55e"></div>
+              <div class="db-name">CrisisIntel Myanmar</div>
+              <span style="font-size:7.5px;color:#3a5070;margin-left:10px">Date | Type | Region | Township | Reset</span>
+              <div class="db-right">247 events · + Load JSON</div>
+            </div>
+            <div class="db-body">
+              <div class="db-side">
+                <div class="db-stat"><div class="db-lbl">Total Events</div><div class="db-val" style="color:#e2a84b">247</div></div>
+                <div class="db-stat"><div class="db-lbl">Civ. Fatalities</div><div class="db-val" style="color:#ef4444">183</div></div>
+                <div class="db-stat"><div class="db-lbl">Non-Civ. Deaths</div><div class="db-val" style="color:#f97316">94</div></div>
+                <div class="db-stat"><div class="db-lbl">Displaced</div><div class="db-val" style="color:#f59e0b">12k+</div></div>
+              </div>
+              <div class="db-map">
+                <svg width="100%" height="100%" viewBox="0 0 400 130" style="position:absolute;top:0;left:0;opacity:.12">
+                  <path d="M178,6 C196,6 224,16 238,32 C255,52 257,74 252,98 C247,122 258,140 254,160 C248,180 237,192 230,200 C217,213 200,218 190,218 C178,210 160,198 148,183 C135,166 127,144 123,122 C117,95 121,71 127,50 C133,29 125,13 137,5 C148,-1 163,4 178,6Z" fill="rgba(100,140,240,.5)" stroke="rgba(100,140,240,.6)" stroke-width="1.5"/>
+                </svg>
+                <div class="db-pin" style="width:11px;height:11px;background:#ef4444;top:20%;left:42%;box-shadow:0 0 8px rgba(239,68,68,.7)"></div>
+                <div class="db-pin" style="width:9px;height:9px;background:#ef4444;top:30%;left:48%;box-shadow:0 0 6px rgba(239,68,68,.6)"></div>
+                <div class="db-pin" style="width:13px;height:13px;background:#ef4444;top:15%;left:38%;box-shadow:0 0 10px rgba(239,68,68,.7)"></div>
+                <div class="db-pin" style="width:9px;height:9px;background:#f97316;top:50%;left:41%;box-shadow:0 0 6px rgba(249,115,22,.6)"></div>
+                <div class="db-pin" style="width:10px;height:10px;background:#f97316;top:60%;left:47%;box-shadow:0 0 7px rgba(249,115,22,.6)"></div>
+                <div class="db-pin" style="width:9px;height:9px;background:#eab308;top:27%;left:61%;box-shadow:0 0 6px rgba(234,179,8,.5)"></div>
+                <div class="db-pin" style="width:9px;height:9px;background:#3b82f6;top:68%;left:50%;box-shadow:0 0 6px rgba(59,130,246,.6)"></div>
+                <div style="position:absolute;bottom:5px;right:6px;background:rgba(11,20,36,.9);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:4px 8px;">
+                  <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;font-size:6.5px;color:#94a3b8"><div style="width:6px;height:6px;border-radius:50%;background:#ef4444;flex-shrink:0"></div>Armed Conflict</div>
+                  <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;font-size:6.5px;color:#94a3b8"><div style="width:6px;height:6px;border-radius:50%;background:#f97316;flex-shrink:0"></div>Airstrike</div>
+                  <div style="display:flex;align-items:center;gap:4px;font-size:6.5px;color:#94a3b8"><div style="width:6px;height:6px;border-radius:50%;background:#3b82f6;flex-shrink:0"></div>Natural Disaster</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="feat-grid">
+            <div class="feat-item"><div class="feat-title">Filters</div><div class="feat-desc">Date range · Crisis type · Region · Township · Reset</div></div>
+            <div class="feat-item"><div class="feat-title">Charts</div><div class="feat-desc">Doughnut breakdown · Timeline · Top locations bar</div></div>
+            <div class="feat-item"><div class="feat-title">Map Precision</div><div class="feat-desc">200+ hardcoded Myanmar township coordinates · click pin for details</div></div>
+            <div class="feat-item"><div class="feat-title">Data Loading</div><div class="feat-desc">Drag-and-drop JSON · runs entirely in-browser, no backend</div></div>
+          </div>
+        </div>
+
+        <div class="card grow">
+          <div class="sh" style="border-color:var(--navy)">
+            <div class="sh-num" style="background:var(--navy)">F</div>
+            <div class="sh-title">Challenges &amp; Design Decisions</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="oi">
+              <div class="on" style="background:var(--red)">1</div>
+              <div class="ot"><strong>Burmese NLP scarcity</strong> — No pre-tokenised datasets. Gemma-300M multilingual embeddings encode meaning directly from raw Unicode, bypassing tokenisation.</div>
+            </div>
+            <div class="oi">
+              <div class="on" style="background:var(--gold)">2</div>
+              <div class="ot"><strong>Myanmar geocoding gaps</strong> — OSM coverage is sparse. Solved with a 200+ hardcoded township coordinate table as primary lookup before any API call.</div>
+            </div>
+            <div class="oi">
+              <div class="on" style="background:var(--teal)">3</div>
+              <div class="ot"><strong>Event-driven coordination</strong> — Eventarc bucket events chain all 7 stages without polling. GCS object creation acts as the completion signal between jobs.</div>
+            </div>
+            <div class="oi">
+              <div class="on" style="background:var(--blue2)">4</div>
+              <div class="ot"><strong>Multi-event articles</strong> — One article often covers 3–5 incidents. The 13-rule Gemini prompt segments by date and location into independent &lt;event&gt; spans.</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── COL 3: ML + Annotation + Infra + Stack + Outcomes ── -->
+    <div class="col">
+      <div class="col-inner">
+
+        <div class="card">
+          <div class="sh" style="border-color:var(--gold2)">
+            <div class="sh-num" style="background:var(--gold)">G</div>
+            <div class="sh-title">ML Crisis Classifier</div>
+          </div>
+          <div class="hl" style="background:var(--goldbg);border-color:var(--gold2)">
+            <strong>Gemma-300M</strong> multilingual embeddings feed a <strong>scikit-learn pipeline</strong> for binary crisis classification of Burmese articles.
+          </div>
+          <div class="bl">
+            <div class="bi"><div class="bd" style="background:var(--gold2)"></div><div class="bt"><strong>Input:</strong> Cleaned Burmese article text</div></div>
+            <div class="bi"><div class="bd" style="background:var(--gold2)"></div><div class="bt"><strong>Embedding:</strong> Mean-pooled Gemma 300M token vectors</div></div>
+            <div class="bi"><div class="bd" style="background:var(--gold2)"></div><div class="bt"><strong>Output:</strong> crisis / non-crisis + confidence score</div></div>
+            <div class="bi"><div class="bd" style="background:var(--gold2)"></div><div class="bt"><strong>Tracking:</strong> MLflow registry on GCS</div></div>
+          </div>
+          <div style="margin-top:8px;">
+            <div style="font-size:7.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--tx3);margin-bottom:5px">Crisis Types Detected</div>
+            <span class="tag red">Armed Conflict</span><span class="tag orange">Airstrike</span><span class="tag gold">Bombing</span><span class="tag blue">Natural Disaster</span><span class="tag teal">Attack</span><span class="tag green">Fire</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="sh" style="border-color:var(--red)">
+            <div class="sh-num" style="background:var(--red)">H</div>
+            <div class="sh-title">Gemini AI Annotation &amp; Extraction</div>
+          </div>
+          <div class="hl" style="background:#fff5f5;border-color:#fca5a5">
+            A <strong>13-rule prompt</strong> tells Gemini 3 Flash how to segment articles by date, location, and incident into precise <strong>&lt;event&gt;</strong> spans.
+          </div>
+          <div class="codeblock">
+            <span class="c-key">input  </span><span class="c-comment">→</span> Burmese article (plain text)<br>
+            <span class="c-key">prompt </span><span class="c-comment">→</span> 13 event-boundary rules<br>
+            <span class="c-key">output </span><span class="c-comment">→</span> <span class="c-tag">&lt;event&gt;</span> tagged paragraphs<br>
+            <span class="c-key">extract</span><span class="c-comment">→</span> <span class="c-val">{ date, location, type, casualties, displaced, entities }</span>
+          </div>
+          <div class="bl">
+            <div class="bi"><div class="bd" style="background:var(--red)"></div><div class="bt">Auto-triggered by <strong>Eventarc</strong> on GCS upload</div></div>
+            <div class="bi"><div class="bd" style="background:var(--red)"></div><div class="bt">One JSON record per event, stored in GCS</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="sh" style="border-color:var(--teal)">
+            <div class="sh-num" style="background:var(--teal)">I</div>
+            <div class="sh-title">Smart Infrastructure</div>
+          </div>
+          <div class="bl">
+            <div class="bi"><div class="bd" style="background:var(--teal)"></div><div class="bt"><strong>Content-hash rebuilds</strong> — Terraform only rebuilds Docker images when source code changes.</div></div>
+            <div class="bi"><div class="bd" style="background:var(--teal)"></div><div class="bt"><strong>Neo4j dependency graph</strong> — links every job to the GCS buckets it reads/writes for full lineage.</div></div>
+            <div class="bi"><div class="bd" style="background:var(--teal)"></div><div class="bt"><strong>GitHub Actions CI/CD</strong> — auto plan on PR, auto deploy on merge via Cloud Build.</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="sh" style="border-color:var(--purple)">
+            <div class="sh-num" style="background:var(--purple)">J</div>
+            <div class="sh-title">Technology Stack</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;">
+            <div>
+              <div style="font-size:7.5px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--tx3);margin-bottom:4px">Cloud Platform</div>
+              <div><span class="tag blue">Cloud Run</span><span class="tag blue">Cloud Storage</span><span class="tag blue">Eventarc</span><span class="tag blue">Cloud Scheduler</span><span class="tag blue">Cloud Build</span></div>
+            </div>
+            <div>
+              <div style="font-size:7.5px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--tx3);margin-bottom:4px">AI / Machine Learning</div>
+              <div><span class="tag red">Gemini 3 Flash</span><span class="tag gold">Gemma 300M</span><span class="tag">scikit-learn</span><span class="tag">MLflow</span><span class="tag">PyTorch</span></div>
+            </div>
+            <div>
+              <div style="font-size:7.5px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--tx3);margin-bottom:4px">Backend &amp; Infrastructure</div>
+              <div><span class="tag green">Terraform</span><span class="tag green">Neo4j</span><span class="tag">Python 3.12</span><span class="tag">Node.js</span><span class="tag">Docker</span></div>
+            </div>
+            <div>
+              <div style="font-size:7.5px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--tx3);margin-bottom:4px">Frontend</div>
+              <div><span class="tag teal">Leaflet.js</span><span class="tag teal">Chart.js 4</span><span class="tag">OpenStreetMap</span><span class="tag">HTML/CSS/JS</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card grow">
+          <div class="sh" style="border-color:var(--navy)">
+            <div class="sh-num" style="background:var(--navy)">K</div>
+            <div class="sh-title">Key Outcomes</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="oi"><div class="on" style="background:var(--blue2)">1</div><div class="ot"><strong>Zero-touch daily pipeline</strong> — raw Burmese news to structured JSON with no manual trigger after admin review.</div></div>
+            <div class="oi"><div class="on" style="background:var(--gold)">2</div><div class="ot"><strong>Low-resource language ML</strong> — Gemma embeddings enable accurate crisis detection in Burmese with no labelled tokeniser.</div></div>
+            <div class="oi"><div class="on" style="background:var(--red)">3</div><div class="ot"><strong>Precise event segmentation</strong> — 13-rule Gemini prompt correctly handles multi-event articles by date and location.</div></div>
+            <div class="oi"><div class="on" style="background:var(--teal)">4</div><div class="ot"><strong>Full data lineage</strong> — Neo4j tracks every dependency across 9 containers and 6 GCS buckets.</div></div>
+            <div class="oi"><div class="on" style="background:var(--green)">5</div><div class="ot"><strong>Analyst-ready dashboard</strong> — geospatial map, timeline, and charts load directly in-browser from JSON files.</div></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ════ FOOTER ════ -->
+  <div class="ftr">
+    <div class="ftr-s">
+      <div class="ftr-lbl">Institution</div>
+      <div class="ftr-v"><strong>Chulalongkorn University</strong> · Department of Computer Engineering · Senior Project 2026</div>
+    </div>
+    <div class="ftr-divider"></div>
+    <div class="ftr-s">
+      <div class="ftr-lbl">Data Source</div>
+      <div class="ftr-v">Democratic Voice of Burma (DVB) · <strong>dvb.no/burmese</strong></div>
+    </div>
+    <div class="ftr-divider"></div>
+    <div class="ftr-s">
+      <div class="ftr-lbl">Deployment</div>
+      <div class="ftr-v">GCP <strong>asia-southeast1</strong> · 9 containers · 6 GCS buckets</div>
+    </div>
+    <div class="ftr-divider"></div>
+    <div class="ftr-s">
+      <div class="ftr-lbl">Tooling</div>
+      <div class="ftr-v"><strong>Terraform</strong> · <strong>Neo4j</strong> · <strong>MLflow</strong> · <strong>GitHub Actions</strong></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

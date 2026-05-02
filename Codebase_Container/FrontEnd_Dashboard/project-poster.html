@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CrisisIntel Myanmar — A0 Poster</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+
+/* ─── PRINT: A0 portrait ─── */
+@page { size: A0 portrait; margin: 0; }
+
+/* ─── TOKENS ─── */
+:root {
+  --navy:    #0f2044;
+  --navy2:   #1a3560;
+  --gold:    #c98a0a;
+  --gold2:   #f0b429;
+  --goldbg:  #fffbf0;
+  --red:     #b91c1c;
+  --red2:    #dc2626;
+  --teal:    #0e7490;
+  --green:   #15803d;
+  --blue:    #1d4ed8;
+  --purple:  #6d28d9;
+  --bg:      #f5f7fc;
+  --white:   #ffffff;
+  --tx:      #0f172a;
+  --tx2:     #334155;
+  --tx3:     #64748b;
+  --border:  #dde3ef;
+  --sans:    'Inter', system-ui, -apple-system, sans-serif;
+  --mono:    'IBM Plex Mono', 'Courier New', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ─── SCREEN: the poster is 1200 px wide, centered, scrollable ─── */
+body {
+  background: #e8ecf5;
+  font-family: var(--sans);
+  color: var(--tx);
+  padding: 32px 20px 60px;
+}
+
+.poster {
+  width: 1200px;
+  margin: 0 auto;
+  background: var(--bg);
+  box-shadow: 0 8px 48px rgba(15,32,68,0.20);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── PRINT: stretch to fill A0, hide body padding ─── */
+@media print {
+  body { background: white; padding: 0; }
+  .poster {
+    width: 84.1cm;
+    height: 118.9cm;
+    box-shadow: none;
+    border-radius: 0;
+    margin: 0;
+    page-break-inside: avoid;
+  }
+}
+
+/* ══════════ HEADER ══════════ */
+.hdr {
+  background: linear-gradient(135deg, #0c1d40 0%, #1a3560 55%, #1c4a8a 100%);
+  padding: 28px 36px 24px;
+  position: relative;
+  overflow: hidden;
+}
+.hdr::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, var(--gold2), #ffdd70 50%, var(--gold2));
+}
+.hdr-inner { display: flex; align-items: flex-start; gap: 24px; position: relative; }
+.hdr-emoji { font-size: 52px; line-height: 1; flex-shrink: 0; margin-top: 4px; }
+.hdr-text  { flex: 1; }
+.hdr-title {
+  font-size: 32px; font-weight: 900; color: white;
+  letter-spacing: -0.02em; line-height: 1.1;
+}
+.hdr-title .gold { color: var(--gold2); }
+.hdr-sub {
+  font-size: 14px; color: rgba(255,255,255,0.72);
+  margin-top: 8px; line-height: 1.5; max-width: 680px;
+}
+.hdr-right { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.uni-box {
+  background: rgba(255,255,255,0.12);
+  border: 1.5px solid rgba(255,255,255,0.28);
+  border-radius: 8px; padding: 8px 16px; text-align: right;
+}
+.uni-box .uni-name { font-size: 13px; font-weight: 700; color: white; }
+.uni-box .uni-dept { font-size: 11px; color: rgba(255,255,255,0.60); margin-top: 2px; }
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.hchip {
+  font-family: var(--mono); font-size: 10px;
+  padding: 3px 10px; border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.28);
+  color: rgba(255,255,255,0.82); background: rgba(255,255,255,0.09);
+  white-space: nowrap;
+}
+
+/* ══════════ MOTIVATION STRIP ══════════ */
+.motiv {
+  background: white; border-bottom: 1px solid var(--border);
+  display: grid; grid-template-columns: 1fr 1px 1fr 1px 1fr;
+  gap: 0;
+}
+.motiv-div { background: var(--border); }
+.motiv-item { display: flex; gap: 14px; align-items: flex-start; padding: 16px 22px; }
+.motiv-icon { font-size: 28px; flex-shrink: 0; line-height: 1; margin-top: 2px; }
+.motiv-lbl { font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--tx3); margin-bottom: 3px; }
+.motiv-txt { font-size: 12px; line-height: 1.5; color: var(--tx2); }
+.motiv-txt strong { color: var(--tx); }
+
+/* ══════════ BODY ══════════ */
+.body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 300px 1fr 290px;
+  gap: 12px;
+  padding: 12px 14px;
+  min-height: 0;
+}
+.col { display: flex; flex-direction: column; gap: 10px; }
+
+/* ─── CARD ─── */
+.card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 6px rgba(15,32,68,0.07);
+}
+.card.grow { flex: 1; }
+
+/* ─── SECTION HEADER ─── */
+.sh {
+  display: flex; align-items: center; gap: 9px;
+  padding-bottom: 9px; margin-bottom: 11px;
+  border-bottom: 2.5px solid var(--border);
+}
+.sh-icon { font-size: 18px; line-height: 1; }
+.sh-title { font-size: 13px; font-weight: 800; color: var(--tx); letter-spacing: -.01em; }
+
+/* ─── BODY TEXT ─── */
+p { font-size: 11px; line-height: 1.6; color: var(--tx2); }
+p strong { color: var(--tx); font-weight: 600; }
+p + p { margin-top: 7px; }
+
+/* ─── BULLET LIST ─── */
+.bl { display: flex; flex-direction: column; gap: 7px; }
+.bi { display: flex; gap: 8px; align-items: flex-start; }
+.bd { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.bt { font-size: 11px; line-height: 1.5; color: var(--tx2); }
+.bt strong { color: var(--tx); font-weight: 600; }
+
+/* ─── PIPELINE ─── */
+.pipeline { display: flex; flex-direction: column; }
+.ps { display: flex; gap: 10px; }
+.ps-left { width: 38px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+.ps-box { width: 38px; height: 38px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.ps-line { flex: 1; width: 2px; background: var(--border); min-height: 6px; margin: 3px 0; }
+.ps-body { padding: 2px 0 9px; flex: 1; }
+.ps-name { font-size: 12px; font-weight: 700; color: var(--tx); margin-bottom: 1px; }
+.ps-desc { font-size: 10px; color: var(--tx3); line-height: 1.45; }
+.ps-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.ps-tag { font-family: var(--mono); font-size: 8px; padding: 1px 7px; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+
+/* ─── ARCH FLOW ─── */
+.af { display: flex; flex-direction: column; gap: 7px; }
+.af-row { display: flex; align-items: center; gap: 6px; }
+.af-box {
+  flex: 1; border-radius: 8px; padding: 7px 10px; text-align: center;
+  border: 1.5px solid; font-size: 10px; font-weight: 600;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.af-sub { font-size: 8px; font-weight: 400; opacity: .7; font-family: var(--mono); }
+.af-arr { font-size: 16px; color: var(--tx3); flex-shrink: 0; }
+.gcs-strip { display: flex; gap: 5px; }
+.gcs-box {
+  flex: 1; border-radius: 6px; padding: 5px 7px;
+  text-align: center; border: 1px dashed var(--border);
+  background: var(--bg); font-family: var(--mono); font-size: 8px; color: var(--tx3);
+}
+
+/* ─── HIGHLIGHT ─── */
+.hl {
+  border-radius: 8px; padding: 10px 12px;
+  border-left: 4px solid; margin-bottom: 10px;
+  font-size: 11px; line-height: 1.55; color: var(--tx2);
+}
+.hl strong { color: var(--tx); font-weight: 600; }
+
+/* ─── TAG ─── */
+.tag {
+  display: inline-block;
+  font-family: var(--mono); font-size: 9px;
+  padding: 2px 9px; border-radius: 20px;
+  border: 1.5px solid var(--border);
+  color: var(--tx2); background: var(--bg);
+  white-space: nowrap; margin: 2px;
+}
+.tag.accent { border-color: var(--gold2); color: var(--gold); background: var(--goldbg); }
+.tag.blue   { border-color: #93c5fd; color: var(--blue); background: #eff6ff; }
+.tag.red    { border-color: #fca5a5; color: var(--red); background: #fff5f5; }
+.tag.green  { border-color: #86efac; color: var(--green); background: #f0fdf4; }
+.tag.teal   { border-color: #5eead4; color: var(--teal); background: #f0fdfa; }
+.tag.navy   { border-color: #93b4e8; color: var(--navy); background: #eef2ff; font-weight: 600; }
+.tag.purple { border-color: #c4b5fd; color: var(--purple); background: #f5f3ff; }
+
+/* ─── METRICS ─── */
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.metric { background: var(--bg); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); text-align: center; }
+.mv { font-family: var(--mono); font-size: 26px; font-weight: 700; letter-spacing: -.04em; line-height: 1; }
+.ml { font-size: 8px; font-weight: 700; color: var(--tx3); text-transform: uppercase; letter-spacing: .06em; margin-top: 3px; }
+
+/* ─── DASHBOARD MOCKUP ─── */
+.db-mock {
+  background: #0c1220; border-radius: 9px; overflow: hidden;
+  border: 1px solid #1e2d45;
+}
+.db-bar {
+  background: #141e30; padding: 6px 12px;
+  display: flex; align-items: center; gap: 6px;
+  border-bottom: 1px solid #1e2d45;
+}
+.db-circle { width: 8px; height: 8px; border-radius: 50%; }
+.db-title-txt { font-family: var(--mono); font-size: 9px; color: #e2a84b; margin-left: 8px; font-weight: 600; }
+.db-count { margin-left: auto; font-family: var(--mono); font-size: 9px; color: #5a7090; }
+.db-content { display: grid; grid-template-columns: 130px 1fr; height: 160px; }
+.db-side { background: #111827; padding: 8px; display: flex; flex-direction: column; gap: 5px; border-right: 1px solid #1e2d45; }
+.db-s { background: #1a2538; border-radius: 5px; padding: 6px 8px; }
+.db-s-lbl { font-family: var(--mono); font-size: 7px; color: #4a6080; text-transform: uppercase; letter-spacing: .07em; }
+.db-s-val { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: -.04em; line-height: 1.1; margin-top: 1px; }
+.db-map-area {
+  background: linear-gradient(135deg, #152035 0%, #0f1a2e 100%);
+  position: relative; overflow: hidden;
+}
+.pin { position: absolute; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.45); }
+
+/* ─── CONCLUSION ITEMS ─── */
+.ci { display: flex; gap: 10px; align-items: flex-start; background: var(--bg); border-radius: 8px; padding: 9px 11px; border: 1px solid var(--border); }
+.cn { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px; font-weight: 700; color: white; }
+.ct { font-size: 11px; line-height: 1.5; color: var(--tx2); padding-top: 2px; }
+.ct strong { color: var(--tx); font-weight: 600; }
+
+/* ══════════ FOOTER ══════════ */
+.ftr {
+  background: var(--navy);
+  color: rgba(255,255,255,0.65);
+  padding: 12px 28px;
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+}
+.ftr-s { display: flex; flex-direction: column; gap: 2px; }
+.ftr-lbl { font-size: 8px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,0.35); }
+.ftr-v { font-size: 11px; color: rgba(255,255,255,0.75); }
+.ftr-v strong { color: white; }
+.ftr-div { width: 1px; height: 32px; background: rgba(255,255,255,0.15); }
+
+</style>
+</head>
+<body>
+<div class="poster">
+
+  <!-- ══ HEADER ══ -->
+  <div class="hdr">
+    <div class="hdr-inner">
+      <div class="hdr-emoji">🌏</div>
+      <div class="hdr-text">
+        <div class="hdr-title">Automated Myanmar Crisis Event Monitoring<br>Using <span class="gold">NLP &amp; Cloud Pipeline</span></div>
+        <div class="hdr-sub">From raw Burmese-language news to a geospatial crisis dashboard — fully automated, end-to-end, on Google Cloud Platform</div>
+      </div>
+      <div class="hdr-right">
+        <div class="uni-box">
+          <div class="uni-name">Chulalongkorn University</div>
+          <div class="uni-dept">Computer Engineering · Senior Project · 2026</div>
+        </div>
+        <div class="chip-row">
+          <span class="hchip">Google Cloud Platform</span>
+          <span class="hchip">Gemini AI</span>
+          <span class="hchip">Gemma Embeddings</span>
+          <span class="hchip">Terraform · Neo4j</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MOTIVATION STRIP ══ -->
+  <div class="motiv">
+    <div class="motiv-item">
+      <div class="motiv-icon">🚨</div>
+      <div>
+        <div class="motiv-lbl">The Problem</div>
+        <div class="motiv-txt">Myanmar's humanitarian crisis generates <strong>daily Burmese-language reports</strong> on airstrikes, armed conflict, and displacement — but the data stays fragmented and unstructured.</div>
+      </div>
+    </div>
+    <div class="motiv-div"></div>
+    <div class="motiv-item">
+      <div class="motiv-icon">🤖</div>
+      <div>
+        <div class="motiv-lbl">Our Approach</div>
+        <div class="motiv-txt">An <strong>end-to-end automated pipeline</strong> that crawls, cleans, classifies, and annotates Burmese news using ML and generative AI, then plots confirmed events on an interactive map.</div>
+      </div>
+    </div>
+    <div class="motiv-div"></div>
+    <div class="motiv-item">
+      <div class="motiv-icon">🎯</div>
+      <div>
+        <div class="motiv-lbl">The Goal</div>
+        <div class="motiv-txt">Enable <strong>faster, data-driven humanitarian response</strong> by turning unprocessed text into structured, searchable, geolocated crisis event records — with zero manual triggering.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ BODY ══ -->
+  <div class="body">
+
+    <!-- ── COL 1 ── -->
+    <div class="col">
+      <div class="card grow">
+        <div class="sh" style="border-color:#ef4444;">
+          <span class="sh-icon">🔄</span>
+          <span class="sh-title">7-Stage Data Pipeline</span>
+        </div>
+        <div class="pipeline">
+
+          <div class="ps">
+            <div class="ps-left">
+              <div class="ps-box" style="background:#eff6ff;">🌐</div>
+              <div class="ps-line"></div>
+            </div>
+            <div class="ps-body">
+              <div class="ps-name">① Crawl</div>
+              <div class="ps-desc">Node.js scraper collects yesterday's articles from DVB Burmese news, triggered automatically every day at midnight via Cloud Scheduler.</div>
+              <div class="ps-tags">
+                <span class="ps-tag" style="border-color:#93c5fd;color:#1d4ed8;background:#eff6ff">Node.js</span>
+                <span class="ps-tag" style="border-color:#93c5fd;color:#1d4ed8;background:#eff6ff">Cloud Scheduler</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="ps-left">
+              <div class="ps-box" style="background:#f0fdfa;">🧹</div>
+              <div class="ps-line"></div>
+            </div>
+            <div class="ps-body">
+              <div class="ps-name">② Clean</div>
+              <div class="ps-desc">Strips HTML, ads, and duplicate content from raw articles, producing clean Burmese plain-text for the ML stage.</div>
+              <div class="ps-tags">
+                <span class="ps-tag" style="border-color:#5eead4;color:#0e7490;background:#f0fdfa">Python</span>
+                <span class="ps-tag" style="border-color:#5eead4;color:#0e7490;background:#f0fdfa">Cloud Run Job</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="ps-left">
+              <div class="ps-box" style="background:#fffbeb;">🧠</div>
+              <div class="ps-line"></div>
+            </div>
+            <div class="ps-body">
+              <div class="ps-name">③ Classify</div>
+              <div class="ps-desc">Gemma-300M multilingual embeddings + scikit-learn pipeline predicts crisis vs. non-crisis for each article.</div>
+              <div class="ps-tags">
+                <span class="ps-tag" style="border-color:#fbbf24;color:#b45309;background:#fffbeb">Gemma 300M</span>
+                <span class="ps-tag" style="border-color:#fbbf24;color:#b45309;background:#fffbeb">sklearn · 16 GB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="ps-left">
+              <div class="ps-box" style="background:#fff7ed;">👤</div>
+              <div class="ps-line"></div>
+            </div>
+            <div class="ps-body">
+              <div class="ps-name">④ Admin Review</div>
+              <div class="ps-desc">Human-in-the-loop web service where analysts confirm or reject classifier predictions before annotation proceeds.</div>
+              <div class="ps-tags">
+                <span class="ps-tag" style="border-color:#fdba74;color:#c2410c;background:#fff7ed">Crisis Admin Service</span>
+                <span class="ps-tag" style="border-color:#fdba74;color:#c2410c;background:#fff7ed">Human-in-the-Loop</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="ps-left">
+              <div class="ps-box" style="background:#fef2f2;">✨</div>
+              <div class="ps-line"></div>
+            </div>
+            <div class="ps-body">
+              <div class="ps-name">⑤ Annotate</div>
+              <div class="ps-desc">Gemini 3 Flash, guided by a 13-rule prompt, wraps each crisis event in <code style="background:#f1f5f9;padding:0 4px;border-radius:3px;font-family:var(--mono)">&lt;event&gt;</code> tags with precise boundaries.</div>
+              <div class="ps-tags">
+                <span class="ps-tag" style="border-color:#fca5a5;color:#b91c1c;background:#fef2f2">Gemini 3 Flash</span>
+                <span class="ps-tag" style="border-color:#fca5a5;color:#b91c1c;background:#fef2f2">Eventarc Trigger</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="ps-left">
+              <div class="ps-box" style="background:#fffbf0;">📋</div>
+              <div class="ps-line"></div>
+            </div>
+            <div class="ps-body">
+              <div class="ps-name">⑥ Extract</div>
+              <div class="ps-desc">Gemini converts tagged events into structured JSON: location, date, type, fatalities, displacement, entities.</div>
+              <div class="ps-tags">
+                <span class="ps-tag" style="border-color:#d4960a;color:#92400e;background:#fffbf0">Structured JSON</span>
+                <span class="ps-tag" style="border-color:#d4960a;color:#92400e;background:#fffbf0">Gemini API</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="ps-left">
+              <div class="ps-box" style="background:#f0fdf4;">🗺️</div>
+            </div>
+            <div class="ps-body">
+              <div class="ps-name">⑦ Visualise</div>
+              <div class="ps-desc">Leaflet.js map + Chart.js charts display confirmed events with filters, timeline, and event detail panel.</div>
+              <div class="ps-tags">
+                <span class="ps-tag" style="border-color:#86efac;color:#15803d;background:#f0fdf4">Leaflet.js</span>
+                <span class="ps-tag" style="border-color:#86efac;color:#15803d;background:#f0fdf4">Chart.js</span>
+                <span class="ps-tag" style="border-color:#86efac;color:#15803d;background:#f0fdf4">OpenStreetMap</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ── COL 2 ── -->
+    <div class="col">
+
+      <!-- Architecture -->
+      <div class="card">
+        <div class="sh" style="border-color:var(--blue);">
+          <span class="sh-icon">☁️</span>
+          <span class="sh-title">System Architecture — Google Cloud Platform</span>
+        </div>
+        <div class="af">
+
+          <div class="af-row">
+            <div class="af-box" style="border-color:#93c5fd;color:#1d4ed8;background:#eff6ff;flex:none;min-width:100px;">
+              🌐 DVB News<span class="af-sub">Source</span>
+            </div>
+            <div class="af-arr">→</div>
+            <div class="af-box" style="border-color:#93c5fd;color:#1d4ed8;background:#eff6ff;">
+              📡 Crawler Job<span class="af-sub">Node.js · Daily cron</span>
+            </div>
+            <div class="af-arr">→</div>
+            <div class="af-box" style="border-color:#5eead4;color:#0e7490;background:#f0fdfa;">
+              🧹 Cleaner Job<span class="af-sub">Python · On-demand</span>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:6px;padding-left:116px;align-items:center;">
+            <span style="font-size:14px;color:var(--tx3)">↓</span>
+            <div class="gcs-box" style="flex:1;">☁️ GCS: raw-articles</div>
+            <span style="font-size:14px;color:var(--tx3)">→</span>
+            <div class="gcs-box" style="flex:1;">☁️ GCS: cleaned-articles</div>
+          </div>
+
+          <div class="af-row">
+            <div class="af-box" style="border-color:#fbbf24;color:#b45309;background:#fffbeb;">
+              🧠 Classifier<span class="af-sub">Gemma ML · 4 CPU/16 GB</span>
+            </div>
+            <div class="af-arr">→</div>
+            <div class="af-box" style="border-color:#fdba74;color:#c2410c;background:#fff7ed;">
+              👤 Admin Review<span class="af-sub">Cloud Run Service</span>
+            </div>
+            <div class="af-arr">→</div>
+            <div class="af-box" style="border-color:#fca5a5;color:#b91c1c;background:#fef2f2;">
+              ✨ Annotator<span class="af-sub">Gemini · Eventarc</span>
+            </div>
+          </div>
+
+          <div class="gcs-strip">
+            <div class="gcs-box">☁️ GCS: crisis-articles</div>
+            <div class="gcs-box">☁️ GCS: pending-review</div>
+            <div class="gcs-box">☁️ GCS: annotated-articles</div>
+          </div>
+
+          <div class="af-row">
+            <div class="af-box" style="border-color:#d4960a;color:#92400e;background:#fffbf0;">
+              📋 Extractor<span class="af-sub">Gemini · JSON</span>
+            </div>
+            <div class="af-arr">→</div>
+            <div class="af-box" style="border-color:#86efac;color:#15803d;background:#f0fdf4;">
+              🗺️ Dashboard<span class="af-sub">Leaflet · Chart.js</span>
+            </div>
+            <div class="af-arr">→</div>
+            <div class="af-box" style="border-color:#c4b5fd;color:#6d28d9;background:#f5f3ff;">
+              👥 Analyst<span class="af-sub">Crisis Response</span>
+            </div>
+          </div>
+
+          <div style="background:var(--bg);border-radius:8px;padding:8px 12px;border:1px solid var(--border);">
+            <div style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--tx3);margin-bottom:6px;">Infrastructure &amp; DevOps</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;">
+              <span class="tag navy">🏗️ Terraform IaC</span>
+              <span class="tag navy">🐙 GitHub Actions CI/CD</span>
+              <span class="tag navy">🐳 Cloud Build + Docker</span>
+              <span class="tag navy">📦 Artifact Registry</span>
+              <span class="tag navy">🔗 Neo4j Dependency Graph</span>
+              <span class="tag navy">📊 MLflow Experiment Tracking</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Dashboard Mockup -->
+      <div class="card grow">
+        <div class="sh" style="border-color:var(--green);">
+          <span class="sh-icon">🗺️</span>
+          <span class="sh-title">Crisis Dashboard — Geospatial Visualisation</span>
+        </div>
+
+        <div class="db-mock">
+          <div class="db-bar">
+            <div class="db-circle" style="background:#ef4444"></div>
+            <div class="db-circle" style="background:#f59e0b"></div>
+            <div class="db-circle" style="background:#22c55e"></div>
+            <div class="db-title-txt">CrisisIntel Myanmar</div>
+            <span style="font-family:var(--mono);font-size:9px;color:#5a7090;margin-left:10px">Date ▸ Type ▸ Location ▸ Reset</span>
+            <div class="db-count">247 events · + Load JSON</div>
+          </div>
+          <div class="db-content">
+            <div class="db-side">
+              <div class="db-s">
+                <div class="db-s-lbl">Total Events</div>
+                <div class="db-s-val" style="color:#e2a84b">247</div>
+              </div>
+              <div class="db-s">
+                <div class="db-s-lbl">Civ. Fatalities</div>
+                <div class="db-s-val" style="color:#ef4444">183</div>
+              </div>
+              <div class="db-s">
+                <div class="db-s-lbl">Non-Civ. Deaths</div>
+                <div class="db-s-val" style="color:#f97316">94</div>
+              </div>
+              <div class="db-s">
+                <div class="db-s-lbl">Displaced</div>
+                <div class="db-s-val" style="color:#f59e0b">12k</div>
+              </div>
+            </div>
+            <div class="db-map-area">
+              <svg width="100%" height="100%" viewBox="0 0 420 160" style="position:absolute;top:0;left:0;opacity:.13">
+                <path d="M185,8 C205,8 235,18 250,36 C268,57 270,80 265,106 C260,132 272,150 268,172 C262,194 250,205 242,212 C228,224 210,230 200,230 C188,222 168,210 156,194 C142,175 134,152 130,128 C124,100 128,76 134,54 C140,32 132,14 145,6 C157,0 172,6 185,8Z" fill="rgba(120,160,255,.6)" stroke="rgba(120,160,255,.7)" stroke-width="1.5"/>
+              </svg>
+              <!-- Map pins -->
+              <div class="pin" style="width:12px;height:12px;background:#ef4444;top:22%;left:43%;box-shadow:0 0 9px rgba(239,68,68,.7)"></div>
+              <div class="pin" style="width:10px;height:10px;background:#ef4444;top:32%;left:49%;box-shadow:0 0 7px rgba(239,68,68,.6)"></div>
+              <div class="pin" style="width:14px;height:14px;background:#ef4444;top:16%;left:39%;box-shadow:0 0 11px rgba(239,68,68,.7)"></div>
+              <div class="pin" style="width:9px;height:9px;background:#f97316;top:50%;left:42%;box-shadow:0 0 7px rgba(249,115,22,.6)"></div>
+              <div class="pin" style="width:11px;height:11px;background:#f97316;top:61%;left:48%;box-shadow:0 0 8px rgba(249,115,22,.6)"></div>
+              <div class="pin" style="width:10px;height:10px;background:#ef4444;top:43%;left:54%;box-shadow:0 0 7px rgba(239,68,68,.6)"></div>
+              <div class="pin" style="width:9px;height:9px;background:#eab308;top:28%;left:62%;box-shadow:0 0 7px rgba(234,179,8,.5)"></div>
+              <div class="pin" style="width:9px;height:9px;background:#3b82f6;top:70%;left:51%;box-shadow:0 0 7px rgba(59,130,246,.6)"></div>
+              <div class="pin" style="width:12px;height:12px;background:#ef4444;top:17%;left:54%;box-shadow:0 0 9px rgba(239,68,68,.7)"></div>
+              <div class="pin" style="width:8px;height:8px;background:#f97316;top:38%;left:38%;box-shadow:0 0 6px rgba(249,115,22,.5)"></div>
+              <!-- Map legend -->
+              <div style="position:absolute;bottom:6px;right:6px;background:rgba(12,18,32,.9);border:1px solid rgba(255,255,255,.12);border-radius:5px;padding:5px 8px;">
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;font-family:monospace;font-size:7px;color:#94a3b8"><div style="width:7px;height:7px;border-radius:50%;background:#ef4444;flex-shrink:0"></div>Armed Conflict</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;font-family:monospace;font-size:7px;color:#94a3b8"><div style="width:7px;height:7px;border-radius:50%;background:#f97316;flex-shrink:0"></div>Airstrike</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;font-family:monospace;font-size:7px;color:#94a3b8"><div style="width:7px;height:7px;border-radius:50%;background:#eab308;flex-shrink:0"></div>Bombing</div>
+                <div style="display:flex;align-items:center;gap:5px;font-family:monospace;font-size:7px;color:#94a3b8"><div style="width:7px;height:7px;border-radius:50%;background:#3b82f6;flex-shrink:0"></div>Natural Disaster</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px;">
+          <div style="background:var(--bg);border-radius:7px;padding:8px 10px;border:1px solid var(--border);">
+            <div style="font-size:10px;font-weight:700;color:var(--tx);margin-bottom:3px;">🔍 Smart Filters</div>
+            <div style="font-size:10px;color:var(--tx2);line-height:1.45;">Date range · Crisis type chips · Region dropdown · Township drill-down · Reset all</div>
+          </div>
+          <div style="background:var(--bg);border-radius:7px;padding:8px 10px;border:1px solid var(--border);">
+            <div style="font-size:10px;font-weight:700;color:var(--tx);margin-bottom:3px;">📊 Charts</div>
+            <div style="font-size:10px;color:var(--tx2);line-height:1.45;">Doughnut type breakdown · Events-per-day timeline · Top locations bar chart</div>
+          </div>
+          <div style="background:var(--bg);border-radius:7px;padding:8px 10px;border:1px solid var(--border);">
+            <div style="font-size:10px;font-weight:700;color:var(--tx);margin-bottom:3px;">📍 Precise Map</div>
+            <div style="font-size:10px;color:var(--tx2);line-height:1.45;">200+ Myanmar township coordinates · Leaflet.js · Click pin for full event details</div>
+          </div>
+          <div style="background:var(--bg);border-radius:7px;padding:8px 10px;border:1px solid var(--border);">
+            <div style="font-size:10px;font-weight:700;color:var(--tx);margin-bottom:3px;">📂 Data Loading</div>
+            <div style="font-size:10px;color:var(--tx2);line-height:1.45;">Drag-and-drop or button · Multiple JSON files · No backend required</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── COL 3 ── -->
+    <div class="col">
+
+      <!-- ML Classifier -->
+      <div class="card">
+        <div class="sh" style="border-color:var(--gold2);">
+          <span class="sh-icon">🧠</span>
+          <span class="sh-title">ML Crisis Classifier</span>
+        </div>
+        <div class="hl" style="background:var(--goldbg);border-color:var(--gold2);">
+          <strong>Gemma-300M</strong> multilingual embeddings capture Burmese text meaning, fed into a <strong>scikit-learn pipeline</strong> for binary crisis classification.
+        </div>
+        <div class="bl">
+          <div class="bi"><div class="bd" style="background:var(--gold2)"></div><div class="bt"><strong>Input:</strong> Cleaned Burmese article text</div></div>
+          <div class="bi"><div class="bd" style="background:var(--gold2)"></div><div class="bt"><strong>Embedding:</strong> Mean-pooled Gemma 300M token vectors</div></div>
+          <div class="bi"><div class="bd" style="background:var(--gold2)"></div><div class="bt"><strong>Output:</strong> Crisis / Non-Crisis classification</div></div>
+          <div class="bi"><div class="bd" style="background:var(--gold2)"></div><div class="bt"><strong>Tracking:</strong> MLflow registry · GCS artifact store</div></div>
+        </div>
+        <div style="margin-top:9px;">
+          <span class="tag red">Armed Conflict</span><span class="tag" style="border-color:#fdba74;color:#c2410c;background:#fff7ed">Airstrike</span><span class="tag accent">Bombing</span><span class="tag blue">Natural Disaster</span><span class="tag teal">Attack</span><span class="tag green">Fire</span>
+        </div>
+      </div>
+
+      <!-- Gemini Annotation -->
+      <div class="card">
+        <div class="sh" style="border-color:var(--red2);">
+          <span class="sh-icon">✨</span>
+          <span class="sh-title">Gemini AI Annotation</span>
+        </div>
+        <div class="hl" style="background:#fef2f2;border-color:#fca5a5;">
+          A <strong>13-rule structured prompt</strong> tells Gemini 3 Flash exactly how to segment articles into crisis events using date, location, and incident boundaries.
+        </div>
+        <div style="background:#f8fafc;border-radius:7px;padding:9px 11px;border:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--tx2);line-height:1.65;margin-bottom:9px;">
+          <span style="color:var(--tx3)">input  →</span> Burmese article text<br>
+          <span style="color:#ef4444">prompt →</span> 13-rule event-boundary rules<br>
+          <span style="color:var(--tx3)">output →</span> <span style="color:var(--navy)">&lt;event&gt;</span> tagged paragraphs<br>
+          <span style="color:var(--tx3)">extract→</span> structured JSON fields
+        </div>
+        <div class="bl">
+          <div class="bi"><div class="bd" style="background:var(--red2)"></div><div class="bt">Events grouped by <strong>same date + location + incident</strong></div></div>
+          <div class="bi"><div class="bd" style="background:var(--red2)"></div><div class="bt">Auto-triggered by <strong>Eventarc</strong> when articles land in GCS</div></div>
+          <div class="bi"><div class="bd" style="background:var(--red2)"></div><div class="bt">Fields extracted: date, location, crisis type, casualties, entities</div></div>
+        </div>
+      </div>
+
+      <!-- Infrastructure -->
+      <div class="card">
+        <div class="sh" style="border-color:var(--teal);">
+          <span class="sh-icon">🔗</span>
+          <span class="sh-title">Smart Infrastructure</span>
+        </div>
+        <div class="bl">
+          <div class="bi"><div class="bd" style="background:var(--teal)"></div><div class="bt"><strong>Content-hash rebuild detection</strong> — Terraform only rebuilds Docker images when source code actually changes.</div></div>
+          <div class="bi"><div class="bd" style="background:var(--teal)"></div><div class="bt"><strong>Neo4j dependency graph</strong> — every job and service is linked to the GCS buckets it reads and writes, providing full data lineage.</div></div>
+          <div class="bi"><div class="bd" style="background:var(--teal)"></div><div class="bt"><strong>GitHub Actions CI/CD</strong> — auto plan on PR, auto deploy on merge. 9 containers via Cloud Build.</div></div>
+        </div>
+      </div>
+
+      <!-- Tech Stack -->
+      <div class="card">
+        <div class="sh" style="border-color:var(--purple);">
+          <span class="sh-icon">⚙️</span>
+          <span class="sh-title">Technology Stack</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          <div>
+            <div style="font-size:8px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--tx3);margin-bottom:5px;">Cloud Platform</div>
+            <div><span class="tag blue">Cloud Run</span><span class="tag blue">Cloud Storage</span><span class="tag blue">Eventarc</span><span class="tag blue">Cloud Scheduler</span><span class="tag blue">Cloud Build</span></div>
+          </div>
+          <div>
+            <div style="font-size:8px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--tx3);margin-bottom:5px;">AI / Machine Learning</div>
+            <div><span class="tag red">Gemini 3 Flash</span><span class="tag accent">Gemma 300M</span><span class="tag">scikit-learn</span><span class="tag">MLflow</span><span class="tag">PyTorch</span></div>
+          </div>
+          <div>
+            <div style="font-size:8px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--tx3);margin-bottom:5px;">Backend &amp; Infrastructure</div>
+            <div><span class="tag green">Terraform</span><span class="tag green">Neo4j</span><span class="tag">Python 3.12</span><span class="tag">Node.js</span><span class="tag">Docker</span></div>
+          </div>
+          <div>
+            <div style="font-size:8px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--tx3);margin-bottom:5px;">Frontend Visualisation</div>
+            <div><span class="tag teal">Leaflet.js</span><span class="tag teal">Chart.js 4</span><span class="tag">OpenStreetMap</span><span class="tag">HTML/CSS/JS</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Outcomes -->
+      <div class="card grow">
+        <div class="sh" style="border-color:var(--navy);">
+          <span class="sh-icon">🏁</span>
+          <span class="sh-title">Key Outcomes</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          <div class="ci"><div class="cn" style="background:var(--blue)">1</div><div class="ct"><strong>Zero-touch daily pipeline</strong> — raw Burmese news to structured JSON with no manual trigger after admin review.</div></div>
+          <div class="ci"><div class="cn" style="background:var(--gold)">2</div><div class="ct"><strong>Burmese-language ML</strong> — Gemma multilingual embeddings enable crisis detection in a low-resource language.</div></div>
+          <div class="ci"><div class="cn" style="background:var(--red2)">3</div><div class="ct"><strong>Precise event segmentation</strong> — 13-rule Gemini prompt correctly handles multi-event articles by date and location.</div></div>
+          <div class="ci"><div class="cn" style="background:var(--teal)">4</div><div class="ct"><strong>Full data lineage</strong> — Neo4j tracks every dependency across all 9 containers and 6 GCS buckets.</div></div>
+          <div class="ci"><div class="cn" style="background:var(--green)">5</div><div class="ct"><strong>Analyst-ready dashboard</strong> — geospatial map with 200+ Myanmar townships, timeline, charts, drag-and-drop JSON.</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ FOOTER ══ -->
+  <div class="ftr">
+    <div class="ftr-s">
+      <div class="ftr-lbl">Institution</div>
+      <div class="ftr-v"><strong>Chulalongkorn University</strong> · Dept. of Computer Engineering · Senior Project 2026</div>
+    </div>
+    <div class="ftr-div"></div>
+    <div class="ftr-s">
+      <div class="ftr-lbl">Data Source</div>
+      <div class="ftr-v">Democratic Voice of Burma (DVB) · <strong>dvb.no/burmese</strong></div>
+    </div>
+    <div class="ftr-div"></div>
+    <div class="ftr-s">
+      <div class="ftr-lbl">Deployment</div>
+      <div class="ftr-v">GCP <strong>asia-southeast1 (Singapore)</strong> · 9 containers · 6 GCS buckets</div>
+    </div>
+    <div class="ftr-div"></div>
+    <div class="ftr-s">
+      <div class="ftr-lbl">IaC / Tracking</div>
+      <div class="ftr-v"><strong>Terraform</strong> · <strong>Neo4j</strong> · <strong>MLflow</strong> · <strong>GitHub Actions</strong></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
