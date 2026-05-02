@@ -215,6 +215,7 @@ async function uploadTextToGCS(content, destinationPath) {
 
 module.exports = {
     uploadFileToGCS,
+    objectExists,
     uploadJSONToGCS,
     uploadTextToGCS
 };

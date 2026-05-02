@@ -73,9 +73,9 @@ locals {
       enable_scheduler = false # Triggered by workflow
       schedule         = ""
       enable_gpu       = false
-      cpu_limit        = "1"
+      cpu_limit        = "2"
       memory_limit     = "512Mi"
-      timeout          = "600s"
+      timeout          = "1200s"
       environment_variables = {
         GCS_BUCKET = google_storage_bucket.pipeline_data.name
         GCP_REGION = var.region

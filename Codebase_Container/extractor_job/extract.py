@@ -25,74 +25,70 @@ logger = logging.getLogger(__name__)
 
 EXTRACTION_PROMPT = '''You are an information extraction system. Your task is to read an article that contains one or more <event> ... </event> blocks and extract structured information only from the text inside those blocks.
 
-Follow the instructions below exactly. Generate the extracted information in English only, and do not produce any output based on text outside the <event> tags.
+Follow the instructions below exactly and only do what I ask you to do. Generate the extracted information in English only, and do not produce any output based on text outside the <event> tags.
 
 If the article contains:
 	•	One <event> ... </event> block → output one JSON object (wrapped in a JSON array).
 	•	Two or three <event> ... </event> blocks → output two or three JSON objects in one JSON array.
 
+
 You must output exactly one JSON object per <event> block.
 
+
 IMPORTANT OUTPUT RULES:
-	•	Return ONLY the JSON array.
-	•	Do NOT include explanations, reasoning, or any additional text.
-	•	Do NOT use markdown code blocks (no ```json).
-	•	Start your response directly with [ and end with ].
-	•	No text before [ or after ].
-	•	civilian_fatalities and armed_personnel_fatalities must be integers only when provided (not strings).
+	•	Return ONLY the raw JSON array. Your entire response must be ONLY the JSON array itself.
+	•	Do NOT think out loud. Do NOT write any reasoning, analysis, working steps, bullet points, or notes — not before, not after, not inside the JSON.
+	•	Do NOT use markdown code blocks (no ```json or ``` of any kind).
+	•	Your response must begin with the character [ and end with the character ]. There must be zero characters before [ and zero characters after ].
+	•	Any response that contains text outside the JSON array is incorrect.
+	•	civilian_fatalities and non_civilian_fatalities must be integers only when provided (not strings).
 	•	number_of_people_displaced must be an integer if provided; otherwise "NA".
+
 
 SCOPE AND SPECIAL RULES (VERY IMPORTANT)
 	1.	The article contains text both inside and outside <event> ... </event> tags.
 	2.	You must completely ignore any text outside <event> ... </event> tags.
-		•	Treat outside text as if it does not exist.
-		•	Do NOT use it to fill missing fields, refine locations, or guess dates.
+	•	Treat outside text as if it does not exist.
+	•	Do NOT use it to fill missing fields, refine locations, or guess dates.
 	3.	Each <event> ... </event> block represents exactly one distinct event.
-		•	Output one and only one JSON object for each <event> block.
-		•	Do NOT split one <event> block into multiple events.
-		•	Do NOT merge multiple <event> blocks into one event.
+	•	Output one and only one JSON object for each <event> block.
+	•	Do NOT split one <event> block into multiple events.
+	•	Do NOT merge multiple <event> blocks into one event.
 	4.	If there are multiple <event> blocks, your response must be a single JSON array:
 [ {...}, {...}, ... ]
 
 ⸻
 CRISIS TYPE DEFINITIONS
 Use the following rules to decide crisis_type:
-	•	Armed Conflict – Fighting between two or more armed organizations (military, militias, armed groups) in combat over territory, resistance, or control.
-	•	Attack – Unilateral violence by armed actors directly targeting civilians.
-	•	Airstrike – Explosive or projectile attacks carried out from the air by planes, helicopters, or drones.
-	•	Bombing – Ground-based planted or manually delivered explosives.
-	•	Fire – Armed organizations deliberately use arson to burn homes, buildings, villages, or vehicles.
-	•	Natural disaster – Crises caused by natural forces such as floods, earthquakes, or landslides (not human actors).
+	•	Violent_incident → A reported event involving physical harm, use of force, or threat of harm affecting people or locations. This category includes situations where weapons, force or confrntation are described in the text.
+	•	Explosion event → A reported event involving an explosion, blast or detonation. This includes any instance where an explosive effect is described, regardless of how it is delivered or characterized.
+	•	Fire → Armed organizations deliberately use arson to burn homes, buildings, villages, or vehicles.
+	•	Natural disaster → Crises caused by natural forces such as floods, earthquakes, or landslides (not human actors).
 
 ⸻
 FIELD GUIDELINES
-	•	crisis_type – Must be exactly one of the six categories above.
-	•	location – Comma-separated address including only the parts that are known, in this order: Township (if known), Region OR State (if known), Country.
-Do NOT include districts, villages, street names, or specific landmarks.
-Do NOT use "NA" as a placeholder for unknown parts — simply omit them.
-If only the country is known, use just the country (e.g., Myanmar).
-If only the state is known, use State, Country (e.g., Rakhine State, Myanmar).
-Only use "NA" if the location is completely unknown.
+	•	crisis_type → Must be exactly one of the four categories above.
+	•	location → Comma-separated address in this order: Township, Region OR State, Country.
+Do NOT include districts, villages, street names, or specific landmarks. 
 Example: Mawlamyine Township, Mon State, Myanmar
-	•	date – Use DD/MM/YYYY format (example: 13/03/2023). Do not rely only on explicitly written calendar dates. If the event text uses relative time expressions such as "yesterday", "today", or "last night", convert them into an exact DD/MM/YYYY date by using the article's publication date (the source date) as the reference. If not mentioned anywhere, use "NA".
-	•	affected_civilian – "TRUE" if civilians are mentioned as affected (killed, injured, captured), "FALSE" if explicitly stated as not affected, "NA" if not mentioned.
-	•	affected_women – "TRUE" if women are mentioned as affected, "FALSE" if explicitly stated as not affected, "NA" if not mentioned.
-	•	affected_children – "TRUE" if children are mentioned as affected, "FALSE" if explicitly stated as not affected, "NA" if not mentioned.
-	•	civilian_properties_damage – "TRUE" only if civilian-owned properties are damaged (do not count military/armed group facilities). "FALSE" if civilian properties are explicitly not damaged. "NA" if not mentioned.
-	•	civilian_forced_displacement – "TRUE" if civilians are explicitly described as fleeing, being evacuated, or forcibly displaced. "FALSE" if explicitly stated that no displacement occurred. "NA" if not mentioned.
-	•	civilian_fatalities – Integer count of civilian deaths (e.g., 3). If not clearly stated or not given, use "NA".
-	•	armed_personnel_fatalities – Integer count of armed personnel deaths (military, PDF, armed groups). If not clearly stated or not given, use "NA".
-	•	number_of_people_displaced – Integer count if explicitly provided; otherwise "NA".
-	•	involved_parties –
+	•	date → Use DD/MM/YYYY format (example: 13/03/2023).Do not rely only on explicitly written calendar dates. If the event text uses relative time expressions such as “yesterday”, “today”, or “last night”, convert them into an exact DD/MM/YYYY date by using the article’s publication date (the source date) as the reference. If not mentioned anywhere, use "NA".
+	•	affected_civilian → "TRUE" if civilians are mentioned as affected (killed, injured, captured), "FALSE" if explicitly stated as not affected, "NA" if not mentioned.
+	•	affected_women → "TRUE" if women are mentioned as affected, "FALSE" if explicitly stated as not affected, "NA" if not mentioned.
+	•	affected_children → "TRUE" if children are mentioned as affected, "FALSE" if explicitly stated as not affected, "NA" if not mentioned.
+	•	infrastructure_damage → "TRUE" only if civilian-owned properties are damaged (do not count military/armed group facilities). "FALSE" if civilian properties are explicitly not damaged. "NA" if not mentioned.
+	•	displacement → "TRUE"  if civilians are explicitly described as fleeing, being evacuated, or forcibly displaced. "FALSE" if explicitly stated that no displacement occurred. "NA" if not mentioned.
+	•	civilian_fatalities → Integer count of civilian deaths (e.g., 3). If not clearly stated or not given, use "NA".
+	•	non-civilian_fatalities → Integer count of armed personnel deaths (military, PDF, armed groups). If not clearly stated or not given, use "NA".
+	•	number_of_people_displaced → Integer count if explicitly provided; otherwise "NA".
+	•	entities → 
 
-	INVOLVED PARTIES (CRITICAL RULES):
+	entities (CRITICAL RULES):
 	This list must include ONLY the organized groups (military, militias, or rebel groups) that are active combatants or primary perpetrators of the event.
 	In Armed Conflict: Include all organizations actively fighting each other.
-	In Airstrike, Bombing, or Fire: Include only the organization(s) that carried out the action. Don't include other organizations that are victims. Just consider main organization that caused the event.
+	In Airstrike, Bombing, or Fire: Include only the organization(s) that carried out the action. Don't include other organizations that are victims. Just consider the main organization that caused the event.
 	Format: A list of strings, e.g., ["Military", "People's Defense Force (PDF)"]. Return [] if none.
-	Natural Disaster Rule: If crisis_type is Natural disaster, the involved_parties key must be omitted entirely from the JSON object.
+	Natural Disaster Rule: If crisis_type is Natural disaster, the entity's key must be omitted entirely from the JSON object.
 
-Article:
 '''
 
 
@@ -154,7 +150,7 @@ def write_events_to_firestore(
     collection_ref = firestore_client.collection(collection_name)
 
     for idx, event in enumerate(events):
-        event_id = build_event_id(source_folder_hash, filename, idx)
+        event_id = build_event_id(output_hash, filename, idx)
         doc_id = event_id
         event_payload = event if isinstance(event, dict) else {"raw_value": event}
 

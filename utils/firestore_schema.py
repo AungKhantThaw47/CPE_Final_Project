@@ -30,10 +30,10 @@ def normalize_id_part(value: str) -> str:
     return cleaned or "unknown"
 
 
-def build_event_id(source_folder_hash: str, filename: str, event_index: int) -> str:
+def build_event_id(output_hash: str, filename: str, event_index: int) -> str:
     """Build event_id as {folder_hash}_{article_id}_{event_index}."""
     article_id = normalize_id_part(os.path.splitext(filename)[0])
-    folder_hash_ref = normalize_id_part(source_folder_hash or "legacy")
+    folder_hash_ref = normalize_id_part(output_hash or "legacy")
     return f"{folder_hash_ref}_{article_id}_{event_index}"
 
 

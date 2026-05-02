@@ -3,6 +3,7 @@ const env = require("dotenv").config();
 const cheerio = require("cheerio");
 const { createHash } = require("crypto");
 const fs = require("fs");
+const { Storage } = require('@google-cloud/storage');
 const { uploadTextToGCS, uploadJSONToGCS } = require("./utils/gcs_utils");
 
 const CONTENT_HASH = process.env.CONTENT_HASH || "content_hash_placeholder";
@@ -10,6 +11,8 @@ const url = "https://burmese.dvb.no/categories/news?page=1";
 const defaultTargetDate = new Date();
 defaultTargetDate.setDate(defaultTargetDate.getDate() - 1); // yesterday
 defaultTargetDate.setHours(0, 0, 0, 0);
+const GCS_BUCKET = process.env.GCS_BUCKET || null;
+const gcsStorage = GCS_BUCKET ? new Storage() : null;
 
 function formatDate(date) {
     return date.toISOString().split("T")[0];
@@ -131,6 +134,46 @@ function groupPostsByDate(posts) {
     }
 
     return grouped;
+}
+
+function getArticleMarkerPath(post) {
+    const dateStr = post.date.split("T")[0];
+    const articleKey = createHash("md5").update(post.link).digest("hex");
+    return `dvb/${CONTENT_HASH}/${dateStr}/processed/${articleKey}.json`;
+}
+
+async function articleAlreadyProcessed(post) {
+    if (!GCS_BUCKET || !gcsStorage) {
+        return false;
+    }
+
+    const markerPath = getArticleMarkerPath(post);
+    const bucket = gcsStorage.bucket(GCS_BUCKET);
+    const [exists] = await bucket.file(markerPath).exists();
+
+    if (exists) {
+        console.log(`⏭️  Duplicate article found in GCS, skipping fetch: ${post.link}`);
+    }
+
+    return exists;
+}
+
+async function markArticleProcessed(post, contentUrl) {
+    if (!GCS_BUCKET || !gcsStorage) {
+        return;
+    }
+
+    const markerPath = getArticleMarkerPath(post);
+    const bucket = gcsStorage.bucket(GCS_BUCKET);
+    const payload = JSON.stringify({
+        title: post.title,
+        link: post.link,
+        date: post.date,
+        content_file: contentUrl,
+        processed_at: new Date().toISOString()
+    }, null, 2);
+
+    await bucket.file(markerPath).save(payload, { contentType: 'application/json' });
 }
 
 function getRequestedDatesInRange() {
@@ -324,6 +367,11 @@ async function fetchPostContents() {
             const post = postdata[i];
             console.log(`[${i + 1}/${postdata.length}] Fetching: ${post.title.substring(0, 50)}...`);
 
+            if (await articleAlreadyProcessed(post)) {
+                post.content_file = "Duplicate skipped before fetch";
+                continue;
+            }
+
             const { data } = await axios.get(post.link);
             const $ = cheerio.load(data);
 
@@ -349,6 +397,8 @@ async function fetchPostContents() {
                 } else {
                     console.log(`   Already exists, skipped upload: ${gcsPath}`);
                 }
+
+                await markArticleProcessed(post, uploadResult.url);
             } else {
                 post.content_file = "Upload skipped - no GCS bucket configured";
                 console.log(`   Upload skipped`);
