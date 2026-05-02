@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crisis Article Review</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+    <script src="{{ url_for('static', filename='admin.js') }}" defer></script>
+</head>
+<body>
+    <main class="container">
+        <header class="header">
+            <h1>Crisis Article Review</h1>
+            <div class="counts">
+                <p class="count">Pending classification: <strong>{{ pending_articles_count }}</strong></p>
+                <p class="count">Pending annotation review: <strong>{{ pending_annotation_articles_count }}</strong></p>
+            </div>
+        </header>
+
+        {% for hash_status in hash_statuses %}
+        <section class="hash-status {{ hash_status.class_name }}">
+            <strong>{{ hash_status.text }}</strong>
+            <div class="hash-line">
+                <span>Neo4j FolderHash:</span>
+                <code id="{{ hash_status.system_hash_id }}">{{ hash_status.system_db_hash }}</code>
+                <button type="button" class="copy-btn" data-copy-target="{{ hash_status.system_hash_id }}">Copy</button>
+            </div>
+        </section>
+        {% endfor %}
+
+        <div class="tabs">
+            <button class="tab-button active" data-tab="classification">Pending Classification Review</button>
+            <button class="tab-button" data-tab="annotation">Pending Annotation Review</button>
+        </div>
+
+        <section id="classification" class="tab-content active">
+            {% if not pending_grouped %}
+            <p class="empty">No pending classification articles.</p>
+            {% else %}
+                {% for group in pending_grouped %}
+                <h3 class="date-header">{{ group.date }} <span class="date-count">({{ group.articles | length }} articles)</span></h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Hash</th>
+                            <th>Size</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for article in group.articles %}
+                        <tr data-blob="{{ article.blob_name }}">
+                            <td>{{ article.filename }}</td>
+                            <td>{{ article.hash }}</td>
+                            <td>{{ article.size }} bytes</td>
+                            <td>
+                                <form method="POST" action="/admin/confirm" class="inline action-form">
+                                    <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
+                                    <button type="submit" class="btn confirm">Confirm</button>
+                                </form>
+                                <form method="POST" action="/admin/reject" class="inline action-form">
+                                    <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
+                                    <button type="submit" class="btn reject">Reject</button>
+                                </form>
+                                <a href="/admin/view?blob={{ article.blob_name }}" target="_blank" class="btn view">View</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endfor %}
+            {% endif %}
+        </section>
+
+        <section id="annotation" class="tab-content">
+            {% if not annotation_grouped %}
+            <p class="empty">No pending annotation articles.</p>
+            {% else %}
+                {% for group in annotation_grouped %}
+                <h3 class="date-header">{{ group.date }} <span class="date-count">({{ group.articles | length }} articles)</span></h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Hash</th>
+                            <th>Size</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for article in group.articles %}
+                        <tr data-blob="{{ article.blob_name }}">
+                            <td>{{ article.filename }}</td>
+                            <td>{{ article.hash }}</td>
+                            <td>{{ article.size }} bytes</td>
+                            <td>
+                                <form method="POST" action="/admin/confirm_annotation" class="inline action-form">
+                                    <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
+                                    <button type="submit" class="btn confirm">Confirm</button>
+                                </form>
+                                <form method="POST" action="/admin/reject_annotation" class="inline action-form">
+                                    <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
+                                    <button type="submit" class="btn reject">Reject</button>
+                                </form>
+                                <a href="/admin/view?blob={{ article.blob_name }}" target="_blank" class="btn view">View</a>
+                                <a href="/admin/view_event_tags?blob={{ article.blob_name }}" target="_blank" class="btn view-events">View Event Tags</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endfor %}
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>

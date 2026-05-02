@@ -14,9 +14,9 @@ data "external" "username" {
 
 # OS detection for cross-platform build scripts
 locals {
-  is_windows_env = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
-  is_windows     = local.is_windows_env
-  image_path     = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
+  is_windows_env            = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
+  is_windows                = local.is_windows_env
+  image_path                = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/${var.image_name}:${var.image_tag}"
   pipeline_data_bucket_name = "${var.project_id}-pipeline-data"
 
   # Auto-computed deployment context (use var overrides if provided, otherwise auto-detect)
@@ -73,9 +73,9 @@ locals {
       enable_scheduler = false # Triggered by workflow
       schedule         = ""
       enable_gpu       = false
-      cpu_limit        = "1"
+      cpu_limit        = "2"
       memory_limit     = "512Mi"
-      timeout          = "600s"
+      timeout          = "1200s"
       environment_variables = {
         GCS_BUCKET = google_storage_bucket.pipeline_data.name
         GCP_REGION = var.region
@@ -98,9 +98,9 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        GCS_BUCKET    = google_storage_bucket.pipeline_data.name
-        NEO4J_URI     = var.neo4j_uri
-        NEO4J_USER    = var.neo4j_user
+        GCS_BUCKET     = google_storage_bucket.pipeline_data.name
+        NEO4J_URI      = var.neo4j_uri
+        NEO4J_USER     = var.neo4j_user
         NEO4J_PASSWORD = var.neo4j_password
         NEO4J_DATABASE = var.neo4j_database
       }
@@ -150,6 +150,10 @@ locals {
       environment_variables = {
         CRISIS_BUCKET  = google_storage_bucket.pipeline_data.name
         GEMINI_API_KEY = var.gemini_api_key
+        NEO4J_URI      = var.neo4j_uri
+        NEO4J_USER     = var.neo4j_user
+        NEO4J_PASSWORD = var.neo4j_password
+        NEO4J_DATABASE = var.neo4j_database
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -169,9 +173,42 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        CRISIS_BUCKET     = google_storage_bucket.pipeline_data.name
-        EXTRACTION_BUCKET = google_storage_bucket.pipeline_data.name
-        GEMINI_API_KEY    = var.gemini_api_key
+        CRISIS_BUCKET        = google_storage_bucket.pipeline_data.name
+        EXTRACTION_BUCKET    = google_storage_bucket.pipeline_data.name
+        GEMINI_API_KEY       = var.gemini_api_key
+        NEO4J_URI            = var.neo4j_uri
+        NEO4J_USER           = var.neo4j_user
+        NEO4J_PASSWORD       = var.neo4j_password
+        NEO4J_DATABASE       = var.neo4j_database
+        FIRESTORE_COLLECTION = "events"
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter",
+        "roles/datastore.user"
+      ]
+    }
+
+    gcs-folder-rename-job = {
+      codebase_path    = "${path.root}/Codebase_Container/gcs_folder_rename_job"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/gcs-folder-rename:latest"
+      description      = "Internal GCS folder rename and relocation job"
+      build_image      = true
+      enable_scheduler = false
+      schedule         = ""
+      enable_gpu       = false
+      cpu_limit        = "1"
+      memory_limit     = "512Mi"
+      timeout          = "3600s"
+      task_count       = 8
+      parallelism      = 4
+      environment_variables = {
+        GCS_BUCKET         = google_storage_bucket.pipeline_data.name
+        SOURCE_PREFIX      = ""
+        DESTINATION_PREFIX = ""
+        APPLY              = "false"
+        OVERWRITE          = "false"
+        THREAD_WORKERS     = "4"
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -219,18 +256,40 @@ locals {
       port            = 8080
       allow_public    = true
       environment_variables = {
-        CRISIS_BUCKET         = google_storage_bucket.pipeline_data.name
-        GOOGLE_CLOUD_PROJECT  = var.project_id
-        GCP_REGION            = var.region
-        NEO4J_URI             = var.neo4j_uri
-        NEO4J_USER            = var.neo4j_user
-        NEO4J_PASSWORD        = var.neo4j_password
-        NEO4J_DATABASE        = var.neo4j_database
+        CRISIS_BUCKET        = google_storage_bucket.pipeline_data.name
+        GOOGLE_CLOUD_PROJECT = var.project_id
+        GCP_REGION           = var.region
+        NEO4J_URI            = var.neo4j_uri
+        NEO4J_USER           = var.neo4j_user
+        NEO4J_PASSWORD       = var.neo4j_password
+        NEO4J_DATABASE       = var.neo4j_database
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
         "roles/logging.logWriter",
         "roles/run.invoker"
+      ]
+      cloud_sql_instances = []
+    }
+
+    events-api = {
+      codebase_path   = "${path.root}/Codebase_Container/events_api"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/events-api:latest"
+      description     = "Events backend API for Firestore data"
+      build_image     = true
+      cpu_limit       = "1"
+      memory_limit    = "512Mi"
+      min_instances   = 0
+      max_instances   = 2
+      port            = 8080
+      allow_public    = true
+      environment_variables = {
+        GOOGLE_CLOUD_PROJECT = var.project_id
+        FIRESTORE_COLLECTION = "events"
+      }
+      service_account_roles = [
+        "roles/datastore.user",
+        "roles/logging.logWriter"
       ]
       cloud_sql_instances = []
     }
@@ -250,12 +309,25 @@ resource "google_project_service" "apis" {
     "sqladmin.googleapis.com",
     "cloudscheduler.googleapis.com",
     "eventarc.googleapis.com",
+    "firestore.googleapis.com",
     "workflows.googleapis.com",
     "workflowexecutions.googleapis.com"
   ])
 
   service            = each.value
   disable_on_destroy = false
+}
+
+# ============================================
+# Firestore Database
+# ============================================
+resource "google_firestore_database" "default" {
+  project     = var.project_id
+  name        = "(default)"
+  location_id = var.region
+  type        = "FIRESTORE_NATIVE"
+
+  depends_on = [google_project_service.apis]
 }
 
 # ============================================
@@ -352,6 +424,8 @@ module "jobs" {
   cpu_limit    = each.value.cpu_limit
   memory_limit = each.value.memory_limit
   timeout      = each.value.timeout
+  task_count   = lookup(each.value, "task_count", 1)
+  parallelism  = lookup(each.value, "parallelism", 1)
 
   # Environment variables
   environment_variables = each.value.environment_variables
@@ -551,4 +625,3 @@ resource "google_cloud_scheduler_job" "daily_pipeline_trigger" {
     google_project_iam_member.workflow_invoker
   ]
 }
-

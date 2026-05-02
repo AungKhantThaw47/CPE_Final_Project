@@ -160,6 +160,18 @@
       }
     },
     {
+      "key": "service:events-api",
+      "label": "CloudRunService",
+      "properties": {
+        "name": "events-api",
+        "runtime": "Python",
+        "cpu": "1",
+        "memory": "512Mi",
+        "min_instances": 0,
+        "max_instances": 2
+      }
+    },
+    {
       "key": "job:dvb-annotator-job",
       "label": "CloudRunJob",
       "properties": {
@@ -179,6 +191,17 @@
         "cpu": "1",
         "memory": "512Mi",
         "trigger": "admin_confirm_annotation"
+      }
+    },
+    {
+      "key": "job:gcs-folder-rename-job",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "gcs-folder-rename-job",
+        "runtime": "Python + Cloud Run tasks",
+        "cpu": "1",
+        "memory": "512Mi",
+        "trigger": "manual"
       }
     },
     {
@@ -311,6 +334,12 @@
     },
     {
       "from": "project:cpe-final-project",
+      "to": "service:events-api",
+      "type": "SERVES",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
       "to": "job:dvb-annotator-job",
       "type": "RUNS",
       "properties": {}
@@ -366,6 +395,12 @@
     {
       "from": "registry:artifact-registry",
       "to": "service:crisis-admin",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "service:events-api",
       "type": "HOSTS_IMAGE_FOR",
       "properties": {}
     },
@@ -585,6 +620,14 @@
       "type": "TRIGGERS",
       "properties": {
         "action": "confirm_annotation"
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "bucket:pipeline-data",
+      "type": "READS_FROM",
+      "properties": {
+        "path": "crisis_articles/"
       }
     }
   ]

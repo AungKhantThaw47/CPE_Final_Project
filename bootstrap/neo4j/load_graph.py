@@ -421,6 +421,40 @@ def load_graph(config: dict, manifest: dict) -> None:
             },
         )
 
+    # Prune relationships between manifest-managed nodes that are NOT present
+    # in the incoming manifest. This removes stale edges (e.g. leftover
+    # DEPENDS_ON_DATA_FROM self-loops) while leaving historical relationships
+    # attached to nodes that are not part of this manifest alone.
+    if not config["clean"]:
+        allowed_node_keys = [node.get("key") for node in manifest.get("nodes", []) if node.get("key")]
+        allowed_relationships = [
+            {"from": r.get("from"), "to": r.get("to"), "type": r.get("type")}
+            for r in manifest.get("relationships", [])
+        ]
+
+        run_cypher(
+            base_uri,
+            config["user"],
+            config["password"],
+            config["database"],
+            """
+            // Delete relationships between nodes present in the manifest
+            // that are not explicitly declared in the manifest's relationship
+            // list. Uses parameterized allowed_relationships to avoid
+            // accidentally removing valid links.
+            UNWIND $node_keys AS nk
+            WITH collect(DISTINCT nk) AS node_keys, $allowed_rels AS allowed
+            MATCH (a)-[r]->(b)
+            WHERE a.key IN node_keys AND b.key IN node_keys
+              AND NOT any(x IN allowed WHERE x.from = a.key AND x.to = b.key AND x.type = type(r))
+            DELETE r
+            """,
+            {
+                "node_keys": allowed_node_keys,
+                "allowed_rels": allowed_relationships,
+            },
+        )
+
 
 def main() -> int:
     config = load_config()

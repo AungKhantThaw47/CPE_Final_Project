@@ -45,14 +45,14 @@ flowchart TD
         ADM["Admin reviews article\nApprove → move to\ncrisis_articles/"]
     end
 
-    subgraph AnnotatorService["Cloud Run Service — dvb-annotator\n(Eventarc: crisis_articles/ write)"]
-        AN1["Receive Eventarc event"]
+    subgraph AnnotatorService["Cloud Run Service — dvb-annotator\n(Admin-triggered: run dvb-annotator-job after crisis-admin move)"]
+        AN1["Invoked by admin job run\n(e.g. gcloud run jobs execute dvb-annotator-job)"]
         AN2["Call Gemini API\nAdd structured annotations"]
         AN3["Write annotated JSON\nto annotated_articles/"]
     end
 
-    subgraph ExtractorService["Cloud Run Service — dvb-extractor\n(Eventarc: annotated_articles/ write)"]
-        EX1["Receive Eventarc event"]
+    subgraph ExtractorService["Cloud Run Service — dvb-extractor\n(Admin-triggered: run dvb-extractor-job after annotation)"]
+        EX1["Invoked by admin job run\n(e.g. gcloud run jobs execute dvb-extractor-job)"]
         EX2["Call Gemini API\nExtract crisis events"]
         EX3["Write structured\nextraction JSON"]
     end
@@ -84,11 +84,11 @@ flowchart TD
     CR1 --> ADM
     ADM -->|"Approve"| CR2
 
-    CR2 -->|"Eventarc GCS trigger"| AN1
+    CR2 -->|"Admin: run dvb-annotator-job"| AN1
     AN1 --> AN2 --> AN3
     AN3 --> CR3
 
-    CR3 -->|"Eventarc GCS trigger"| EX1
+    CR3 -->|"Admin: run dvb-extractor-job"| EX1
     EX1 --> EX2 --> EX3
     EX3 --> EXT
 
@@ -114,5 +114,5 @@ flowchart TD
 | `dvb-text-cleaner-job` | Manual / workflow | Ad-hoc |
 | `crisis-classifier-job` | Manual / workflow | Ad-hoc |
 | `daily-data-processor` | Cloud Scheduler | `0 * * * *` (every hour) |
-| `dvb-annotator` | Eventarc (GCS) | Object written to `crisis_articles/` |
-| `dvb-extractor` | Eventarc (GCS) | Object written to `annotated_articles/` |
+| `dvb-annotator` | Admin-triggered job | Run `dvb-annotator-job` after `crisis_articles/` move |
+| `dvb-extractor` | Admin-triggered job | Run `dvb-extractor-job` after `annotated_articles/` produced |

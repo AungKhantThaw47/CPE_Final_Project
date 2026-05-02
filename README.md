@@ -234,6 +234,25 @@ gcloud run services list --region=asia-southeast1
 gcloud scheduler jobs list --location=asia-southeast1
 ```
 
+### 4. Restart and Redeploy the System
+
+Use this when you need a clean slate and want to bring the whole system back up again.
+
+```bash
+# Destructive reset: clears Firestore events, Neo4j hash nodes, and GCS bucket objects
+make system-restart CONFIRM=true
+
+# Rebuild, apply, and run the post-apply sync
+make deploy AUTO_APPROVE=true
+```
+
+What happens during the redeploy:
+- `system-restart` removes transient data only, not the Terraform code itself
+- `deploy` runs `terraform plan` and `terraform apply`, then executes `make post-apply`
+- `post-apply` regenerates the Neo4j graph manifest and seeds `.FOLDER_CREATED` markers in GCS using the current FolderHash values when available
+
+If you only need to refresh the Neo4j graph without a full reset, use `make restart-graph` instead.
+
 ## Usage
 
 ### Running Jobs Manually
