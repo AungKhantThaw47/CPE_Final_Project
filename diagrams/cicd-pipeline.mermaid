@@ -1,0 +1,57 @@
+flowchart TD
+    subgraph Triggers["Workflow Triggers"]
+        TR1["Push to any branch"]
+        TR2["Pull Request opened / updated"]
+        TR3["workflow_dispatch<br>(manual)"]
+    end
+
+    subgraph Plan["Job: terraform-plan<br>(all events)"]
+        P1["Checkout code"]
+        P2["Cache Terraform plugins"]
+        P3["Setup Terraform v1.14.3"]
+        P4["Authenticate to GCP<br>(GOOGLE_CREDENTIALS secret)"]
+        P5["Setup gcloud CLI"]
+        P6["Make scripts executable<br>chmod +x scripts/*.sh"]
+        P7["terraform fmt -check"]
+        P8["terraform init"]
+        P9["terraform validate"]
+        P10["terraform plan -out=tfplan"]
+        P11{"Is Pull Request?"}
+        P12["Post plan summary<br>as PR comment"]
+        P13["Upload tfplan artifact<br>(5-day retention)"]
+    end
+
+    subgraph Apply["Job: terraform-apply<br>(push to main only)"]
+        A1["Checkout code"]
+        A2["Cache Terraform plugins"]
+        A3["Setup Terraform v1.14.3"]
+        A4["Authenticate to GCP"]
+        A5["Setup gcloud CLI"]
+        A6["Configure Docker<br>for Artifact Registry"]
+        A7["terraform init"]
+        A8["Download tfplan artifact"]
+        A9["terraform apply -auto-approve tfplan"]
+        A10["terraform output -json"]
+    end
+
+    subgraph GCP["GCP Resources Updated"]
+        G1["Docker images built<br>via Cloud Build"]
+        G2["Cloud Run Jobs deployed"]
+        G3["Cloud Run Services deployed"]
+        G4["GCS Buckets updated"]
+        G5["IAM roles assigned"]
+        G6["Cloud Scheduler rules updated"]
+    end
+
+    TR1 & TR2 & TR3 --> P1
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6
+    P6 --> P7 --> P8 --> P9 --> P10
+    P10 --> P11
+    P11 -->|Yes| P12
+    P11 -->|No| P13
+    P12 --> P13
+
+    P13 -->|"needs: terraform-plan, if: push && ref == main"| A1
+    A1 --> A2 --> A3 --> A4 --> A5 --> A6
+    A6 --> A7 --> A8 --> A9 --> A10
+    A9 --> G1 & G2 & G3 & G4 & G5 & G6

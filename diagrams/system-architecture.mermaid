@@ -1,10 +1,3 @@
-# System Architecture
-
-High-level view of all GCP resources provisioned by Terraform for the CPE Final Project.
-
-## Architecture Diagram
-
-```mermaid
 graph TD
     subgraph Developer["Developer / CI-CD"]
         GH["GitHub Repository"]
@@ -23,28 +16,28 @@ graph TD
         end
 
         subgraph Jobs["Cloud Run Jobs (On-Demand / Scheduled)"]
-            J1["dvb-crawler-job<br>1 CPU 512 MB<br>Node.js"]
-            J2["dvb-text-cleaner-job<br>1 CPU 512 MB<br>Python"]
-            J3["crisis-classifier-job<br>4 CPU 16 GB<br>Python + HF"]
-            J4["gpu-batch-job<br>4 CPU 16 GB L4 GPU<br>Python + PyTorch"]
-            J5["daily-data-processor<br>1 CPU 512 MB<br>Python"]
+            J1["dvb-crawler-job<br>1 CPU · 512 MB<br>Node.js"]
+            J2["dvb-text-cleaner-job<br>1 CPU · 512 MB<br>Python"]
+            J3["crisis-classifier-job<br>4 CPU · 16 GB<br>Python + HF"]
+            J4["gpu-batch-job<br>4 CPU · 16 GB · L4 GPU<br>Python + PyTorch"]
+            J5["daily-data-processor<br>1 CPU · 512 MB<br>Python"]
         end
 
         subgraph Services["Cloud Run Services (Always-On HTTP)"]
-            S1["mlflow<br>2 CPU 4 GB<br>0-2 instances"]
-            S2["crisis-admin<br>1 CPU 512 MB<br>0-1 instances"]
-            S3["dvb-annotator<br>1 CPU 512 MB<br>0-3 instances"]
-            S4["dvb-extractor<br>1 CPU 512 MB<br>0-3 instances"]
+            S1["mlflow<br>2 CPU · 4 GB<br>0-2 instances"]
+            S2["crisis-admin<br>1 CPU · 512 MB<br>0-1 instances"]
+            S3["dvb-annotator<br>1 CPU · 512 MB<br>0-3 instances"]
+            S4["dvb-extractor<br>1 CPU · 512 MB<br>0-3 instances"]
         end
 
         subgraph Storage["Cloud Storage Buckets"]
             B1["crawler-data<br>90-day retention"]
             B2["cleaned-crawler-data<br>90-day retention"]
             B3["crisis-crawler-data<br>180-day retention"]
-            B4["llm-extraction<br>long-term"]
+            B4["llm-extraction<br>(long-term)"]
             B5["gpu-job-outputs<br>30-day retention"]
             B6["mlflow-artifacts<br>90-day retention"]
-            B7["terraform-state<br>indefinite"]
+            B7["terraform-state<br>(indefinite)"]
         end
 
         subgraph Events["Admin-driven transitions and optional Eventarc Triggers"]
@@ -52,8 +45,8 @@ graph TD
             EA2["Admin job trigger<br>annotated_articles/ to extractor"]
         end
 
-        IAM["IAM Service Accounts<br>per job/service"]
-        CB["Cloud Build<br>Docker image builds"]
+        IAM["IAM Service Accounts<br>(per job/service)"]
+        CB["Cloud Build<br>(Docker image builds)"]
     end
 
     subgraph Graph["External Graph Database"]
@@ -75,12 +68,12 @@ graph TD
     J3 -->|reads cleaned, writes crisis| B3
     J4 -->|writes results| B5
 
-    B3 -->|"admin move to crisis_articles/"| EA1
-    EA1 -->|"invokes dvb-annotator-job"| S3
+    B3 -->|admin move to crisis_articles/| EA1
+    EA1 -->|invokes dvb-annotator-job| S3
     S3 -->|writes annotated| B3
 
-    B3 -->|"admin move to annotated_articles/"| EA2
-    EA2 -->|"invokes dvb-extractor-job"| S4
+    B3 -->|admin move to annotated_articles/| EA2
+    EA2 -->|invokes dvb-extractor-job| S4
     S4 -->|writes extracted| B4
 
     S2 -->|reads crisis articles| B3
@@ -100,28 +93,3 @@ graph TD
     S4 -.->|content hash node| HASH
     POST -->|updates generated graph| NEO
     HASH --> NEO
-```
-
-## Component Summary
-
-| Component | Type | Runtime | Resources |
-|-----------|------|---------|-----------|
-| `dvb-crawler-job` | Cloud Run Job | Node.js | 1 CPU, 512 MB |
-| `dvb-text-cleaner-job` | Cloud Run Job | Python | 1 CPU, 512 MB |
-| `crisis-classifier-job` | Cloud Run Job | Python + Hugging Face | 4 CPU, 16 GB |
-| `gpu-batch-job` | Cloud Run Job | Python + PyTorch | 4 CPU, 16 GB, NVIDIA L4 |
-| `daily-data-processor` | Cloud Run Job (scheduled) | Python | 1 CPU, 512 MB |
-| `mlflow` | Cloud Run Service | MLflow 3.8.1 | 2 CPU, 4 GB, 0–2 instances |
-| `crisis-admin` | Cloud Run Service | Python | 1 CPU, 512 MB, 0–1 instances |
-| `dvb-annotator` | Cloud Run Service | Python + Gemini API | 1 CPU, 512 MB, 0–3 instances |
-| `dvb-extractor` | Cloud Run Service | Python + Gemini API | 1 CPU, 512 MB, 0–3 instances |
-
-## Graph Sync Notes
-
-After Terraform apply, `scripts/terraform_post_action.py` generates a Neo4j graph manifest and can auto-sync it to the configured external Neo4j database.
-
-The graph tracks:
-- system topology
-- bucket-based data dependencies
-- one `DeploymentHash` node per service or job content hash
-- deployment metadata such as `deployment_source` and `updater`

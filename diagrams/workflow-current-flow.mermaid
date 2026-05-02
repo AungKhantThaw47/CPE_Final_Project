@@ -1,0 +1,30 @@
+flowchart TD
+    CS[Cloud Scheduler] -->|daily trigger| CR["dvb-crawler-job<br>(CONTENT_HASH = H_crawler)"]
+    CR -->|writes| GCS1[("GCS<br>dvb/{H_crawler}/{date}/")]
+
+    GCS1 -->|workflow triggers| TC["dvb-text-cleaner-job<br>(CONTENT_HASH = H_cleaner)"]
+    TC -->|"queries Neo4j for latest dvb/ hash<br>may get wrong version"| NEO[(Neo4j)]
+    TC -->|"writes<br>dvb_cleaned/{sha256(dvb_hash:H_cleaner)}/{date}/"| GCS2[("GCS<br>dvb_cleaned/")]
+
+    GCS2 -->|workflow triggers| CL["crisis-classifier-job<br>(CONTENT_HASH = H_classifier)"]
+    CL -->|"queries Neo4j for<br>latest dvb_cleaned/ hash"| NEO
+    CL -->|"writes<br>pending_review/{sha256(clean_hash:H_classifier)}/{date}/"| GCS3[("GCS<br>pending_review/")]
+
+    GCS3 --> AD1["Admin Review 1<br>(crisis_admin)"]
+    AD1 -->|"moves to<br>crisis_articles/{existing_hash}/{date}/"| GCS4[("GCS<br>crisis_articles/")]
+    AD1 -->|"trigger_cloud_run_job<br>(no hash passed)"| AN["dvb-annotator-job<br>(CONTENT_HASH = H_annotator)"]
+
+    AN -->|"queries Neo4j for<br>latest crisis_articles/ hash"| NEO
+    AN -->|"writes<br>pending_review_annotation/{sha256(ca_hash:H_annotator)}/{date}/"| GCS5[("GCS<br>pending_review_annotation/")]
+
+    GCS5 --> AD2["Admin Review 2<br>(crisis_admin)"]
+    AD2 -->|"moves to<br>annotated_articles/{existing_hash}/{date}/"| GCS6[("GCS<br>annotated_articles/")]
+    AD2 -->|"trigger_cloud_run_job<br>(no hash passed)"| EX["dvb-extractor-job<br>(CONTENT_HASH = H_extractor)"]
+
+    EX -->|"queries Neo4j for<br>latest annotated_articles/ hash"| NEO
+    EX -->|writes events| FS[(Firestore<br>events)]
+    EX -->|"writes<br>events/{output_hash}/{date}/"| GCS7[("GCS<br>events/")]
+
+    style NEO fill:#ffe0b2,stroke:#f57c00
+    style AD1 fill:#e3f2fd,stroke:#1565c0
+    style AD2 fill:#e3f2fd,stroke:#1565c0

@@ -1,0 +1,106 @@
+flowchart LR
+    subgraph S1["crawler, cleaner, classifier"]
+        av2(("a<br>v2"))
+        av1(("a<br>v1"))
+    end
+
+    subgraph S2["pending_articles"]
+        bv4(("b<br>v4"))
+        bv3(("b<br>v3"))
+        bv2(("b<br>v2"))
+        bv1(("b<br>v1"))
+    end
+
+    subgraph AdminView1["Admin View"]
+        direction TB
+        ad1v2(("v2"))
+        ad1v1(("v1"))
+    end
+
+    subgraph S4["crisis articles, annotation"]
+        cbv4v2(("c<br>bv4-v2"))
+        cbv3v2(("c<br>bv3-v2"))
+        cbv2v2(("c<br>bv2-v2<br>if data exist"))
+        cbv1v2(("c<br>bv1-v2<br>if data exist"))
+        cbv1v1(("c<br>bv1-v1"))
+        cbv2v1(("c<br>bv2-v1"))
+    end
+
+    subgraph S5["pending_annotation"]
+        dv3(("d<br>v3"))
+        dv2(("d<br>v2"))
+        dv1(("d<br>v1"))
+    end
+
+    subgraph AdminView2["Admin View"]
+        direction TB
+        ad2v2(("v2"))
+        ad2v1(("v1"))
+    end
+
+    subgraph S7["annotated articles, event-extractor, event"]
+        edv3a(("e<br>dv3-v1"))
+        edv2a(("e<br>dv2-v1<br>if data exist"))
+        edv1a(("e<br>dv1-v1<br>if data exist"))
+        edv3b(("e<br>dv3-v1"))
+        edv2b(("e<br>dv2-v1"))
+        edv1b(("e<br>dv1-v1"))
+    end
+
+    %% a → b  (crawler v2 → b v4,v3 ; crawler v1 → b v2,v1)
+    av2 --> bv4
+    av2 --> bv3
+    av1 --> bv2
+    av1 --> bv1
+
+    %% b → Admin View 1
+    %% v2 session: primary b v3,v4 ; conditional b v1,v2
+    bv4 --> ad1v2
+    bv3 --> ad1v2
+    bv2 -.->|if data exist| ad1v2
+    bv1 -.->|if data exist| ad1v2
+    %% v1 session: primary b v1,v2
+    bv1 --> ad1v1
+    bv2 --> ad1v1
+
+    %% Admin View 1 → crisis_articles
+    ad1v2 --> cbv4v2
+    ad1v2 --> cbv3v2
+    ad1v2 --> cbv2v2
+    ad1v2 --> cbv1v2
+    ad1v1 --> cbv1v1
+    ad1v1 --> cbv2v1
+
+    %% crisis_articles → pending_annotation (annotator versions)
+    %% all v2-tagged crisis articles → d v3 and d v2
+    cbv4v2 --> dv3
+    cbv3v2 --> dv3
+    cbv2v2 --> dv3
+    cbv1v2 --> dv3
+    cbv4v2 --> dv2
+    cbv3v2 --> dv2
+    cbv2v2 --> dv2
+    cbv1v2 --> dv2
+    %% all v1-tagged crisis articles → d v2 and d v1
+    cbv1v1 --> dv2
+    cbv2v1 --> dv2
+    cbv1v1 --> dv1
+    cbv2v1 --> dv1
+
+    %% d → Admin View 2
+    %% v2 session: primary d v3 ; conditional d v2, d v1
+    dv3 --> ad2v2
+    dv2 -.->|if data exist| ad2v2
+    dv1 -.->|if data exist| ad2v2
+    %% v1 session: d v3, d v2, d v1
+    dv3 --> ad2v1
+    dv2 --> ad2v1
+    dv1 --> ad2v1
+
+    %% Admin View 2 → events
+    ad2v2 --> edv3a
+    ad2v2 --> edv2a
+    ad2v2 --> edv1a
+    ad2v1 --> edv3b
+    ad2v1 --> edv2b
+    ad2v1 --> edv1b

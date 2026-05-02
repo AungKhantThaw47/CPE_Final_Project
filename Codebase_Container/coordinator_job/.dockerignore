@@ -1,0 +1,31 @@
+# Git files
+.git
+.gitignore
+.build-hash*
+
+# NOTE: Do NOT ignore 'utils' folder - Terraform copies it from root before build
+
+# Node modules (if present locally)
+node_modules
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Documentation
+README.md
+*.md
+
+# Terraform
+*.tf
+.terraform
+
+# Build files
+cloudbuild.yaml
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

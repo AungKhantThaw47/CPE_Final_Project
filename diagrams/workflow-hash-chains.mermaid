@@ -1,0 +1,27 @@
+flowchart LR
+    subgraph ChainA ["Chain A - Crawler v1 (64054bf...)"]
+        direction LR
+        A1["dvb/64054bf/{date}/"]
+        A2["dvb_cleaned/789eb05/{date}/<br>= sha256(64054bf : H_cleaner)"]
+        A3["pending_review/Px/{date}/<br>= sha256(789eb05 : H_classifier)"]
+        A4["crisis_articles/Ca/{date}/"]
+        A5["pending_review_annotation/Qa/{date}/<br>= sha256(Ca : H_annotator)"]
+        A6["annotated_articles/Aa/{date}/"]
+        A7["events/Ea/{date}/"]
+        A1 -->|SOURCE_HASH passed| A2 -->|SOURCE_HASH passed| A3 -->|admin confirms| A4 -->|SOURCE_HASH passed| A5 -->|admin confirms| A6 -->|SOURCE_HASH passed| A7
+    end
+
+    subgraph ChainB ["Chain B - Crawler v2 (64545f4...)"]
+        direction LR
+        B1["dvb/64545f4/{date}/"]
+        B2["dvb_cleaned/5a67342/{date}/<br>= sha256(64545f4 : H_cleaner)"]
+        B3["pending_review/Py/{date}/<br>= sha256(5a67342 : H_classifier)"]
+        B4["crisis_articles/Cb/{date}/"]
+        B5["pending_review_annotation/Qb/{date}/<br>= sha256(Cb : H_annotator)"]
+        B6["annotated_articles/Ab/{date}/"]
+        B7["events/Eb/{date}/"]
+        B1 -->|SOURCE_HASH passed| B2 -->|SOURCE_HASH passed| B3 -->|admin confirms| B4 -->|SOURCE_HASH passed| B5 -->|admin confirms| B6 -->|SOURCE_HASH passed| B7
+    end
+
+    style ChainA fill:#e8f5e9,stroke:#2e7d32
+    style ChainB fill:#fce4ec,stroke:#880e4f

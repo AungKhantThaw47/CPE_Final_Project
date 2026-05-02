@@ -1,0 +1,29 @@
+flowchart TD
+    CS[Cloud Scheduler] -->|daily trigger| CR["dvb-crawler-job<br>(CONTENT_HASH = H_crawler)"]
+    CR -->|"writes to dvb/H_crawler/{date}/"| GCS1[("GCS<br>dvb/")]
+
+    CR -->|"triggers with<br>SOURCE_HASH = H_crawler"| TC["dvb-text-cleaner-job<br>(CONTENT_HASH = H_cleaner)"]
+    GCS1 -->|"reads dvb/{SOURCE_HASH}/{date}/"| TC
+    TC -->|"output = sha256(H_crawler : H_cleaner)<br>writes dvb_cleaned/{output}/{date}/"| GCS2[("GCS<br>dvb_cleaned/")]
+
+    TC -->|"triggers with<br>SOURCE_HASH = sha256(H_crawler:H_cleaner)"| CL["crisis-classifier-job<br>(CONTENT_HASH = H_classifier)"]
+    GCS2 -->|"reads dvb_cleaned/{SOURCE_HASH}/{date}/"| CL
+    CL -->|"output = sha256(clean_hash : H_classifier)<br>writes pending_review/{output}/{date}/"| GCS3[("GCS<br>pending_review/")]
+
+    CL -->|"notifies (SOURCE_HASH in context)"| AD1["Admin Review 1<br>(crisis_admin)"]
+    GCS3 -->|"reads pending_review/{SOURCE_HASH}/{date}/"| AD1
+    AD1 -->|"moves to crisis_articles/{ca_hash}/{date}/<br>triggers with SOURCE_HASH = ca_hash"| GCS4[("GCS<br>crisis_articles/")]
+
+    GCS4 -->|"reads crisis_articles/{SOURCE_HASH}/{date}/"| AN["dvb-annotator-job<br>(CONTENT_HASH = H_annotator)"]
+    AN -->|"output = sha256(ca_hash : H_annotator)<br>writes pending_review_annotation/{output}/{date}/"| GCS5[("GCS<br>pending_review_annotation/")]
+
+    AN -->|"SOURCE_HASH flows to admin"| AD2["Admin Review 2<br>(crisis_admin)"]
+    GCS5 -->|"reads pending_review_annotation/{SOURCE_HASH}/{date}/"| AD2
+    AD2 -->|"moves to annotated_articles/{aa_hash}/{date}/<br>triggers with SOURCE_HASH = aa_hash"| GCS6[("GCS<br>annotated_articles/")]
+
+    GCS6 -->|"reads annotated_articles/{SOURCE_HASH}/{date}/"| EX["dvb-extractor-job<br>(CONTENT_HASH = H_extractor)"]
+    EX -->|writes structured events| FS[(Firestore<br>events)]
+    EX -->|"writes events/{output_hash}/{date}/"| GCS7[("GCS<br>events/")]
+
+    style AD1 fill:#e3f2fd,stroke:#1565c0
+    style AD2 fill:#e3f2fd,stroke:#1565c0

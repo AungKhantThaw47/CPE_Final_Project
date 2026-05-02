@@ -68,7 +68,7 @@ locals {
     dvb-crawler-job = {
       codebase_path    = "${path.root}/Codebase_Container/crawler_job"
       container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
-      description      = "DVB Burmese news crawler job"
+      description      = "DVB Burmese news crawler job — fetches content for one or all articles (daily pipeline)"
       build_image      = true  # Build from local Dockerfile
       enable_scheduler = false # Triggered by workflow
       schedule         = ""
@@ -83,6 +83,29 @@ locals {
       service_account_roles = [
         "roles/storage.objectAdmin",
         "roles/logging.logWriter"
+      ]
+    }
+
+    dvb-coordinator-job = {
+      codebase_path    = "${path.root}/Codebase_Container/coordinator_job"
+      container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-coordinator:latest"
+      description      = "DVB Burmese link-discovery coordinator — discovers article links and fans out crawler sub-jobs (manual bulk backfill)"
+      build_image      = true
+      enable_scheduler = false
+      schedule         = ""
+      enable_gpu       = false
+      cpu_limit        = "1"
+      memory_limit     = "512Mi"
+      timeout          = "1800s"
+      environment_variables = {
+        GCS_BUCKET       = google_storage_bucket.pipeline_data.name
+        GCP_REGION       = var.region
+        CRAWLER_JOB_NAME = "dvb-crawler-job"
+      }
+      service_account_roles = [
+        "roles/storage.objectAdmin",
+        "roles/logging.logWriter",
+        "roles/run.invoker",
       ]
     }
 

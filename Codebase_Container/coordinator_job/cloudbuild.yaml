@@ -1,0 +1,37 @@
+steps:
+  - name: 'node:20-alpine'
+    entrypoint: 'node'
+    args: ['--check', 'Codebase_Container/coordinator_job/DVB_Burmese.coordinator.js']
+    id: 'syntax-check'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker pull $_IMAGE_TAG || exit 0
+    id: 'pull-cache'
+    waitFor: ['syntax-check']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Codebase_Container/coordinator_job/Dockerfile'
+      - '--cache-from'
+      - '$_IMAGE_TAG'
+      - '-t'
+      - '$_IMAGE_TAG'
+      - '.'
+    id: 'build'
+    waitFor: ['pull-cache']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '$_IMAGE_TAG'
+    id: 'push'
+    waitFor: ['build']
+
+options:
+  logging: CLOUD_LOGGING_ONLY

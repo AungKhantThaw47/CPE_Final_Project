@@ -9,32 +9,32 @@ flowchart TD
     subgraph Triggers["Workflow Triggers"]
         TR1["Push to any branch"]
         TR2["Pull Request opened / updated"]
-        TR3["workflow_dispatch\n(manual)"]
+        TR3["workflow_dispatch<br>manual"]
     end
 
-    subgraph Plan["Job: terraform-plan\n(all events)"]
+    subgraph Plan["Job: terraform-plan - all events"]
         P1["Checkout code"]
         P2["Cache Terraform plugins"]
         P3["Setup Terraform v1.14.3"]
-        P4["Authenticate to GCP\n(GOOGLE_CREDENTIALS secret)"]
+        P4["Authenticate to GCP<br>GOOGLE_CREDENTIALS secret"]
         P5["Setup gcloud CLI"]
-        P6["Make scripts executable\nchmod +x scripts/*.sh"]
+        P6["Make scripts executable<br>chmod +x scripts/*.sh"]
         P7["terraform fmt -check"]
         P8["terraform init"]
         P9["terraform validate"]
         P10["terraform plan -out=tfplan"]
         P11{"Is Pull Request?"}
-        P12["Post plan summary\nas PR comment"]
-        P13["Upload tfplan artifact\n(5-day retention)"]
+        P12["Post plan summary<br>as PR comment"]
+        P13["Upload tfplan artifact<br>5-day retention"]
     end
 
-    subgraph Apply["Job: terraform-apply\n(push to main only)"]
+    subgraph Apply["Job: terraform-apply - push to main only"]
         A1["Checkout code"]
         A2["Cache Terraform plugins"]
         A3["Setup Terraform v1.14.3"]
         A4["Authenticate to GCP"]
         A5["Setup gcloud CLI"]
-        A6["Configure Docker\nfor Artifact Registry"]
+        A6["Configure Docker<br>for Artifact Registry"]
         A7["terraform init"]
         A8["Download tfplan artifact"]
         A9["terraform apply -auto-approve tfplan"]
@@ -42,7 +42,7 @@ flowchart TD
     end
 
     subgraph GCP["GCP Resources Updated"]
-        G1["Docker images built\nvia Cloud Build"]
+        G1["Docker images built<br>via Cloud Build"]
         G2["Cloud Run Jobs deployed"]
         G3["Cloud Run Services deployed"]
         G4["GCS Buckets updated"]
@@ -58,7 +58,7 @@ flowchart TD
     P11 -->|No| P13
     P12 --> P13
 
-    P13 -->|"needs: terraform-plan\nif: push && ref == main"| A1
+    P13 -->|"needs: terraform-plan, push to main"| A1
     A1 --> A2 --> A3 --> A4 --> A5 --> A6
     A6 --> A7 --> A8 --> A9 --> A10
     A9 --> G1 & G2 & G3 & G4 & G5 & G6

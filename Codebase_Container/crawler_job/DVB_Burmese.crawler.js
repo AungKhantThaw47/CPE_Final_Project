@@ -176,6 +176,32 @@ async function markArticleProcessed(post, contentUrl) {
     await bucket.file(markerPath).save(payload, { contentType: 'application/json' });
 }
 
+async function loadArticlesFromManifests() {
+    const manifestPrefix = process.env.LINKS_MANIFEST_PREFIX || "";
+    if (!manifestPrefix || !GCS_BUCKET || !gcsStorage) return null;
+
+    const dates = [];
+    const cursor = new Date(startDate);
+    while (cursor <= endDate) {
+        dates.push(formatDate(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const articles = [];
+    const bucket = gcsStorage.bucket(GCS_BUCKET);
+
+    for (const dateStr of dates) {
+        const gcsPath = `${manifestPrefix}/${dateStr}/links-manifest.json`;
+        const [exists] = await bucket.file(gcsPath).exists();
+        if (!exists) return null; // manifest missing for this date — fall back to scraping
+        const [content] = await bucket.file(gcsPath).download();
+        const manifest = JSON.parse(content.toString());
+        articles.push(...(manifest.articles || []));
+    }
+
+    return articles;
+}
+
 function getRequestedDatesInRange() {
     const dates = [];
     const cursor = new Date(startDate);
@@ -414,10 +440,33 @@ async function fetchPostContents() {
     console.log(`\nContent fetching completed!\n`);
 }
 
-if (fs.existsSync("DVB_Burmese.json")) {
-    fs.unlinkSync("DVB_Burmese.json");
+async function run() {
+    if (fs.existsSync("DVB_Burmese.json")) {
+        fs.unlinkSync("DVB_Burmese.json");
+    }
+
+    const manifestArticles = await loadArticlesFromManifests();
+
+    if (manifestArticles !== null) {
+        console.log(`Using pre-discovered links from GCS manifests (${manifestArticles.length} articles)`);
+        console.log("Skipping link traversal — fetching content directly.\n");
+
+        postdata.push(...manifestArticles);
+        await fetchPostContents();
+        const processedDates = await saveAndUploadGroupedMetadata(postdata, url);
+
+        console.log("\n============================================================");
+        console.log("Crawling completed successfully!");
+        console.log(`Finished at: ${new Date().toISOString()}`);
+        console.log("============================================================");
+
+        for (const dateStr of processedDates) {
+            await triggerTextCleaner(dateStr);
+        }
+    } else {
+        console.log(`Starting crawl for date range: ${startDateStr} to ${endDateStr}`);
+        scrapePage(url, url, 1);
+    }
 }
 
-console.log(`Starting crawl for date range: ${startDateStr} to ${endDateStr}`);
-scrapePage(url, url, 1);
-console.log("Test");
+run();

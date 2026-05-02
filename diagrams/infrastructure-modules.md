@@ -7,46 +7,46 @@ Terraform module structure and the relationship between root-level resources and
 ```mermaid
 graph TD
     subgraph Root["Root Module (main.tf)"]
-        R_APIS["google_project_service\nEnable GCP APIs"]
-        R_AR["google_artifact_registry_repository\nDocker registry"]
-        R_SA["google_service_account\n(per job / service)"]
-        R_IAM["google_project_iam_member\n(per role)"]
-        R_BUCKETS["GCS Buckets\n(5 buckets)"]
-        R_JOBS["locals.jobs\nJob definitions map"]
-        R_SERVICES["locals.services\nService definitions map"]
-        R_EA["google_eventarc_trigger\n(optional: annotator + extractor)\nPrimary invocation: admin-triggered job runs via crisis-admin"]
-        R_WF["google_workflows_workflow\n(orchestration)"]
-        R_OUT["outputs.tf\njobs + services + hashes"]
+        R_APIS["google_project_service<br>Enable GCP APIs"]
+        R_AR["google_artifact_registry_repository<br>Docker registry"]
+        R_SA["google_service_account<br>per job / service"]
+        R_IAM["google_project_iam_member<br>per role"]
+        R_BUCKETS["GCS Buckets<br>5 buckets"]
+        R_JOBS["locals.jobs<br>Job definitions map"]
+        R_SERVICES["locals.services<br>Service definitions map"]
+        R_EA["google_eventarc_trigger<br>optional: annotator + extractor<br>Primary invocation: admin-triggered job runs via crisis-admin"]
+        R_WF["google_workflows_workflow<br>orchestration"]
+        R_OUT["outputs.tf<br>jobs + services + hashes"]
     end
 
     subgraph ModScheduler["modules/cloud-scheduler"]
-        MS_JOB["google_cloud_run_v2_job\nCloud Run Job"]
+        MS_JOB["google_cloud_run_v2_job<br>Cloud Run Job"]
         MS_SA["google_service_account"]
-        MS_SCHED["google_cloud_scheduler_job\n(optional)"]
-        MS_BUILD["null_resource\nCloud Build trigger"]
+        MS_SCHED["google_cloud_scheduler_job<br>optional"]
+        MS_BUILD["null_resource<br>Cloud Build trigger"]
     end
 
     subgraph ModService["modules/cloud-run-service"]
-        MV_SVC["google_cloud_run_v2_service\nCloud Run Service"]
+        MV_SVC["google_cloud_run_v2_service<br>Cloud Run Service"]
         MV_SA["google_service_account"]
-        MV_IAM["google_cloud_run_v2_service_iam_member\n(public access)"]
-        MV_BUILD["null_resource\nCloud Build trigger"]
+        MV_IAM["google_cloud_run_v2_service_iam_member<br>public access"]
+        MV_BUILD["null_resource<br>Cloud Build trigger"]
     end
 
     subgraph PostApply["Post-Apply Automation"]
-        PA_SUM["scripts/terraform_post_action.py\nsummary + graph generation"]
-        PA_GRAPH["bootstrap/neo4j/generated/\nterraform_post_action_graph.json"]
-        PA_LOAD["bootstrap/neo4j/load_graph.py\nNeo4j sync"]
+        PA_SUM["scripts/terraform_post_action.py<br>summary + graph generation"]
+        PA_GRAPH["bootstrap/neo4j/generated/<br>terraform_post_action_graph.json"]
+        PA_LOAD["bootstrap/neo4j/load_graph.py<br>Neo4j sync"]
     end
 
     subgraph ModMLflow["Codebase_Container/mlflow"]
-        ML_SVC["MLflow Tracking Server\n(extends cloud-run-service)"]
-        ML_IMG["Dockerfile\nMLflow 3.8.1 + GCS backend"]
+        ML_SVC["MLflow Tracking Server<br>extends cloud-run-service"]
+        ML_IMG["Dockerfile<br>MLflow 3.8.1 + GCS backend"]
     end
 
     subgraph Utils["utils/"]
-        U_PY["gcs_utils.py\nPython GCS helpers"]
-        U_JS["gcs_utils.js\nNode.js GCS helpers"]
+        U_PY["gcs_utils.py<br>Python GCS helpers"]
+        U_JS["gcs_utils.js<br>Node.js GCS helpers"]
     end
 
     R_APIS -->|"depends_on"| R_AR

@@ -412,6 +412,15 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
     reader_inputs_by_component = {}
     component_input_lineage = {}
 
+    # Jobs that SPAWN sub-jobs are orchestrators; exclude them from the
+    # bucket-level DEPENDS_ON_DATA_FROM inference so downstream jobs are not
+    # incorrectly linked to them as data sources.
+    spawner_jobs = {
+        r.get("from", "")
+        for r in base_manifest.get("relationships", [])
+        if r.get("type") == "SPAWNS"
+    }
+
     for relationship in base_manifest.get("relationships", []):
         source = relationship.get("from", "")
         target = relationship.get("to", "")
@@ -422,7 +431,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
             continue
 
         if rel_type == "WRITES_TO":
-            writers_by_bucket.setdefault(target, set()).add(source)
+            if source not in spawner_jobs:
+                writers_by_bucket.setdefault(target, set()).add(source)
             writers_by_bucket_path.setdefault((target, rel_path), set()).add(source)
         elif rel_type == "READS_FROM":
             readers_by_bucket.setdefault(target, set()).add(source)
@@ -869,6 +879,12 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
         if key.startswith("bucket:"):
             bucket_name_by_key[key] = node.get("properties", {}).get("name", key.split(":", 1)[1])
 
+    spawner_jobs = {
+        r.get("from", "")
+        for r in current_base_manifest.get("relationships", [])
+        if r.get("type") == "SPAWNS"
+    }
+
     for relationship in current_base_manifest.get("relationships", []):
         source = relationship.get("from", "")
         target = relationship.get("to", "")
@@ -879,7 +895,8 @@ def rebuild_graph_with_current_base(existing_manifest: dict, current_base_manife
             continue
 
         if rel_type == "WRITES_TO":
-            writers_by_bucket.setdefault(target, set()).add(source)
+            if source not in spawner_jobs:
+                writers_by_bucket.setdefault(target, set()).add(source)
             writers_by_bucket_path.setdefault((target, rel_path), set()).add(source)
         elif rel_type == "READS_FROM":
             readers_by_bucket.setdefault(target, set()).add(source)

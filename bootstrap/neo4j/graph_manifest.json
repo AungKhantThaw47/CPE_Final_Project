@@ -80,6 +80,17 @@
       }
     },
     {
+      "key": "job:dvb-coordinator-job",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "dvb-coordinator-job",
+        "runtime": "Node.js",
+        "cpu": "1",
+        "memory": "512Mi",
+        "trigger": "manual"
+      }
+    },
+    {
       "key": "job:dvb-crawler-job",
       "label": "CloudRunJob",
       "properties": {
@@ -292,6 +303,12 @@
     },
     {
       "from": "project:cpe-final-project",
+      "to": "job:dvb-coordinator-job",
+      "type": "RUNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
       "to": "job:dvb-crawler-job",
       "type": "RUNS",
       "properties": {}
@@ -358,6 +375,12 @@
     },
     {
       "from": "registry:artifact-registry",
+      "to": "job:dvb-coordinator-job",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
       "to": "job:dvb-crawler-job",
       "type": "HOSTS_IMAGE_FOR",
       "properties": {}
@@ -418,8 +441,28 @@
     },
     {
       "from": "source:dvb-news",
+      "to": "job:dvb-coordinator-job",
+      "type": "FEEDS",
+      "properties": {}
+    },
+    {
+      "from": "source:dvb-news",
       "to": "job:dvb-crawler-job",
       "type": "FEEDS",
+      "properties": {}
+    },
+    {
+      "from": "job:dvb-coordinator-job",
+      "to": "bucket:pipeline-data",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "dvb/links-manifests/"
+      }
+    },
+    {
+      "from": "job:dvb-coordinator-job",
+      "to": "job:dvb-crawler-job",
+      "type": "SPAWNS",
       "properties": {}
     },
     {

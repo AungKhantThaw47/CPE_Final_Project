@@ -62,6 +62,17 @@
       }
     },
     {
+      "key": "job:dvb-coordinator-job",
+      "label": "CloudRunJob",
+      "properties": {
+        "name": "dvb-coordinator-job",
+        "runtime": "Node.js",
+        "cpu": "1",
+        "memory": "512Mi",
+        "trigger": "manual"
+      }
+    },
+    {
       "key": "job:dvb-crawler-job",
       "label": "CloudRunJob",
       "properties": {
@@ -191,241 +202,269 @@
       }
     },
     {
-      "key": "hash:job:crisis-classifier-job:f259f490d03dcd4494f87360abc1f27c606db29da13b54c8ee7c2166a0af4819",
+      "key": "hash:job:crisis-classifier-job:7632d6fdec176812de1a6f86bee885b4da3962e3256264423ebe7b0ac429093b",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:job:crisis-classifier-job:f259f490d03dcd4494f87360abc1f27c606db29da13b54c8ee7c2166a0af4819",
+        "name": "hash:job:crisis-classifier-job:7632d6fdec176812de1a6f86bee885b4da3962e3256264423ebe7b0ac429093b",
         "component_key": "job:crisis-classifier-job",
         "component_name": "crisis-classifier-job",
         "component_kind": "job",
-        "hash_value": "f259f490d03dcd4494f87360abc1f27c606db29da13b54c8ee7c2166a0af4819",
+        "hash_value": "7632d6fdec176812de1a6f86bee885b4da3962e3256264423ebe7b0ac429093b",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "f259f490d03dcd4494f87360abc1f27c606db29da13b54c8ee7c2166a0af4819"
+        "updater": "mma",
+        "deployment_ref": "7632d6fdec176812de1a6f86bee885b4da3962e3256264423ebe7b0ac429093b"
       }
     },
     {
-      "key": "hash:job:dvb-annotator-job:1b8e018c02b5a978036ecdcd775f65e3c922dca2f1176c511460162ba779c204",
+      "key": "hash:job:dvb-annotator-job:8d52e74a0c96defbce813456f42b0b659bb1ef6fc0377419122395bac6239929",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:job:dvb-annotator-job:1b8e018c02b5a978036ecdcd775f65e3c922dca2f1176c511460162ba779c204",
+        "name": "hash:job:dvb-annotator-job:8d52e74a0c96defbce813456f42b0b659bb1ef6fc0377419122395bac6239929",
         "component_key": "job:dvb-annotator-job",
         "component_name": "dvb-annotator-job",
         "component_kind": "job",
-        "hash_value": "1b8e018c02b5a978036ecdcd775f65e3c922dca2f1176c511460162ba779c204",
+        "hash_value": "8d52e74a0c96defbce813456f42b0b659bb1ef6fc0377419122395bac6239929",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "1b8e018c02b5a978036ecdcd775f65e3c922dca2f1176c511460162ba779c204"
+        "updater": "mma",
+        "deployment_ref": "8d52e74a0c96defbce813456f42b0b659bb1ef6fc0377419122395bac6239929"
       }
     },
     {
-      "key": "hash:job:dvb-crawler-job:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+      "key": "hash:job:dvb-coordinator-job:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:job:dvb-crawler-job:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+        "name": "hash:job:dvb-coordinator-job:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
+        "component_key": "job:dvb-coordinator-job",
+        "component_name": "dvb-coordinator-job",
+        "component_kind": "job",
+        "hash_value": "4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
+        "hash_type": "content",
+        "deployment_source": "local",
+        "updater": "mma",
+        "deployment_ref": "4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6"
+      }
+    },
+    {
+      "key": "hash:job:dvb-crawler-job:38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
+      "label": "DeploymentHash",
+      "properties": {
+        "name": "hash:job:dvb-crawler-job:38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
         "component_key": "job:dvb-crawler-job",
         "component_name": "dvb-crawler-job",
         "component_kind": "job",
-        "hash_value": "64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+        "hash_value": "38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a"
+        "updater": "mma",
+        "deployment_ref": "38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5"
       }
     },
     {
-      "key": "hash:job:dvb-extractor-job:592dd68590aa037ef62d4b3e1050e508fc7a7448056270aa39537902ad982b04",
+      "key": "hash:job:dvb-extractor-job:16cb17e4b1d33c8a7932133a7a176959f2a4a427cf24a7c5d9697f12aa950bfb",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:job:dvb-extractor-job:592dd68590aa037ef62d4b3e1050e508fc7a7448056270aa39537902ad982b04",
+        "name": "hash:job:dvb-extractor-job:16cb17e4b1d33c8a7932133a7a176959f2a4a427cf24a7c5d9697f12aa950bfb",
         "component_key": "job:dvb-extractor-job",
         "component_name": "dvb-extractor-job",
         "component_kind": "job",
-        "hash_value": "592dd68590aa037ef62d4b3e1050e508fc7a7448056270aa39537902ad982b04",
+        "hash_value": "16cb17e4b1d33c8a7932133a7a176959f2a4a427cf24a7c5d9697f12aa950bfb",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "592dd68590aa037ef62d4b3e1050e508fc7a7448056270aa39537902ad982b04"
+        "updater": "mma",
+        "deployment_ref": "16cb17e4b1d33c8a7932133a7a176959f2a4a427cf24a7c5d9697f12aa950bfb"
       }
     },
     {
-      "key": "hash:job:dvb-text-cleaner-job:42591d07f7f162b6ade0a6bcbf264f5e537b05c64ff13cd92591821b14c7417c",
+      "key": "hash:job:dvb-text-cleaner-job:d7a714e8540d3bfbe258453d2cbfd704f2891d32fe1e371e22d376570ce33440",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:job:dvb-text-cleaner-job:42591d07f7f162b6ade0a6bcbf264f5e537b05c64ff13cd92591821b14c7417c",
+        "name": "hash:job:dvb-text-cleaner-job:d7a714e8540d3bfbe258453d2cbfd704f2891d32fe1e371e22d376570ce33440",
         "component_key": "job:dvb-text-cleaner-job",
         "component_name": "dvb-text-cleaner-job",
         "component_kind": "job",
-        "hash_value": "42591d07f7f162b6ade0a6bcbf264f5e537b05c64ff13cd92591821b14c7417c",
+        "hash_value": "d7a714e8540d3bfbe258453d2cbfd704f2891d32fe1e371e22d376570ce33440",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "42591d07f7f162b6ade0a6bcbf264f5e537b05c64ff13cd92591821b14c7417c"
+        "updater": "mma",
+        "deployment_ref": "d7a714e8540d3bfbe258453d2cbfd704f2891d32fe1e371e22d376570ce33440"
       }
     },
     {
-      "key": "hash:job:gcs-folder-rename-job:d2c7f876b8ec79d7346635592385d5017319a6d4cfcbc7868cd39af52a865099",
+      "key": "hash:job:gcs-folder-rename-job:c3360d66252dc0873964fd6a52d0b3ffd383aaa34225382810562babe4a1007e",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:job:gcs-folder-rename-job:d2c7f876b8ec79d7346635592385d5017319a6d4cfcbc7868cd39af52a865099",
+        "name": "hash:job:gcs-folder-rename-job:c3360d66252dc0873964fd6a52d0b3ffd383aaa34225382810562babe4a1007e",
         "component_key": "job:gcs-folder-rename-job",
         "component_name": "gcs-folder-rename-job",
         "component_kind": "job",
-        "hash_value": "d2c7f876b8ec79d7346635592385d5017319a6d4cfcbc7868cd39af52a865099",
+        "hash_value": "c3360d66252dc0873964fd6a52d0b3ffd383aaa34225382810562babe4a1007e",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "d2c7f876b8ec79d7346635592385d5017319a6d4cfcbc7868cd39af52a865099"
+        "updater": "mma",
+        "deployment_ref": "c3360d66252dc0873964fd6a52d0b3ffd383aaa34225382810562babe4a1007e"
       }
     },
     {
-      "key": "hash:service:crisis-admin:190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+      "key": "hash:service:crisis-admin:d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:service:crisis-admin:190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+        "name": "hash:service:crisis-admin:d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
         "component_key": "service:crisis-admin",
         "component_name": "crisis-admin",
         "component_kind": "service",
-        "hash_value": "190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+        "hash_value": "d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615"
+        "updater": "mma",
+        "deployment_ref": "d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86"
       }
     },
     {
-      "key": "hash:service:events-api:4bc43bea3436892694e1f76ce5a3cbc2dac614f531fdcedb22b632c610027450",
+      "key": "hash:service:events-api:954e8c56e16951c15f78d57ab4d0968f5641b11aea0f2273d8ea22c966890de0",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:service:events-api:4bc43bea3436892694e1f76ce5a3cbc2dac614f531fdcedb22b632c610027450",
+        "name": "hash:service:events-api:954e8c56e16951c15f78d57ab4d0968f5641b11aea0f2273d8ea22c966890de0",
         "component_key": "service:events-api",
         "component_name": "events-api",
         "component_kind": "service",
-        "hash_value": "4bc43bea3436892694e1f76ce5a3cbc2dac614f531fdcedb22b632c610027450",
+        "hash_value": "954e8c56e16951c15f78d57ab4d0968f5641b11aea0f2273d8ea22c966890de0",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "4bc43bea3436892694e1f76ce5a3cbc2dac614f531fdcedb22b632c610027450"
+        "updater": "mma",
+        "deployment_ref": "954e8c56e16951c15f78d57ab4d0968f5641b11aea0f2273d8ea22c966890de0"
       }
     },
     {
-      "key": "hash:service:mlflow:9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+      "key": "hash:service:mlflow:60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
       "label": "DeploymentHash",
       "properties": {
-        "name": "hash:service:mlflow:9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+        "name": "hash:service:mlflow:60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
         "component_key": "service:mlflow",
         "component_name": "mlflow",
         "component_kind": "service",
-        "hash_value": "9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+        "hash_value": "60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
         "hash_type": "content",
         "deployment_source": "local",
-        "updater": "akt",
-        "deployment_ref": "9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5"
+        "updater": "mma",
+        "deployment_ref": "60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003"
       }
     },
     {
-      "key": "hash:folder:pipeline-data:dvb:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+      "key": "hash:folder:pipeline-data:dvb:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
       "label": "FolderHash",
       "properties": {
-        "name": "hash:folder:pipeline-data:dvb:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+        "name": "hash:folder:pipeline-data:dvb:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
         "bucket_key": "bucket:pipeline-data",
         "bucket_name": "pipeline-data",
         "folder_path": "dvb/",
         "folder_name": "dvb",
-        "hash_value": "64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+        "hash_value": "4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
         "hash_type": "pipeline"
       }
     },
     {
-      "key": "hash:folder:pipeline-data:dvb_cleaned:5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
+      "key": "hash:folder:pipeline-data:dvb:38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
       "label": "FolderHash",
       "properties": {
-        "name": "hash:folder:pipeline-data:dvb_cleaned:5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
+        "name": "hash:folder:pipeline-data:dvb:38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
+        "bucket_key": "bucket:pipeline-data",
+        "bucket_name": "pipeline-data",
+        "folder_path": "dvb/",
+        "folder_name": "dvb",
+        "hash_value": "38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
+        "hash_type": "pipeline"
+      }
+    },
+    {
+      "key": "hash:folder:pipeline-data:dvb_cleaned:d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
+      "label": "FolderHash",
+      "properties": {
+        "name": "hash:folder:pipeline-data:dvb_cleaned:d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
         "bucket_key": "bucket:pipeline-data",
         "bucket_name": "pipeline-data",
         "folder_path": "dvb_cleaned/",
         "folder_name": "dvb_cleaned",
-        "hash_value": "5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
+        "hash_value": "d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
         "hash_type": "pipeline"
       }
     },
     {
-      "key": "hash:folder:pipeline-data:pending_review:c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
+      "key": "hash:folder:pipeline-data:pending_review:6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
       "label": "FolderHash",
       "properties": {
-        "name": "hash:folder:pipeline-data:pending_review:c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
+        "name": "hash:folder:pipeline-data:pending_review:6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
         "bucket_key": "bucket:pipeline-data",
         "bucket_name": "pipeline-data",
         "folder_path": "pending_review/",
         "folder_name": "pending_review",
-        "hash_value": "c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
+        "hash_value": "6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
         "hash_type": "pipeline"
       }
     },
     {
-      "key": "hash:folder:pipeline-data:crisis_articles:0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+      "key": "hash:folder:pipeline-data:crisis_articles:df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
       "label": "FolderHash",
       "properties": {
-        "name": "hash:folder:pipeline-data:crisis_articles:0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+        "name": "hash:folder:pipeline-data:crisis_articles:df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
         "bucket_key": "bucket:pipeline-data",
         "bucket_name": "pipeline-data",
         "folder_path": "crisis_articles/",
         "folder_name": "crisis_articles",
-        "hash_value": "0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+        "hash_value": "df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
         "hash_type": "pipeline"
       }
     },
     {
-      "key": "hash:folder:pipeline-data:annotated_articles:eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
+      "key": "hash:folder:pipeline-data:annotated_articles:23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
       "label": "FolderHash",
       "properties": {
-        "name": "hash:folder:pipeline-data:annotated_articles:eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
+        "name": "hash:folder:pipeline-data:annotated_articles:23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
         "bucket_key": "bucket:pipeline-data",
         "bucket_name": "pipeline-data",
         "folder_path": "annotated_articles/",
         "folder_name": "annotated_articles",
-        "hash_value": "eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
+        "hash_value": "23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
         "hash_type": "pipeline"
       }
     },
     {
-      "key": "hash:folder:pipeline-data:pending_review_annotation:c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
+      "key": "hash:folder:pipeline-data:pending_review_annotation:dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
       "label": "FolderHash",
       "properties": {
-        "name": "hash:folder:pipeline-data:pending_review_annotation:c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
+        "name": "hash:folder:pipeline-data:pending_review_annotation:dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
         "bucket_key": "bucket:pipeline-data",
         "bucket_name": "pipeline-data",
         "folder_path": "pending_review_annotation/",
         "folder_name": "pending_review_annotation",
-        "hash_value": "c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
+        "hash_value": "dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
         "hash_type": "pipeline"
       }
     },
     {
-      "key": "hash:folder:pipeline-data:events:2b2c96592a2cfdd30e1764c209211aeaecabcdce4d7a190df51d83741ba7331c",
+      "key": "hash:folder:pipeline-data:events:908fb8fd340e23ec6d0e2d5737396eb5d53878b4242d7f1aff766ced84ab760b",
       "label": "FolderHash",
       "properties": {
-        "name": "hash:folder:pipeline-data:events:2b2c96592a2cfdd30e1764c209211aeaecabcdce4d7a190df51d83741ba7331c",
+        "name": "hash:folder:pipeline-data:events:908fb8fd340e23ec6d0e2d5737396eb5d53878b4242d7f1aff766ced84ab760b",
         "bucket_key": "bucket:pipeline-data",
         "bucket_name": "pipeline-data",
         "folder_path": "events/",
         "folder_name": "events",
-        "hash_value": "2b2c96592a2cfdd30e1764c209211aeaecabcdce4d7a190df51d83741ba7331c",
+        "hash_value": "908fb8fd340e23ec6d0e2d5737396eb5d53878b4242d7f1aff766ced84ab760b",
         "hash_type": "pipeline"
       }
     },
     {
-      "key": "hash:folder:mlflow-artifacts:root:9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+      "key": "hash:folder:mlflow-artifacts:root:60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
       "label": "FolderHash",
       "properties": {
-        "name": "hash:folder:mlflow-artifacts:root:9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+        "name": "hash:folder:mlflow-artifacts:root:60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
         "bucket_key": "bucket:mlflow-artifacts",
         "bucket_name": "mlflow-artifacts",
         "folder_path": "",
         "folder_name": "root",
-        "hash_value": "9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+        "hash_value": "60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
         "hash_type": "pipeline"
       }
     }
@@ -459,6 +498,12 @@
       "from": "project:cpe-final-project",
       "to": "bucket:mlflow-artifacts",
       "type": "OWNS",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
+      "to": "job:dvb-coordinator-job",
+      "type": "RUNS",
       "properties": {}
     },
     {
@@ -517,6 +562,12 @@
     },
     {
       "from": "registry:artifact-registry",
+      "to": "job:dvb-coordinator-job",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
       "to": "job:dvb-crawler-job",
       "type": "HOSTS_IMAGE_FOR",
       "properties": {}
@@ -565,8 +616,28 @@
     },
     {
       "from": "source:dvb-news",
+      "to": "job:dvb-coordinator-job",
+      "type": "FEEDS",
+      "properties": {}
+    },
+    {
+      "from": "source:dvb-news",
       "to": "job:dvb-crawler-job",
       "type": "FEEDS",
+      "properties": {}
+    },
+    {
+      "from": "job:dvb-coordinator-job",
+      "to": "bucket:pipeline-data",
+      "type": "WRITES_TO",
+      "properties": {
+        "path": "dvb/"
+      }
+    },
+    {
+      "from": "job:dvb-coordinator-job",
+      "to": "job:dvb-crawler-job",
+      "type": "SPAWNS",
       "properties": {}
     },
     {
@@ -765,352 +836,385 @@
     },
     {
       "from": "job:crisis-classifier-job",
-      "to": "hash:job:crisis-classifier-job:f259f490d03dcd4494f87360abc1f27c606db29da13b54c8ee7c2166a0af4819",
+      "to": "hash:job:crisis-classifier-job:7632d6fdec176812de1a6f86bee885b4da3962e3256264423ebe7b0ac429093b",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "f259f490d03dcd4494f87360abc1f27c606db29da13b54c8ee7c2166a0af4819",
+        "hash_value": "7632d6fdec176812de1a6f86bee885b4da3962e3256264423ebe7b0ac429093b",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
       }
     },
     {
       "from": "job:dvb-annotator-job",
-      "to": "hash:job:dvb-annotator-job:1b8e018c02b5a978036ecdcd775f65e3c922dca2f1176c511460162ba779c204",
+      "to": "hash:job:dvb-annotator-job:8d52e74a0c96defbce813456f42b0b659bb1ef6fc0377419122395bac6239929",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "1b8e018c02b5a978036ecdcd775f65e3c922dca2f1176c511460162ba779c204",
+        "hash_value": "8d52e74a0c96defbce813456f42b0b659bb1ef6fc0377419122395bac6239929",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
+      }
+    },
+    {
+      "from": "job:dvb-coordinator-job",
+      "to": "hash:job:dvb-coordinator-job:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
+      "type": "HAS_HASH",
+      "properties": {
+        "hash_type": "content",
+        "hash_value": "4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
+        "deployment_source": "local",
+        "updater": "mma"
       }
     },
     {
       "from": "job:dvb-crawler-job",
-      "to": "hash:job:dvb-crawler-job:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+      "to": "hash:job:dvb-crawler-job:38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+        "hash_value": "38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
       }
     },
     {
       "from": "job:dvb-extractor-job",
-      "to": "hash:job:dvb-extractor-job:592dd68590aa037ef62d4b3e1050e508fc7a7448056270aa39537902ad982b04",
+      "to": "hash:job:dvb-extractor-job:16cb17e4b1d33c8a7932133a7a176959f2a4a427cf24a7c5d9697f12aa950bfb",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "592dd68590aa037ef62d4b3e1050e508fc7a7448056270aa39537902ad982b04",
+        "hash_value": "16cb17e4b1d33c8a7932133a7a176959f2a4a427cf24a7c5d9697f12aa950bfb",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
       }
     },
     {
       "from": "job:dvb-text-cleaner-job",
-      "to": "hash:job:dvb-text-cleaner-job:42591d07f7f162b6ade0a6bcbf264f5e537b05c64ff13cd92591821b14c7417c",
+      "to": "hash:job:dvb-text-cleaner-job:d7a714e8540d3bfbe258453d2cbfd704f2891d32fe1e371e22d376570ce33440",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "42591d07f7f162b6ade0a6bcbf264f5e537b05c64ff13cd92591821b14c7417c",
+        "hash_value": "d7a714e8540d3bfbe258453d2cbfd704f2891d32fe1e371e22d376570ce33440",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
       }
     },
     {
       "from": "job:gcs-folder-rename-job",
-      "to": "hash:job:gcs-folder-rename-job:d2c7f876b8ec79d7346635592385d5017319a6d4cfcbc7868cd39af52a865099",
+      "to": "hash:job:gcs-folder-rename-job:c3360d66252dc0873964fd6a52d0b3ffd383aaa34225382810562babe4a1007e",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "d2c7f876b8ec79d7346635592385d5017319a6d4cfcbc7868cd39af52a865099",
+        "hash_value": "c3360d66252dc0873964fd6a52d0b3ffd383aaa34225382810562babe4a1007e",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
       }
     },
     {
       "from": "service:crisis-admin",
-      "to": "hash:service:crisis-admin:190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+      "to": "hash:service:crisis-admin:d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+        "hash_value": "d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
       }
     },
     {
       "from": "service:events-api",
-      "to": "hash:service:events-api:4bc43bea3436892694e1f76ce5a3cbc2dac614f531fdcedb22b632c610027450",
+      "to": "hash:service:events-api:954e8c56e16951c15f78d57ab4d0968f5641b11aea0f2273d8ea22c966890de0",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "4bc43bea3436892694e1f76ce5a3cbc2dac614f531fdcedb22b632c610027450",
+        "hash_value": "954e8c56e16951c15f78d57ab4d0968f5641b11aea0f2273d8ea22c966890de0",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
       }
     },
     {
       "from": "service:mlflow",
-      "to": "hash:service:mlflow:9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+      "to": "hash:service:mlflow:60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "content",
-        "hash_value": "9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+        "hash_value": "60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
         "deployment_source": "local",
-        "updater": "akt"
+        "updater": "mma"
       }
     },
     {
       "from": "bucket:pipeline-data",
-      "to": "hash:folder:pipeline-data:dvb:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+      "to": "hash:folder:pipeline-data:dvb:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "pipeline",
-        "hash_value": "64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+        "hash_value": "4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
         "path": "dvb/"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:dvb:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
-      "to": "hash:job:dvb-crawler-job:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+      "from": "hash:folder:pipeline-data:dvb:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
+      "to": "hash:job:dvb-coordinator-job:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
       "type": "PRODUCED_BY",
       "properties": {
         "bucket": "bucket:pipeline-data",
         "path": "dvb/",
         "source_hash": "",
-        "content_hash": "64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+        "content_hash": "4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
         "source_relation": "pipeline_output_hash"
       }
     },
     {
       "from": "bucket:pipeline-data",
-      "to": "hash:folder:pipeline-data:dvb_cleaned:5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
+      "to": "hash:folder:pipeline-data:dvb:38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "pipeline",
-        "hash_value": "5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
-        "path": "dvb_cleaned/"
+        "hash_value": "38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
+        "path": "dvb/"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:dvb_cleaned:5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
-      "to": "hash:job:dvb-text-cleaner-job:42591d07f7f162b6ade0a6bcbf264f5e537b05c64ff13cd92591821b14c7417c",
+      "from": "hash:folder:pipeline-data:dvb:38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
+      "to": "hash:job:dvb-crawler-job:38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
       "type": "PRODUCED_BY",
       "properties": {
         "bucket": "bucket:pipeline-data",
-        "path": "dvb_cleaned/",
-        "source_hash": "64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
-        "content_hash": "42591d07f7f162b6ade0a6bcbf264f5e537b05c64ff13cd92591821b14c7417c",
+        "path": "dvb/",
+        "source_hash": "",
+        "content_hash": "38de2eabf07734c073712e430240f1dacbe1e7df0a0e9564f61cc8b0e19396a5",
         "source_relation": "pipeline_output_hash"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:dvb_cleaned:5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
-      "to": "hash:folder:pipeline-data:dvb:64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+      "from": "bucket:pipeline-data",
+      "to": "hash:folder:pipeline-data:dvb_cleaned:d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
+      "type": "HAS_HASH",
+      "properties": {
+        "hash_type": "pipeline",
+        "hash_value": "d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
+        "path": "dvb_cleaned/"
+      }
+    },
+    {
+      "from": "hash:folder:pipeline-data:dvb_cleaned:d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
+      "to": "hash:job:dvb-text-cleaner-job:d7a714e8540d3bfbe258453d2cbfd704f2891d32fe1e371e22d376570ce33440",
+      "type": "PRODUCED_BY",
+      "properties": {
+        "bucket": "bucket:pipeline-data",
+        "path": "dvb_cleaned/",
+        "source_hash": "4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
+        "content_hash": "d7a714e8540d3bfbe258453d2cbfd704f2891d32fe1e371e22d376570ce33440",
+        "source_relation": "pipeline_output_hash"
+      }
+    },
+    {
+      "from": "hash:folder:pipeline-data:dvb_cleaned:d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
+      "to": "hash:folder:pipeline-data:dvb:4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "source_relation": "folder_hash_lineage",
-        "source_hash": "64545f402a9e536e634c7cfa1384e6992e9d8ef6864350728983e8054edf3b3a",
+        "source_hash": "4c7334d413fa4e5e5315cd15b843d48021388d9d0c7ab07c13f66456c37272d6",
         "source_bucket": "bucket:pipeline-data",
         "source_path": "dvb/"
       }
     },
     {
       "from": "bucket:pipeline-data",
-      "to": "hash:folder:pipeline-data:pending_review:c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
+      "to": "hash:folder:pipeline-data:pending_review:6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "pipeline",
-        "hash_value": "c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
+        "hash_value": "6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
         "path": "pending_review/"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:pending_review:c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
-      "to": "hash:job:crisis-classifier-job:f259f490d03dcd4494f87360abc1f27c606db29da13b54c8ee7c2166a0af4819",
+      "from": "hash:folder:pipeline-data:pending_review:6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
+      "to": "hash:job:crisis-classifier-job:7632d6fdec176812de1a6f86bee885b4da3962e3256264423ebe7b0ac429093b",
       "type": "PRODUCED_BY",
       "properties": {
         "bucket": "bucket:pipeline-data",
         "path": "pending_review/",
-        "source_hash": "5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
-        "content_hash": "f259f490d03dcd4494f87360abc1f27c606db29da13b54c8ee7c2166a0af4819",
+        "source_hash": "d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
+        "content_hash": "7632d6fdec176812de1a6f86bee885b4da3962e3256264423ebe7b0ac429093b",
         "source_relation": "pipeline_output_hash"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:pending_review:c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
-      "to": "hash:folder:pipeline-data:dvb_cleaned:5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
+      "from": "hash:folder:pipeline-data:pending_review:6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
+      "to": "hash:folder:pipeline-data:dvb_cleaned:d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "source_relation": "folder_hash_lineage",
-        "source_hash": "5a67342ec64a8a0b6474d47d68eba985a51497b8748ffd51a4b969847d817b75",
+        "source_hash": "d150a867c3f8b7120b1523f80c0d3c1ece74f27e79081386f9a82a50cfebad46",
         "source_bucket": "bucket:pipeline-data",
         "source_path": "dvb_cleaned/"
       }
     },
     {
       "from": "bucket:pipeline-data",
-      "to": "hash:folder:pipeline-data:crisis_articles:0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+      "to": "hash:folder:pipeline-data:crisis_articles:df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "pipeline",
-        "hash_value": "0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+        "hash_value": "df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
         "path": "crisis_articles/"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:crisis_articles:0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
-      "to": "hash:service:crisis-admin:190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+      "from": "hash:folder:pipeline-data:crisis_articles:df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
+      "to": "hash:service:crisis-admin:d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
       "type": "PRODUCED_BY",
       "properties": {
         "bucket": "bucket:pipeline-data",
         "path": "crisis_articles/",
-        "source_hash": "190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
-        "content_hash": "190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+        "source_hash": "d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
+        "content_hash": "d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
         "source_relation": "pipeline_output_hash"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:crisis_articles:0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
-      "to": "hash:folder:pipeline-data:pending_review:c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
+      "from": "hash:folder:pipeline-data:crisis_articles:df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
+      "to": "hash:folder:pipeline-data:pending_review:6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "source_relation": "folder_hash_lineage",
-        "source_hash": "c7c5c815ec247142fe18a11b49ad03300e4f0826b9441e6084b20998ab3f68ee",
+        "source_hash": "6109e8a195cd7234441b9aec58d30331c946857495e363dd9af0bb3b6c2593c7",
         "source_bucket": "bucket:pipeline-data",
         "source_path": "pending_review/"
       }
     },
     {
       "from": "bucket:pipeline-data",
-      "to": "hash:folder:pipeline-data:annotated_articles:eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
+      "to": "hash:folder:pipeline-data:annotated_articles:23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "pipeline",
-        "hash_value": "eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
+        "hash_value": "23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
         "path": "annotated_articles/"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:annotated_articles:eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
-      "to": "hash:service:crisis-admin:190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+      "from": "hash:folder:pipeline-data:annotated_articles:23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
+      "to": "hash:service:crisis-admin:d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
       "type": "PRODUCED_BY",
       "properties": {
         "bucket": "bucket:pipeline-data",
         "path": "annotated_articles/",
-        "source_hash": "0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
-        "content_hash": "190bf1f2c84f13bc37f82085056e45712b655e11acb4b6ec89e2f251deeff615",
+        "source_hash": "df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
+        "content_hash": "d262c1a9d3678af7dd05e08c192c8cbf92a4302b030dcee2e132b7b47f7d4c86",
         "source_relation": "pipeline_output_hash"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:annotated_articles:eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
-      "to": "hash:folder:pipeline-data:crisis_articles:0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+      "from": "hash:folder:pipeline-data:annotated_articles:23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
+      "to": "hash:folder:pipeline-data:crisis_articles:df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "source_relation": "folder_hash_lineage",
-        "source_hash": "0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+        "source_hash": "df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
         "source_bucket": "bucket:pipeline-data",
         "source_path": "crisis_articles/"
       }
     },
     {
       "from": "bucket:pipeline-data",
-      "to": "hash:folder:pipeline-data:pending_review_annotation:c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
+      "to": "hash:folder:pipeline-data:pending_review_annotation:dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "pipeline",
-        "hash_value": "c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
+        "hash_value": "dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
         "path": "pending_review_annotation/"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:pending_review_annotation:c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
-      "to": "hash:job:dvb-annotator-job:1b8e018c02b5a978036ecdcd775f65e3c922dca2f1176c511460162ba779c204",
+      "from": "hash:folder:pipeline-data:pending_review_annotation:dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
+      "to": "hash:job:dvb-annotator-job:8d52e74a0c96defbce813456f42b0b659bb1ef6fc0377419122395bac6239929",
       "type": "PRODUCED_BY",
       "properties": {
         "bucket": "bucket:pipeline-data",
         "path": "pending_review_annotation/",
-        "source_hash": "0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
-        "content_hash": "1b8e018c02b5a978036ecdcd775f65e3c922dca2f1176c511460162ba779c204",
+        "source_hash": "df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
+        "content_hash": "8d52e74a0c96defbce813456f42b0b659bb1ef6fc0377419122395bac6239929",
         "source_relation": "pipeline_output_hash"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:pending_review_annotation:c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
-      "to": "hash:folder:pipeline-data:crisis_articles:0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+      "from": "hash:folder:pipeline-data:pending_review_annotation:dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
+      "to": "hash:folder:pipeline-data:crisis_articles:df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "source_relation": "folder_hash_lineage",
-        "source_hash": "0071cde3402c8f1ee60aeee7b440ec93e9e8ac10f9dce01e27ecac11b82eade4",
+        "source_hash": "df71cd2e3f92e1388eddc51ed42c7a57d3c5c1a33c92ef56f08ed865444d444c",
         "source_bucket": "bucket:pipeline-data",
         "source_path": "crisis_articles/"
       }
     },
     {
       "from": "bucket:pipeline-data",
-      "to": "hash:folder:pipeline-data:events:2b2c96592a2cfdd30e1764c209211aeaecabcdce4d7a190df51d83741ba7331c",
+      "to": "hash:folder:pipeline-data:events:908fb8fd340e23ec6d0e2d5737396eb5d53878b4242d7f1aff766ced84ab760b",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "pipeline",
-        "hash_value": "2b2c96592a2cfdd30e1764c209211aeaecabcdce4d7a190df51d83741ba7331c",
+        "hash_value": "908fb8fd340e23ec6d0e2d5737396eb5d53878b4242d7f1aff766ced84ab760b",
         "path": "events/"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:events:2b2c96592a2cfdd30e1764c209211aeaecabcdce4d7a190df51d83741ba7331c",
-      "to": "hash:job:dvb-extractor-job:592dd68590aa037ef62d4b3e1050e508fc7a7448056270aa39537902ad982b04",
+      "from": "hash:folder:pipeline-data:events:908fb8fd340e23ec6d0e2d5737396eb5d53878b4242d7f1aff766ced84ab760b",
+      "to": "hash:job:dvb-extractor-job:16cb17e4b1d33c8a7932133a7a176959f2a4a427cf24a7c5d9697f12aa950bfb",
       "type": "PRODUCED_BY",
       "properties": {
         "bucket": "bucket:pipeline-data",
         "path": "events/",
-        "source_hash": "eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
-        "content_hash": "592dd68590aa037ef62d4b3e1050e508fc7a7448056270aa39537902ad982b04",
+        "source_hash": "23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
+        "content_hash": "16cb17e4b1d33c8a7932133a7a176959f2a4a427cf24a7c5d9697f12aa950bfb",
         "source_relation": "pipeline_output_hash"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:events:2b2c96592a2cfdd30e1764c209211aeaecabcdce4d7a190df51d83741ba7331c",
-      "to": "hash:folder:pipeline-data:annotated_articles:eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
+      "from": "hash:folder:pipeline-data:events:908fb8fd340e23ec6d0e2d5737396eb5d53878b4242d7f1aff766ced84ab760b",
+      "to": "hash:folder:pipeline-data:annotated_articles:23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "source_relation": "folder_hash_lineage",
-        "source_hash": "eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
+        "source_hash": "23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
         "source_bucket": "bucket:pipeline-data",
         "source_path": "annotated_articles/"
       }
     },
     {
       "from": "bucket:mlflow-artifacts",
-      "to": "hash:folder:mlflow-artifacts:root:9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+      "to": "hash:folder:mlflow-artifacts:root:60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
       "type": "HAS_HASH",
       "properties": {
         "hash_type": "pipeline",
-        "hash_value": "9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+        "hash_value": "60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
         "path": ""
       }
     },
     {
-      "from": "hash:folder:mlflow-artifacts:root:9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
-      "to": "hash:service:mlflow:9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+      "from": "hash:folder:mlflow-artifacts:root:60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
+      "to": "hash:service:mlflow:60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
       "type": "PRODUCED_BY",
       "properties": {
         "bucket": "bucket:mlflow-artifacts",
         "path": "",
         "source_hash": "",
-        "content_hash": "9250eb8fd2c7834c02cd65c2923e29c2e549b5629cf40e6d6d2e4018565761f5",
+        "content_hash": "60ca1bd74ce91f490ee88cb48b19639ceeb45f27ca50ed9cfac8e3b62fcbc003",
         "source_relation": "pipeline_output_hash"
       }
     },
     {
-      "from": "hash:folder:pipeline-data:annotated_articles:eb2d226c4cdb893278c877e601ac6ddf98df658c5d456b6813799b1e5787bb97",
-      "to": "hash:folder:pipeline-data:pending_review_annotation:c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
+      "from": "hash:folder:pipeline-data:annotated_articles:23c5f5166e8d0d04ca60938c57566e769c6b08c858df9f8ac1c850367ffe9f41",
+      "to": "hash:folder:pipeline-data:pending_review_annotation:dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "source_relation": "folder_hash_lineage",
-        "source_hash": "c2be27ff2de721b08a2e0ffe851cbb85d61a4dd78892b3c45298769642fc5c68",
+        "source_hash": "dfc42da5d41f49a99e2c30c0bf18374fc02cc25b7ac78a63e977111d9981866c",
         "source_bucket": "bucket:pipeline-data",
         "source_path": "pending_review_annotation/"
       }
@@ -1174,6 +1278,46 @@
     {
       "from": "service:crisis-admin",
       "to": "job:dvb-annotator-job",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:pipeline-data"
+      }
+    },
+    {
+      "from": "job:crisis-classifier-job",
+      "to": "job:dvb-coordinator-job",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:pipeline-data"
+      }
+    },
+    {
+      "from": "job:dvb-annotator-job",
+      "to": "job:dvb-coordinator-job",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:pipeline-data"
+      }
+    },
+    {
+      "from": "job:dvb-extractor-job",
+      "to": "job:dvb-coordinator-job",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:pipeline-data"
+      }
+    },
+    {
+      "from": "job:dvb-text-cleaner-job",
+      "to": "job:dvb-coordinator-job",
+      "type": "DEPENDS_ON_DATA_FROM",
+      "properties": {
+        "bucket": "bucket:pipeline-data"
+      }
+    },
+    {
+      "from": "service:crisis-admin",
+      "to": "job:dvb-coordinator-job",
       "type": "DEPENDS_ON_DATA_FROM",
       "properties": {
         "bucket": "bucket:pipeline-data"
