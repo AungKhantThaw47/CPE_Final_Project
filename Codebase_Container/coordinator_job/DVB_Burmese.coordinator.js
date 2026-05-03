@@ -2,8 +2,6 @@ const axios = require("axios");
 require("dotenv").config();
 const cheerio = require("cheerio");
 const { uploadJSONToGCS } = require("./utils/gcs_utils");
-
-const CONTENT_HASH = process.env.CONTENT_HASH || "content_hash_placeholder";
 const GCS_BUCKET = process.env.GCS_BUCKET || null;
 const GCP_REGION = process.env.GCP_REGION || "asia-southeast1";
 const CRAWLER_JOB_NAME = process.env.CRAWLER_JOB_NAME || "dvb-crawler-job";
@@ -15,11 +13,30 @@ function formatDate(date) {
 
 function parseDateInput(value, label) {
     if (!value) return null;
-    const m = String(value).trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
-    if (!m) throw new Error(`Invalid ${label}: '${value}'. Expected DD-MM-YYYY.`);
-    const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-    d.setHours(0, 0, 0, 0);
-    return d;
+    const s = String(value).trim();
+    // Accept DD-MM-YYYY
+    let m = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m) {
+        const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+    // Accept YYYY-MM-DD
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+    // Fallback: try Date.parse for other common formats
+    const parsed = Date.parse(s);
+    if (!isNaN(parsed)) {
+        const d = new Date(parsed);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+
+    throw new Error(`Invalid ${label}: '${value}'. Expected DD-MM-YYYY or YYYY-MM-DD.`);
 }
 
 function parseDateRange() {
@@ -115,7 +132,7 @@ async function saveLinksManifest(articles, startDate, endDate) {
             },
         };
 
-        const gcsPath = `dvb/${CONTENT_HASH}/${dateStr}/links-manifest.json`;
+        const gcsPath = `dvb/links-manifests/${dateStr}/links-manifest.json`;
         const result = await uploadJSONToGCS(manifest, gcsPath);
         if (result.status === "success") {
             console.log(`Saved links manifest: ${gcsPath} (${dateArticles.length} articles)`);
@@ -139,10 +156,11 @@ async function getGcpMeta() {
 
 async function spawnCrawlerJob(startStr, endStr, accessToken, projectId) {
     const apiUrl = `https://run.googleapis.com/v2/projects/${projectId}/locations/${GCP_REGION}/jobs/${CRAWLER_JOB_NAME}:run`;
-    // Pass our manifest prefix so the crawler can find pre-discovered links.
-    // Do NOT override CONTENT_HASH — the crawler must write articles under its own
-    // Terraform-injected hash so the text cleaner (which queries Neo4j for
-    // job:dvb-crawler-job's hash) resolves the correct GCS path.
+    // Pass our unversioned manifest prefix so the crawler can find pre-discovered links.
+    // Coordinator does NOT track versioning — always writes to dvb/links-manifests/.
+    // Crawler must write articles under its own Terraform-injected CONTENT_HASH
+    // so the text cleaner (which queries Neo4j for job:dvb-crawler-job's hash)
+    // resolves the correct GCS path.
     await axios.post(
         apiUrl,
         {
@@ -151,7 +169,7 @@ async function spawnCrawlerJob(startStr, endStr, accessToken, projectId) {
                     env: [
                         { name: "CRAWL_START_DATE", value: startStr },
                         { name: "CRAWL_END_DATE", value: endStr },
-                        { name: "LINKS_MANIFEST_PREFIX", value: `dvb/${CONTENT_HASH}` },
+                        { name: "LINKS_MANIFEST_PREFIX", value: `dvb/links-manifests` },
                         { name: "GCS_BUCKET", value: GCS_BUCKET || "" },
                         { name: "GCP_REGION", value: GCP_REGION },
                     ],
@@ -187,8 +205,19 @@ async function main() {
 
     await saveLinksManifest(articles, startDate, endDate);
 
-    const startStr = formatDate(startDate);
-    const endStr = formatDate(endDate);
+    // Crawler expects dates in DD-MM-YYYY. formatDate() returns YYYY-MM-DD
+    const startStr = (() => {
+        const d = startDate.getDate().toString().padStart(2, "0");
+        const m = (startDate.getMonth() + 1).toString().padStart(2, "0");
+        const y = startDate.getFullYear();
+        return `${d}-${m}-${y}`;
+    })();
+    const endStr = (() => {
+        const d = endDate.getDate().toString().padStart(2, "0");
+        const m = (endDate.getMonth() + 1).toString().padStart(2, "0");
+        const y = endDate.getFullYear();
+        return `${d}-${m}-${y}`;
+    })();
     console.log(`\nSpawning crawler sub-job for ${startStr} to ${endStr}...`);
 
     let accessToken, projectId;

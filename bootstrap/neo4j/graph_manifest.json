@@ -183,6 +183,18 @@
       }
     },
     {
+      "key": "service:crisis-dashboard",
+      "label": "CloudRunService",
+      "properties": {
+        "name": "crisis-dashboard",
+        "runtime": "Nginx + Static Frontend",
+        "cpu": "1",
+        "memory": "512Mi",
+        "min_instances": 0,
+        "max_instances": 2
+      }
+    },
+    {
       "key": "job:dvb-annotator-job",
       "label": "CloudRunJob",
       "properties": {
@@ -225,10 +237,10 @@
       }
     },
     {
-      "key": "workflow:manual-pipeline",
+      "key": "workflow:manual-coordinator",
       "label": "Workflow",
       "properties": {
-        "name": "manual-pipeline",
+        "name": "manual-coordinator",
         "platform": "Cloud Workflows",
         "schedule": "manual"
       }
@@ -357,6 +369,12 @@
     },
     {
       "from": "project:cpe-final-project",
+      "to": "service:crisis-dashboard",
+      "type": "SERVES",
+      "properties": {}
+    },
+    {
+      "from": "project:cpe-final-project",
       "to": "job:dvb-annotator-job",
       "type": "RUNS",
       "properties": {}
@@ -369,7 +387,7 @@
     },
     {
       "from": "project:cpe-final-project",
-      "to": "workflow:manual-pipeline",
+      "to": "workflow:manual-coordinator",
       "type": "RUNS",
       "properties": {}
     },
@@ -424,6 +442,12 @@
     {
       "from": "registry:artifact-registry",
       "to": "service:events-api",
+      "type": "HOSTS_IMAGE_FOR",
+      "properties": {}
+    },
+    {
+      "from": "registry:artifact-registry",
+      "to": "service:crisis-dashboard",
       "type": "HOSTS_IMAGE_FOR",
       "properties": {}
     },
@@ -626,7 +650,7 @@
       }
     },
     {
-      "from": "workflow:manual-pipeline",
+      "from": "workflow:manual-coordinator",
       "to": "job:dvb-crawler-job",
       "type": "ORCHESTRATES",
       "properties": {
@@ -634,7 +658,7 @@
       }
     },
     {
-      "from": "workflow:manual-pipeline",
+      "from": "workflow:manual-coordinator",
       "to": "job:dvb-text-cleaner-job",
       "type": "ORCHESTRATES",
       "properties": {
@@ -642,7 +666,7 @@
       }
     },
     {
-      "from": "workflow:manual-pipeline",
+      "from": "workflow:manual-coordinator",
       "to": "job:crisis-classifier-job",
       "type": "ORCHESTRATES",
       "properties": {

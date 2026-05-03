@@ -37,38 +37,43 @@
             {% if not pending_grouped %}
             <p class="empty">No pending classification articles.</p>
             {% else %}
-                {% for group in pending_grouped %}
-                <h3 class="date-header">{{ group.date }} <span class="date-count">({{ group.articles | length }} articles)</span></h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Filename</th>
-                            <th>Hash</th>
-                            <th>Size</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for article in group.articles %}
-                        <tr data-blob="{{ article.blob_name }}">
-                            <td>{{ article.filename }}</td>
-                            <td>{{ article.hash }}</td>
-                            <td>{{ article.size }} bytes</td>
-                            <td>
-                                <form method="POST" action="/admin/confirm" class="inline action-form">
-                                    <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
-                                    <button type="submit" class="btn confirm">Confirm</button>
-                                </form>
-                                <form method="POST" action="/admin/reject" class="inline action-form">
-                                    <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
-                                    <button type="submit" class="btn reject">Reject</button>
-                                </form>
-                                <a href="/admin/view?blob={{ article.blob_name }}" target="_blank" class="btn view">View</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                {% for hash_group in pending_grouped %}
+                <div class="hash-group">
+                    <h2 class="hash-header">Hash: <code>{{ hash_group.hash[:16] }}...</code></h2>
+                    {% for date_group in hash_group.date_groups %}
+                    <h3 class="date-header">{{ date_group.date }} <span class="date-count">({{ date_group.articles | length }} articles)</span></h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Hash</th>
+                                <th>Size</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for article in date_group.articles %}
+                            <tr data-blob="{{ article.blob_name }}">
+                                <td>{{ article.filename }}</td>
+                                <td>{{ article.hash }}</td>
+                                <td>{{ article.size }} bytes</td>
+                                <td>
+                                    <form method="POST" action="/admin/confirm" class="inline action-form">
+                                        <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
+                                        <button type="submit" class="btn confirm">Confirm</button>
+                                    </form>
+                                    <form method="POST" action="/admin/reject" class="inline action-form">
+                                        <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
+                                        <button type="submit" class="btn reject">Reject</button>
+                                    </form>
+                                    <a href="/admin/view?blob={{ article.blob_name }}" target="_blank" class="btn view">View</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endfor %}
+                </div>
                 {% endfor %}
             {% endif %}
         </section>
@@ -77,39 +82,44 @@
             {% if not annotation_grouped %}
             <p class="empty">No pending annotation articles.</p>
             {% else %}
-                {% for group in annotation_grouped %}
-                <h3 class="date-header">{{ group.date }} <span class="date-count">({{ group.articles | length }} articles)</span></h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Filename</th>
-                            <th>Hash</th>
-                            <th>Size</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for article in group.articles %}
-                        <tr data-blob="{{ article.blob_name }}">
-                            <td>{{ article.filename }}</td>
-                            <td>{{ article.hash }}</td>
-                            <td>{{ article.size }} bytes</td>
-                            <td>
-                                <form method="POST" action="/admin/confirm_annotation" class="inline action-form">
-                                    <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
-                                    <button type="submit" class="btn confirm">Confirm</button>
-                                </form>
-                                <form method="POST" action="/admin/reject_annotation" class="inline action-form">
-                                    <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
-                                    <button type="submit" class="btn reject">Reject</button>
-                                </form>
-                                <a href="/admin/view?blob={{ article.blob_name }}" target="_blank" class="btn view">View</a>
-                                <a href="/admin/view_event_tags?blob={{ article.blob_name }}" target="_blank" class="btn view-events">View Event Tags</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                {% for hash_group in annotation_grouped %}
+                <div class="hash-group">
+                    <h2 class="hash-header">Hash: <code>{{ hash_group.hash[:16] }}...</code></h2>
+                    {% for date_group in hash_group.date_groups %}
+                    <h3 class="date-header">{{ date_group.date }} <span class="date-count">({{ date_group.articles | length }} articles)</span></h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Hash</th>
+                                <th>Size</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for article in date_group.articles %}
+                            <tr data-blob="{{ article.blob_name }}">
+                                <td>{{ article.filename }}</td>
+                                <td>{{ article.hash }}</td>
+                                <td>{{ article.size }} bytes</td>
+                                <td>
+                                    <form method="POST" action="/admin/confirm_annotation" class="inline action-form">
+                                        <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
+                                        <button type="submit" class="btn confirm">Confirm</button>
+                                    </form>
+                                    <form method="POST" action="/admin/reject_annotation" class="inline action-form">
+                                        <input type="hidden" name="blob_name" value="{{ article.blob_name }}">
+                                        <button type="submit" class="btn reject">Reject</button>
+                                    </form>
+                                    <a href="/admin/view?blob={{ article.blob_name }}" target="_blank" class="btn view">View</a>
+                                    <a href="/admin/view_event_tags?blob={{ article.blob_name }}" target="_blank" class="btn view-events">View Event Tags</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endfor %}
+                </div>
                 {% endfor %}
             {% endif %}
         </section>

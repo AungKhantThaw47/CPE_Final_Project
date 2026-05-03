@@ -20,6 +20,7 @@ from utils.neo4j_utils import (
     query_latest_folder_hash_from_neo4j_env,
     query_latest_hash_from_neo4j_env,
     write_folder_hash_to_neo4j_env,
+    create_main_pipeline_linkage_env,
 )
 
 # Common Myanmar author name patterns
@@ -409,6 +410,13 @@ if __name__ == "__main__":
         source_folder_hash=source_folder_hash,
     ):
         print(f"   ✅ Folder hash saved to Neo4j: dvb_cleaned/ → {output_hash}")
+        
+        # Create DEPENDS_ON_DATA_FROM relationships between consecutive pipeline stages
+        success, message = create_main_pipeline_linkage_env()
+        if success:
+            print(f"   ✅ Pipeline linkages created: {message}")
+        else:
+            print(f"   ⚠️  Pipeline linkage creation incomplete: {message}")
     else:
         print(f"   ⚠️  Neo4j folder hash write skipped (not configured or failed)")
 

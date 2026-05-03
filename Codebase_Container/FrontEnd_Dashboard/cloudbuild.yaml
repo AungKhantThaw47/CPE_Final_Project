@@ -1,0 +1,26 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_IMAGE_TAG}'
+      - '-f'
+      - 'Codebase_Container/FrontEnd_Dashboard/Dockerfile'
+      - 'Codebase_Container/FrontEnd_Dashboard'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_IMAGE_TAG}'
+
+images:
+  - '${_IMAGE_TAG}'
+
+substitutions:
+  _IMAGE_TAG: 'asia-southeast1-docker.pkg.dev/PROJECT_ID/REPO_NAME/crisis-dashboard:latest'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '600s'

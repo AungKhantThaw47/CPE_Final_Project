@@ -414,7 +414,7 @@ def create_main_pipeline_linkage(
 ) -> tuple[bool, str]:
     """Create DEPENDS_ON_DATA_FROM relationships for the main pipeline in correct order.
 
-    Pipeline order: dvb → dvb_cleaned → pending_review → crisis_articles → pending_review_annotation → annotated_articles → events
+    Pipeline order: dvb → dvb_cleaned → pending_review → crisis_articles → pending_annotation_review → annotated_articles → events
 
     Returns (success: bool, message: str) where message describes the result.
     """
@@ -423,7 +423,7 @@ def create_main_pipeline_linkage(
         "dvb_cleaned/",
         "pending_review/",
         "crisis_articles/",
-        "pending_review_annotation/",
+        "pending_annotation_review/",
         "annotated_articles/",
         "events/",
     ]

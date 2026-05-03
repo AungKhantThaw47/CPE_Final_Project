@@ -23,6 +23,16 @@ PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip() or None
 COLLECTION = os.environ.get("FIRESTORE_COLLECTION", EVENT_COLLECTION_DEFAULT).strip() or EVENT_COLLECTION_DEFAULT
 
 
+@app.after_request
+def add_cors_headers(response):
+    """Allow browser clients (dashboard) to call this API cross-origin."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Vary"] = "Origin"
+    return response
+
+
 def parse_limit(raw_value: str, default: int = 50, min_value: int = 1, max_value: int = 200) -> int:
     try:
         parsed = int(raw_value)

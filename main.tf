@@ -82,7 +82,9 @@ locals {
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
-        "roles/logging.logWriter"
+        "roles/logging.logWriter",
+        "roles/run.invoker",
+        "roles/run.developer"
       ]
     }
 
@@ -317,6 +319,28 @@ locals {
       cloud_sql_instances = []
     }
 
+    crisis-dashboard = {
+      codebase_path   = "${path.root}/Codebase_Container/FrontEnd_Dashboard"
+      container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/crisis-dashboard:latest"
+      description     = "Crisis events interactive dashboard — Leaflet.js geospatial visualization"
+      build_image     = true
+      cpu_limit       = "1"
+      memory_limit    = "512Mi"
+      min_instances   = 0
+      max_instances   = 2
+      port            = 8080
+      allow_public    = true
+      environment_variables = {
+        EVENTS_API_URL       = "https://events-api-PLACEHOLDER/events" # Updated after deploy with real URL
+        GOOGLE_CLOUD_PROJECT = var.project_id
+        GCP_REGION           = var.region
+      }
+      service_account_roles = [
+        "roles/logging.logWriter"
+      ]
+      cloud_sql_instances = []
+    }
+
   }
 }
 
@@ -473,16 +497,7 @@ resource "google_cloud_run_v2_job_iam_member" "invoker_can_run" {
   member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
 }
 
-# Allow crawler SA to trigger the text cleaner job (for direct pipeline chaining)
-resource "google_cloud_run_v2_job_iam_member" "crawler_triggers_cleaner" {
-  project  = var.project_id
-  location = var.region
-  name     = module.jobs["dvb-text-cleaner-job"].job_name
-  role     = "roles/run.developer"
-  member   = "serviceAccount:${module.jobs["dvb-crawler-job"].service_account_email}"
-
-  depends_on = [module.jobs]
-}
+# Note: Job-to-job chaining removed. Pipeline orchestration delegated to Cloud Workflows (workflow.yaml, manual_workflow.yaml)
 
 # Grant Eventarc Event Receiver role to service account
 resource "google_project_iam_member" "eventarc_receiver" {
@@ -590,11 +605,11 @@ resource "google_workflows_workflow" "daily_pipeline" {
 }
 
 # Cloud Workflows definition for manual date-range execution
-resource "google_workflows_workflow" "manual_pipeline" {
-  name            = "manual-pipeline"
+resource "google_workflows_workflow" "manual_coordinator" {
+  name            = "manual-coordinator"
   region          = var.region
   project         = var.project_id
-  description     = "Manual pipeline with custom date range: crawler -> cleaner -> classifier -> notify"
+  description     = "Manual coordinator workflow with custom date range: coordinator -> crawler -> notify"
   service_account = google_service_account.workflow_sa.email
   source_contents = file("${path.root}/manual_workflow.yaml")
   user_env_vars = {

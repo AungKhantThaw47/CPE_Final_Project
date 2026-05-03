@@ -14,6 +14,7 @@ from utils.neo4j_utils import (
     query_latest_folder_hash_from_neo4j_env,
     query_folder_hash_derived_from_env,
     write_folder_hash_to_neo4j_env,
+    create_main_pipeline_linkage_env,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -179,7 +180,7 @@ def process_crisis_articles():
                     skipped_count += 1
                     continue
                 
-                annotated_blob_name = f"pending_review_annotation/{output_hash}/{date_str}/{filename}"
+                annotated_blob_name = f"pending_annotation_review/{output_hash}/{date_str}/{filename}"
                 
                 # Check if already annotated
                 annotated_blob = bucket.blob(annotated_blob_name)
@@ -217,14 +218,21 @@ def process_crisis_articles():
         logger.info("=" * 60)
 
         if write_folder_hash_to_neo4j_env(
-            folder_path="pending_review_annotation/",
+            folder_path="pending_annotation_review/",
             hash_value=output_hash,
             bucket_name=crisis_bucket,
             producer_component_key="job:dvb-annotator-job",
             source_folder_path="crisis_articles/",
             source_folder_hash=source_hash,
         ):
-            logger.info(f"✅ Output folder hash saved to Neo4j: pending_review_annotation/ → {output_hash}")
+            logger.info(f"✅ Output folder hash saved to Neo4j: pending_annotation_review/ → {output_hash}")
+            
+            # Create DEPENDS_ON_DATA_FROM relationships between consecutive pipeline stages
+            success, message = create_main_pipeline_linkage_env()
+            if success:
+                logger.info(f"✅ Pipeline linkages created: {message}")
+            else:
+                logger.warning(f"⚠️  Pipeline linkage creation incomplete: {message}")
         else:
             logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
         

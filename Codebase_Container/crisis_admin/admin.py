@@ -2,6 +2,7 @@ import os
 import logging
 import sys
 import re
+from datetime import datetime
 from flask import Flask, request, jsonify, redirect, render_template
 from google.cloud import storage
 import google.auth
@@ -159,46 +160,64 @@ def list_stage_articles(
     return articles
 
 
+def list_all_hashes_in_stage(crisis_bucket: str, stage_prefix: str) -> List[str]:
+    """List all hashes present in a stage folder, ordered by most recent first."""
+    try:
+        client = storage.Client()
+        bucket = client.bucket(crisis_bucket)
+        
+        hash_times = {}
+        for blob in bucket.list_blobs(prefix=f"{stage_prefix}/"):
+            # Extract hash from path: {stage_prefix}/{hash}/{date}/{filename}
+            m = re.match(rf"^{re.escape(stage_prefix)}/([^/]+)/", blob.name)
+            if not m:
+                continue
+            h = m.group(1)
+            updated = blob.updated or datetime.min
+            if h not in hash_times or updated > hash_times[h]:
+                hash_times[h] = updated
+        
+        # Sort by most recent first
+        return sorted(hash_times.keys(), key=lambda h: hash_times[h], reverse=True)
+    except Exception as e:
+        logger.warning(f"⚠️  Error listing hashes in {stage_prefix}: {e}")
+        return []
+
+
+def list_pending_articles_all_hashes(crisis_bucket: str) -> List[Dict]:
+    """List all pending_review articles from all hashes, grouped by hash."""
+    hashes = list_all_hashes_in_stage(crisis_bucket, "pending_review")
+    
+    result = []
+    for h in hashes:
+        articles = list_stage_articles(crisis_bucket, "pending_review", selected_hash=h)
+        if articles:
+            result.append({"hash": h, "articles": articles})
+    
+    return result
+
+
+def list_pending_annotation_articles_all_hashes(crisis_bucket: str) -> List[Dict]:
+    """List all pending_annotation_review articles from all hashes, grouped by hash."""
+    hashes = list_all_hashes_in_stage(crisis_bucket, "pending_annotation_review")
+    
+    result = []
+    for h in hashes:
+        articles = list_stage_articles(crisis_bucket, "pending_annotation_review", selected_hash=h)
+        if articles:
+            result.append({"hash": h, "articles": articles})
+    
+    return result
+
+
 def list_pending_articles(crisis_bucket: str) -> List[Dict]:
-    # Use only the system DB (Neo4j) FolderHash. If missing or there are no
-    # blobs for the stored hash, show empty (do NOT fall back to scanning GCS).
-    folder_hash = query_latest_folder_hash_from_neo4j_env("pending_review/", crisis_bucket)
-
-    if not folder_hash:
-        return []
-
-    client = storage.Client()
-    bucket = client.bucket(crisis_bucket)
-
-    prefix = f"pending_review/{folder_hash}/"
-    has_any = any(True for _ in bucket.list_blobs(prefix=prefix, max_results=1))
-    if not has_any:
-        return []
-
-    return list_stage_articles(crisis_bucket, "pending_review", selected_hash=folder_hash)
+    """Legacy function for backwards compatibility. Returns all hashes grouped."""
+    return list_pending_articles_all_hashes(crisis_bucket)
 
 
 def list_pending_annotation_articles(crisis_bucket: str) -> List[Dict]:
-    # Use only the system DB (Neo4j) FolderHash. If missing or there are no
-    # blobs for the stored hash, show empty (do NOT fall back to scanning GCS).
-    folder_hash = query_latest_folder_hash_from_neo4j_env("pending_review_annotation/", crisis_bucket)
-
-    if not folder_hash:
-        return []
-
-    client = storage.Client()
-    bucket = client.bucket(crisis_bucket)
-
-    prefix = f"pending_review_annotation/{folder_hash}/"
-    has_any = any(True for _ in bucket.list_blobs(prefix=prefix, max_results=1))
-    if not has_any:
-        return []
-
-    return list_stage_articles(
-        crisis_bucket,
-        "pending_review_annotation",
-        selected_hash=folder_hash,
-    )
+    """Legacy function for backwards compatibility. Returns all hashes grouped."""
+    return list_pending_annotation_articles_all_hashes(crisis_bucket)
 
 
 def get_stage_hash_status(stage_prefix: str, crisis_bucket: str) -> Dict[str, str]:
@@ -263,7 +282,7 @@ def validate_blob_is_latest_hash(blob_name: str, stage_prefix: str, crisis_bucke
 
 def get_review_actions(blob_name: str) -> Dict[str, str]:
     """Return the correct confirm/reject actions for a blob path."""
-    if blob_name.startswith("pending_review_annotation/"):
+    if blob_name.startswith("pending_annotation_review/"):
         return {
             "confirm_action": "/admin/confirm_annotation",
             "reject_action": "/admin/reject_annotation",
@@ -275,30 +294,83 @@ def get_review_actions(blob_name: str) -> Dict[str, str]:
     }
 
 
+def find_next_blob_after(blob_name: str, stage_prefix: str, crisis_bucket: str) -> Optional[str]:
+    """Return the next blob name in the same stage/hash group or None.
+
+    Lists articles for the same folder-hash and returns the subsequent blob
+    after `blob_name` in the stable ordering used by `list_stage_articles()`.
+    """
+    # Extract hash from blob path: {stage_prefix}/{hash}/{date}/{filename}
+    m = re.match(rf'^{re.escape(stage_prefix)}/([^/]+)/', blob_name)
+    if not m:
+        return None
+    selected_hash = m.group(1)
+
+    try:
+        articles = list_stage_articles(crisis_bucket, stage_prefix, selected_hash=selected_hash)
+        # stable sort by date then filename to provide deterministic "next"
+        def keyfn(a):
+            return (a.get('date',''), a.get('filename',''))
+        articles_sorted = sorted(articles, key=keyfn)
+        blob_names = [a['blob_name'] for a in articles_sorted]
+        if blob_name in blob_names:
+            idx = blob_names.index(blob_name)
+            if idx + 1 < len(blob_names):
+                return blob_names[idx + 1]
+    except Exception:
+        return None
+    return None
+
+
 @app.route("/admin", methods=["GET"])
 def admin_page():
     """Admin HTML page for reviewing pending and annotated crisis queues."""
     crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
     try:
-        pending_articles = list_pending_articles(crisis_bucket) if crisis_bucket else []
-        pending_annotation_articles = list_pending_annotation_articles(crisis_bucket) if crisis_bucket else []
+        # Get articles grouped by hash (each hash group has articles list)
+        pending_by_hash = list_pending_articles(crisis_bucket) if crisis_bucket else []
+        pending_annotation_by_hash = list_pending_annotation_articles(crisis_bucket) if crisis_bucket else []
+        
+        # For each hash group, further group articles by date
+        pending_grouped_with_dates = []
+        for hash_group in pending_by_hash:
+            dated_articles = group_articles_by_date(hash_group.get('articles', []))
+            pending_grouped_with_dates.append({
+                'hash': hash_group['hash'],
+                'date_groups': dated_articles
+            })
+        
+        annotation_grouped_with_dates = []
+        for hash_group in pending_annotation_by_hash:
+            dated_articles = group_articles_by_date(hash_group.get('articles', []))
+            annotation_grouped_with_dates.append({
+                'hash': hash_group['hash'],
+                'date_groups': dated_articles
+            })
+        
+        # Count total articles across all hashes
+        total_pending_count = sum(len(hg.get('articles', [])) for hg in pending_by_hash)
+        total_annotation_count = sum(len(hg.get('articles', [])) for hg in pending_annotation_by_hash)
+        
         hash_statuses = [
             get_stage_hash_status_view(get_stage_hash_status("pending_review", crisis_bucket)),
-            get_stage_hash_status_view(get_stage_hash_status("pending_review_annotation", crisis_bucket)),
+            get_stage_hash_status_view(get_stage_hash_status("pending_annotation_review", crisis_bucket)),
         ] if crisis_bucket else []
-        logger.info( hash_statuses )
+        logger.info(hash_statuses)
     except Exception as e:
-        pending_articles = []
-        pending_annotation_articles = []
+        pending_grouped_with_dates = []
+        annotation_grouped_with_dates = []
+        total_pending_count = 0
+        total_annotation_count = 0
         hash_statuses = []
         logger.error(f"Error listing pending articles: {e}")
 
     return render_template(
         "admin.html",
-        pending_articles_count=len(pending_articles),
-        pending_annotation_articles_count=len(pending_annotation_articles),
-        pending_grouped=group_articles_by_date(pending_articles),
-        annotation_grouped=group_articles_by_date(pending_annotation_articles),
+        pending_articles_count=total_pending_count,
+        pending_annotation_articles_count=total_annotation_count,
+        pending_grouped=pending_grouped_with_dates,
+        annotation_grouped=annotation_grouped_with_dates,
         hash_statuses=hash_statuses,
     )
 
@@ -411,6 +483,11 @@ def admin_confirm():
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({"success": True, "message": f"Confirmed: {blob_name}"}), 200
+
+    # Non-AJAX: redirect to next article in the same pending_review hash if available
+    next_blob = find_next_blob_after(blob_name, 'pending_review', crisis_bucket)
+    if next_blob:
+        return redirect(f'/admin/view?blob={next_blob}')
     return redirect('/admin')
 
 
@@ -437,12 +514,17 @@ def admin_reject():
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({"success": True, "message": f"Rejected: {blob_name}"}), 200
+
+    # Non-AJAX: redirect to next article in the same pending_review hash if available
+    next_blob = find_next_blob_after(blob_name, 'pending_review', crisis_bucket)
+    if next_blob:
+        return redirect(f'/admin/view?blob={next_blob}')
     return redirect('/admin')
 
 
 @app.route("/admin/confirm_annotation", methods=["POST"])
 def admin_confirm_annotation():
-    """Move a pending annotated article to annotated_articles/ and trigger extractor job."""
+    """Move a pending annotated article to annotated_articles/ and trigger extraction."""
     blob_name = request.form.get('blob_name', '')
     crisis_bucket = os.environ.get('CRISIS_BUCKET', '')
     if not blob_name or not crisis_bucket:
@@ -451,7 +533,7 @@ def admin_confirm_annotation():
         return "Missing parameters", 400
 
     # Validate blob is from latest hash
-    if not validate_blob_is_latest_hash(blob_name, "pending_review_annotation", crisis_bucket):
+    if not validate_blob_is_latest_hash(blob_name, "pending_annotation_review", crisis_bucket):
         error_msg = "Cannot confirm annotation: not from latest hash version"
         logger.warning(f"⚠️  {error_msg} - blob: {blob_name}")
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -463,12 +545,12 @@ def admin_confirm_annotation():
         bucket = client.bucket(crisis_bucket)
         source_blob = bucket.blob(blob_name)
 
-        # pending_review_annotation/{hash}/{date}/{filename} -> annotated_articles/{same_hash}/{date}/{filename}
-        # Use the pending_review_annotation hash directly so that annotated_articles/ stays version-chain aligned.
-        pending_ann_match = re.match(r'^pending_review_annotation/([^/]+)/', blob_name)
+        # pending_annotation_review/{hash}/{date}/{filename} -> annotated_articles/{same_hash}/{date}/{filename}
+        # Use the pending_annotation_review hash directly so that annotated_articles/ stays version-chain aligned.
+        pending_ann_match = re.match(r'^pending_annotation_review/([^/]+)/', blob_name)
         pending_ann_hash = pending_ann_match.group(1) if pending_ann_match else ""
         output_hash = pending_ann_hash or "unknown"
-        date_match = re.match(r'^pending_review_annotation/[^/]+/([0-9]{4}-[0-9]{2}-[0-9]{2})/', blob_name)
+        date_match = re.match(r'^pending_annotation_review/[^/]+/([0-9]{4}-[0-9]{2}-[0-9]{2})/', blob_name)
         date_str = date_match.group(1) if date_match else "unknown"
         filename = blob_name.split('/')[-1]
         destination_name = f'annotated_articles/{output_hash}/{date_str}/{filename}'
@@ -480,7 +562,7 @@ def admin_confirm_annotation():
             hash_value=output_hash,
             bucket_name=crisis_bucket,
             producer_component_key='service:crisis-admin',
-            source_folder_path='pending_review_annotation/',
+            source_folder_path='pending_annotation_review/',
             source_folder_hash=pending_ann_hash,
         ):
             logger.info(f"✅ Output folder hash saved to Neo4j: annotated_articles/ → {output_hash}")
@@ -498,6 +580,11 @@ def admin_confirm_annotation():
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({"success": True, "message": f"Confirmed annotation: {blob_name}"}), 200
+
+    # Non-AJAX: redirect to next article in the same pending_annotation_review hash if available
+    next_blob = find_next_blob_after(blob_name, 'pending_annotation_review', crisis_bucket)
+    if next_blob:
+        return redirect(f'/admin/view?blob={next_blob}')
     return redirect('/admin')
 
 
@@ -524,6 +611,11 @@ def admin_reject_annotation():
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({"success": True, "message": f"Rejected annotation: {blob_name}"}), 200
+
+    # Non-AJAX: redirect to next article in the same pending_annotation_review hash if available
+    next_blob = find_next_blob_after(blob_name, 'pending_annotation_review', crisis_bucket)
+    if next_blob:
+        return redirect(f'/admin/view?blob={next_blob}')
     return redirect('/admin')
 
 

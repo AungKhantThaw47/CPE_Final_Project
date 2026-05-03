@@ -77,7 +77,7 @@ expected = [
     "job:dvb-text-cleaner-job",
     "job:crisis-classifier-job",
     "workflow:daily-pipeline",
-    "workflow:manual-pipeline",
+    "workflow:manual-coordinator",
     "bucket:pipeline-data",
     "source:dvb-news",
     "registry:artifact-registry",

@@ -371,8 +371,8 @@ tbody tr:hover td{color:var(--tx)}
 
 <script>
 /* ================================================================
-   DATA — auto-fetched from GCS bucket on page load
-   ================================================================ */
+  DATA
+  ================================================================ */
 const RAW = [];
 
 /* Coordinate cache — populated at runtime via Nominatim geocoding.
@@ -1301,11 +1301,15 @@ async function preGeocodeAll(data) {
   hideMapStatus();
 }
 
-/* Append new records to DATA, geocode new locations, then re-render */
-async function loadData(jsonArray) {
+/* Append/replace records in DATA, geocode new locations, then re-render */
+async function loadData(jsonArray, options = {}) {
+  const { replace = false, suppressEmptyAlert = false } = options;
   const incoming = Array.isArray(jsonArray) ? jsonArray : (jsonArray.data || []);
-  if (!incoming.length) { alert("JSON loaded but contains no records."); return; }
-  DATA = DATA.concat(incoming);
+  if (!incoming.length) {
+    if (!suppressEmptyAlert) alert("JSON loaded but contains no records.");
+    return 0;
+  }
+  DATA = replace ? incoming : DATA.concat(incoming);
 
   // Auto-set date range from all data
   const dates = DATA.map(d => parseDate(d.date)).filter(Boolean);
@@ -1322,6 +1326,65 @@ async function loadData(jsonArray) {
 
   await preGeocodeAll(incoming);
   applyFilters();
+  return incoming.length;
+}
+
+function inferEventsApiUrlFromHost() {
+  const host = window.location.hostname || "";
+  const match = host.match(/^crisis-dashboard-(.+)$/);
+  if (!match) return null;
+  return `https://events-api-${match[1]}/events`;
+}
+
+function resolveEventsApiUrl() {
+  const fromQuery = new URLSearchParams(window.location.search).get("api");
+  if (fromQuery) return fromQuery;
+
+  if (typeof window.EVENTS_API_URL === "string" && window.EVENTS_API_URL.trim()) {
+    return window.EVENTS_API_URL.trim();
+  }
+
+  const inferred = inferEventsApiUrlFromHost();
+  if (inferred) return inferred;
+
+  return "/events";
+}
+
+function normalizeApiEvents(payload) {
+  const rawItems = Array.isArray(payload)
+    ? payload
+    : (Array.isArray(payload?.events) ? payload.events : []);
+
+  return rawItems
+    .map(item => {
+      const base = item && typeof item === "object" ? item : {};
+      const nested = base.event && typeof base.event === "object" ? base.event : {};
+      const merged = { ...base, ...nested };
+      delete merged.event;
+      return merged;
+    })
+    .filter(item => item && typeof item === "object");
+}
+
+async function loadInitialDataFromApi() {
+  const apiUrl = resolveEventsApiUrl();
+  showMapStatus("Loading events from API...");
+
+  try {
+    const res = await fetch(apiUrl, { cache: "no-store" });
+    if (!res.ok) {
+      throw new Error(`API request failed (${res.status})`);
+    }
+
+    const payload = await res.json();
+    const normalized = normalizeApiEvents(payload);
+    await loadData(normalized, { replace: true, suppressEmptyAlert: true });
+  } catch (err) {
+    console.warn("Failed to load events from API:", err);
+    applyFilters();
+  } finally {
+    hideMapStatus();
+  }
 }
 
 function rebuildLocationDropdown() {
@@ -1389,6 +1452,8 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     handleDroppedFiles(e.dataTransfer.files);
   });
+
+  loadInitialDataFromApi();
 });
 </script>
 </body>

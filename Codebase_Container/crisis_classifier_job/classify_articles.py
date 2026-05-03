@@ -28,6 +28,7 @@ from utils.neo4j_utils import (
     query_latest_folder_hash_from_neo4j_env,
     query_folder_hash_derived_from_env,
     write_folder_hash_to_neo4j_env,
+    create_main_pipeline_linkage_env,
 )
 
 # Heavy ML imports — required for model loading
@@ -360,6 +361,13 @@ def process_and_classify_articles(source_bucket: str, crisis_bucket: str,
             source_folder_hash=source_hash,
         ):
             logger.info(f"✅ Output folder hash saved to Neo4j: pending_review/ → {output_hash}")
+            
+            # Create DEPENDS_ON_DATA_FROM relationships between consecutive pipeline stages
+            success, message = create_main_pipeline_linkage_env()
+            if success:
+                logger.info(f"✅ Pipeline linkages created: {message}")
+            else:
+                logger.warning(f"⚠️  Pipeline linkage creation incomplete: {message}")
         else:
             logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
     else:

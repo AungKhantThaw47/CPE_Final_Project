@@ -20,34 +20,34 @@ The deployed daily workflow name is `daily-pipeline` in region `asia-southeast1`
 Start a manual execution:
 
 ```bash
-gcloud workflows execute daily-pipeline \
+gcloud workflows run daily-pipeline \
   --location=asia-southeast1
 ```
 
 List recent executions:
 
 ```bash
-gcloud workflows executions list daily-pipeline \
+gcloud workflows executions list --workflow=daily-pipeline \
   --location=asia-southeast1 \
   --limit=10
 ```
 
 ## Run Manual Date-Range Pipeline
 
-Use the separate workflow `manual-pipeline` for ad-hoc custom date ranges.
+Use the separate workflow `manual-coordinator` for ad-hoc custom date ranges.
 
 ```bash
-gcloud workflows execute manual-pipeline \
+gcloud workflows run manual-coordinator \
   --location=asia-southeast1 \
-  --data='{"crawl_start_date":"20-03-2026","crawl_end_date":"22-03-2026"}'
+  --data='{"start_date":"20-03-2026","end_date":"22-03-2026"}'
 ```
 
 Optional notification recipient override:
 
 ```bash
-gcloud workflows execute manual-pipeline \
+gcloud workflows run manual-coordinator \
   --location=asia-southeast1 \
-  --data='{"crawl_start_date":"20-03-2026","crawl_end_date":"22-03-2026","notify_email":"ops@example.com"}'
+  --data='{"start_date":"20-03-2026","end_date":"22-03-2026","notify_email":"ops@example.com"}'
 ```
 
 Date format must be `DD-MM-YYYY`.
@@ -56,7 +56,7 @@ Describe a specific execution:
 
 ```bash
 gcloud workflows executions describe EXECUTION_ID \
-  --workflow=manual-pipeline \
+  --workflow=manual-coordinator \
   --location=asia-southeast1
 ```
 
@@ -105,8 +105,8 @@ gcloud scheduler jobs describe daily-pipeline-scheduler \
 
 ## Notes
 
-- Daily workflow execution follows this order: crawler -> cleaner -> classifier -> notify.
-- Manual workflow execution follows this order: crawler -> cleaner -> classifier -> notify.
+- Daily workflow execution follows this order: coordinator -> crawler -> notify.
+- Manual workflow execution follows this order: coordinator -> crawler -> notify.
 - Annotation and extraction happen after admin transitions via job execution:
   - `pending_review -> crisis_articles` then run `dvb-annotator-job` to produce `pending_review_annotation`
   - `pending_review_annotation -> annotated_articles` then run `dvb-extractor-job` to produce `events`

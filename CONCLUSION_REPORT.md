@@ -40,12 +40,12 @@ Data flows through versioned folder paths in `pipeline-data`. Each job writes un
 
 ```
 pipeline-data/
-├── dvb/{CRAWLER_HASH}/{date}/          ← raw articles (crawler writes)
+├── dvb/links-manifests/{date}/         ← coordinator manifests (unversioned)
+│   └── links-manifest.json             ← pre-discovered article links
+├── dvb/{CRAWLER_HASH}/{date}/          ← raw articles (crawler writes, versioned)
 │   ├── DVB_Burmese_{date}.json         ← article metadata + links
 │   ├── DVB_{date}_{content_hash}.txt   ← article full text
 │   └── processed/{md5}.json            ← dedup markers
-├── dvb/{COORDINATOR_HASH}/{date}/      ← coordinator manifests
-│   └── links-manifest.json             ← pre-discovered article links
 ├── dvb_cleaned/{date}/                 ← cleaned text (text-cleaner writes)
 ├── pending_review/{date}/              ← classified articles (crisis-classifier writes)
 ├── crisis_articles/{date}/             ← human-reviewed articles (crisis-admin writes)
@@ -91,14 +91,14 @@ Used when a human operator needs to backfill a large date range. Triggered via `
 
 ```
 run_daily_pipeline.py  (or gcloud CLI)
-    └─► dvb-coordinator-job
+    └─► dvb-coordinator-job (unversioned)
             ├── Scrapes DVB listing pages for the full date range (link discovery only)
-            ├── Writes per-date links-manifest.json to GCS:
-            │       dvb/{COORDINATOR_HASH}/{date}/links-manifest.json
+            ├── Writes per-date links-manifest.json to static path:
+            │       dvb/links-manifests/{date}/links-manifest.json
             └── Spawns ONE dvb-crawler-job with:
-                    CRAWL_START_DATE, CRAWL_END_DATE, LINKS_MANIFEST_PREFIX
-                    └─► dvb-crawler-job
-                            ├─��� Reads links-manifest.json (skips link traversal)
+                    CRAWL_START_DATE, CRAWL_END_DATE, LINKS_MANIFEST_PREFIX=dvb/links-manifests
+                    └─► dvb-crawler-job (versioned under CRAWLER_HASH)
+                            ├── Reads links-manifest.json (skips link traversal)
                             ├── Fetches article content directly
                             ├── Writes articles under its own CONTENT_HASH (dvb/{CRAWLER_HASH}/...)
                             └── Triggers dvb-text-cleaner-job for each processed date

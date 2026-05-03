@@ -18,6 +18,7 @@ from utils.neo4j_utils import (
 )
 
 TIMEOUT_SECONDS = 10
+GCP_TIMEOUT_SECONDS = 120
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BASE_GRAPH_MANIFEST = REPO_ROOT / "bootstrap" / "neo4j" / "graph_manifest.json"
 GENERATED_GRAPH_DIR = REPO_ROOT / "bootstrap" / "neo4j" / "generated"
@@ -1270,6 +1271,78 @@ def print_summary(outputs: dict, generated_graph_path: Path, neo4j_status: str) 
     print_line("- Inspect full outputs: terraform output")
 
 
+def sync_dashboard_events_api_url(outputs: dict) -> None:
+    services = outputs.get("services") or {}
+    events_api = services.get("events-api") or {}
+    dashboard = services.get("crisis-dashboard") or {}
+
+    events_api_url = (events_api.get("public_url") or "").strip()
+    dashboard_url = (dashboard.get("public_url") or "").strip()
+    if not events_api_url or not dashboard_url:
+        return
+
+    project_id = (os.environ.get("TF_VAR_project_id") or os.environ.get("GOOGLE_CLOUD_PROJECT") or "").strip()
+    region = (os.environ.get("TF_VAR_region") or os.environ.get("GCP_REGION") or "").strip()
+    if not project_id or not region:
+        print_line("Dashboard API sync skipped: missing TF_VAR_project_id or TF_VAR_region.")
+        return
+
+    desired_events_url = f"{events_api_url.rstrip('/')}/events"
+
+    current_describe = subprocess.run(
+        [
+            "gcloud",
+            "run",
+            "services",
+            "describe",
+            "crisis-dashboard",
+            "--region",
+            region,
+            "--project",
+            project_id,
+            "--format=json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=GCP_TIMEOUT_SECONDS,
+    )
+    current_service = json.loads(current_describe.stdout or "{}")
+    current_env = ""
+    for container in current_service.get("spec", {}).get("template", {}).get("spec", {}).get("containers", []):
+        for env_var in container.get("env", []):
+            if env_var.get("name") == "EVENTS_API_URL":
+                current_env = (env_var.get("value") or "").strip()
+                break
+        if current_env:
+            break
+
+    if current_env == desired_events_url:
+        print_line("Dashboard API sync: EVENTS_API_URL already points at the deployed events-api.")
+        return
+
+    subprocess.run(
+        [
+            "gcloud",
+            "run",
+            "services",
+            "update",
+            "crisis-dashboard",
+            "--region",
+            region,
+            "--project",
+            project_id,
+            "--set-env-vars",
+            f"EVENTS_API_URL={desired_events_url}",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=GCP_TIMEOUT_SECONDS,
+    )
+    print_line(f"Dashboard API sync: set crisis-dashboard EVENTS_API_URL to {desired_events_url}")
+
+
 def main() -> int:
     terraform_binary = os.environ.get("TF", "terraform")
     try:
@@ -1278,6 +1351,7 @@ def main() -> int:
         neo4j_status = sync_graph_to_neo4j(generated_graph_path)
         marker_files = seed_folder_created_markers(generated_graph_path, outputs)
         print_summary(outputs, generated_graph_path, neo4j_status)
+        sync_dashboard_events_api_url(outputs)
         if marker_files:
             print_line(f"Folder markers created: {len(marker_files)}")
     except SystemExit as exc:

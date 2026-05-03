@@ -5,63 +5,38 @@ main:
         assign:
           - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
           - region: "asia-southeast1"
-          - crawl_start_date: ""
-          - crawl_end_date: ""
-          - process_date: ""
           - notify_webhook_url: ${sys.get_env("NOTIFY_WEBHOOK_URL")}
           - notify_email: ${sys.get_env("DAILY_NOTIFY_EMAIL")}
 
     - maybe_set_start_date:
         switch:
-          - condition: ${args != null and map.get(args, "crawl_start_date") != null}
+          - condition: ${args != null and map.get(args, "start_date") != null}
             next: set_start_date
         next: maybe_set_end_date
 
     - set_start_date:
         assign:
-          - crawl_start_date: ${args.crawl_start_date}
+          - start_date: ${args.start_date}
 
     - maybe_set_end_date:
         switch:
-          - condition: ${args != null and map.get(args, "crawl_end_date") != null}
+          - condition: ${args != null and map.get(args, "end_date") != null}
             next: set_end_date
         next: maybe_set_notify_email
 
     - set_end_date:
         assign:
-          - crawl_end_date: ${args.crawl_end_date}
+          - end_date: ${args.end_date}
 
     - maybe_set_notify_email:
         switch:
           - condition: ${args != null and map.get(args, "notify_email") != null}
             next: set_notify_email
-        next: maybe_set_process_date_from_end
+        next: set_crawler_overrides
 
     - set_notify_email:
         assign:
           - notify_email: ${args.notify_email}
-
-    - maybe_set_process_date_from_end:
-        switch:
-          - condition: ${crawl_end_date != ""}
-            next: set_process_date_from_end
-        next: maybe_set_process_date_from_start
-
-    - set_process_date_from_end:
-        assign:
-          - end_parts: ${text.split(crawl_end_date, "-")}
-          - process_date: ${end_parts[2] + "-" + end_parts[1] + "-" + end_parts[0]}
-
-    - maybe_set_process_date_from_start:
-        switch:
-          - condition: ${process_date == "" and crawl_start_date != ""}
-            next: set_process_date_from_start
-        next: set_crawler_overrides
-
-    - set_process_date_from_start:
-        assign:
-          - start_parts: ${text.split(crawl_start_date, "-")}
-          - process_date: ${start_parts[2] + "-" + start_parts[1] + "-" + start_parts[0]}
 
     - set_crawler_overrides:
         assign:
@@ -70,49 +45,24 @@ main:
                 containerOverrides:
                   - env:
                       - name: "START_DATE"
-                        value: ${crawl_start_date}
+                        value: ${start_date}
                       - name: "END_DATE"
-                        value: ${crawl_end_date}
-          - process_date_overrides:
-              overrides:
-                containerOverrides:
-                  - env:
-                      - name: "PROCESS_DATE"
-                        value: ${process_date}
-          - classifier_date_overrides:
-              overrides:
-                containerOverrides:
-                  - env:
-                      - name: "DATE_START"
-                        value: ${crawl_start_date}
-                      - name: "DATE_END"
-                        value: ${crawl_end_date}
-                      - name: "PROCESS_DATE"
-                        value: ${process_date}
+                        value: ${end_date}
 
     - log_start:
         call: sys.log
         args:
-          text: '${"=== Manual Pipeline Started (" + crawl_start_date + " to " + crawl_end_date + ") ==="}'
+          text: '${"=== Manual Coordinator Started (" + start_date + " to " + end_date + ") ==="}'
           severity: INFO
 
-    - run_crawler:
+    - run_coordinator:
         call: run_job
         args:
           project_id: ${project_id}
           region: ${region}
-          job_name: "dvb-crawler-job"
+          job_name: "dvb-coordinator-job"
           overrides: ${crawler_overrides}
-        result: crawler_status
-
-    - run_cleaner:
-        call: run_job
-        args:
-          project_id: ${project_id}
-          region: ${region}
-          job_name: "dvb-text-cleaner-job"
-          overrides: ${process_date_overrides}
-        result: cleaner_status
+        result: coordinator_status
 
     - run_classifier:
         call: run_job
@@ -120,30 +70,27 @@ main:
           project_id: ${project_id}
           region: ${region}
           job_name: "crisis-classifier-job"
-          overrides: ${classifier_date_overrides}
+          overrides: ${crawler_overrides}
         result: classifier_status
 
     - notify:
         call: send_notification
         args:
-          workflow_name: "manual-pipeline"
+          workflow_name: "manual-coordinator"
           webhook_url: ${notify_webhook_url}
           recipient_email: ${notify_email}
-          crawler_status: ${crawler_status}
-          cleaner_status: ${cleaner_status}
-          classifier_status: ${classifier_status}
+          coordinator_status: ${coordinator_status}
         result: notify_status
 
     - done:
         return:
-          crawler: ${crawler_status}
-          cleaner: ${cleaner_status}
+          coordinator: ${coordinator_status}
           classifier: ${classifier_status}
           notification: ${notify_status}
 
 
 send_notification:
-  params: [workflow_name, webhook_url, recipient_email, crawler_status, cleaner_status, classifier_status]
+  params: [workflow_name, webhook_url, recipient_email, coordinator_status]
   steps:
     - should_skip:
         switch:
@@ -158,12 +105,10 @@ send_notification:
           body:
             to: ${recipient_email}
             subject: ${"Pipeline Completed - " + workflow_name}
-            text: '${"Crawler=" + crawler_status + ", Cleaner=" + cleaner_status + ", Classifier=" + classifier_status}'
+            text: '${"Coordinator=" + coordinator_status}'
             workflow: ${workflow_name}
             statuses:
-              crawler: ${crawler_status}
-              cleaner: ${cleaner_status}
-              classifier: ${classifier_status}
+              coordinator: ${coordinator_status}
         result: notify_response
 
     - sent:

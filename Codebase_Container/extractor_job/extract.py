@@ -22,6 +22,7 @@ from utils.neo4j_utils import (
     query_latest_folder_hash_from_neo4j_env,
     query_folder_hash_derived_from_env,
     write_folder_hash_to_neo4j_env,
+    create_main_pipeline_linkage_env,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -210,11 +211,11 @@ def process_annotated_articles():
         bucket = storage_client.bucket(crisis_bucket)
         firestore_client = firestore.Client()
 
-        # Traverse DERIVED_FROM from the latest pending_review_annotation/ hash to find the matching
+        # Traverse DERIVED_FROM from the latest pending_annotation_review/ hash to find the matching
         # annotated_articles/ hash. Falls back to chain-tip query for backwards compatibility.
         source_hash = (
             query_folder_hash_derived_from_env(
-                "annotated_articles/", "pending_review_annotation/", bucket_name=crisis_bucket
+                "annotated_articles/", "pending_annotation_review/", bucket_name=crisis_bucket
             )
             or query_latest_folder_hash_from_neo4j_env("annotated_articles/", crisis_bucket)
             or ""
@@ -349,6 +350,13 @@ def process_annotated_articles():
             source_folder_hash=source_hash,
         ):
             logger.info(f"✅ Output folder hash saved to Neo4j: events/ → {output_hash}")
+            
+            # Create DEPENDS_ON_DATA_FROM relationships between consecutive pipeline stages
+            success, message = create_main_pipeline_linkage_env()
+            if success:
+                logger.info(f"✅ Pipeline linkages created: {message}")
+            else:
+                logger.warning(f"⚠️  Pipeline linkage creation incomplete: {message}")
         else:
             logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
         
