@@ -1,11 +1,13 @@
 const axios = require("axios");
 require("dotenv").config();
 const cheerio = require("cheerio");
+const { Storage } = require("@google-cloud/storage");
 const { uploadJSONToGCS } = require("./utils/gcs_utils");
 const GCS_BUCKET = process.env.GCS_BUCKET || null;
 const GCP_REGION = process.env.GCP_REGION || "asia-southeast1";
 const CRAWLER_JOB_NAME = process.env.CRAWLER_JOB_NAME || "dvb-crawler-job";
 const BASE_URL = "https://burmese.dvb.no";
+const gcsStorage = GCS_BUCKET ? new Storage() : null;
 
 function formatDate(date) {
     return date.toISOString().split("T")[0];
@@ -144,6 +146,27 @@ async function saveLinksManifest(articles, startDate, endDate) {
     }
 }
 
+async function manifestsExistForRange(startDate, endDate) {
+    if (!GCS_BUCKET || !gcsStorage) {
+        return false;
+    }
+
+    const bucket = gcsStorage.bucket(GCS_BUCKET);
+    const cursor = new Date(startDate);
+
+    while (cursor <= endDate) {
+        const dateStr = formatDate(cursor);
+        const gcsPath = `dvb/links-manifests/${dateStr}/links-manifest.json`;
+        const [exists] = await bucket.file(gcsPath).exists();
+        if (!exists) {
+            return false;
+        }
+        cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return true;
+}
+
 async function getGcpMeta() {
     const base = "http://metadata.google.internal/computeMetadata/v1";
     const headers = { "Metadata-Flavor": "Google" };
@@ -196,14 +219,19 @@ async function main() {
     console.log(`Started at : ${new Date().toISOString()}`);
     console.log("============================================================\n");
 
-    const articles = await scrapeLinks(startDate, endDate);
+    const manifestsReady = await manifestsExistForRange(startDate, endDate);
+    if (manifestsReady) {
+        console.log("All manifests already exist for requested range. Skipping link discovery.");
+    } else {
+        const articles = await scrapeLinks(startDate, endDate);
 
-    if (articles.length === 0) {
-        console.log("No articles found in range. Exiting.");
-        return;
+        if (articles.length === 0) {
+            console.log("No articles found in range. Exiting.");
+            return;
+        }
+
+        await saveLinksManifest(articles, startDate, endDate);
     }
-
-    await saveLinksManifest(articles, startDate, endDate);
 
     // Crawler expects dates in DD-MM-YYYY. formatDate() returns YYYY-MM-DD
     const startStr = (() => {

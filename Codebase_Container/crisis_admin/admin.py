@@ -14,6 +14,7 @@ if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
 from utils.neo4j_utils import (
+    query_folder_hashes_from_neo4j_env,
     query_latest_folder_hash_from_neo4j_env,
     write_folder_hash_to_neo4j_env,
 )
@@ -28,6 +29,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Keep this module local so content hashing captures admin runtime updates (rev2).
+
+ANNOTATION_STAGE_PREFIXES = ("pending_annotation_review", "pending_review_annotation")
 
 
 @app.route("/", methods=["GET"])
@@ -199,14 +202,31 @@ def list_pending_articles_all_hashes(crisis_bucket: str) -> List[Dict]:
 
 def list_pending_annotation_articles_all_hashes(crisis_bucket: str) -> List[Dict]:
     """List all pending_annotation_review articles from all hashes, grouped by hash."""
-    hashes = list_all_hashes_in_stage(crisis_bucket, "pending_annotation_review")
-    
+    ordered_hashes: List[str] = []
+    articles_by_hash: Dict[str, Dict[str, Dict]] = {}
+
+    for stage_prefix in ANNOTATION_STAGE_PREFIXES:
+        neo4j_hashes = query_folder_hashes_from_neo4j_env(f"{stage_prefix}/", bucket_name=crisis_bucket)
+        gcs_hashes = list_all_hashes_in_stage(crisis_bucket, stage_prefix)
+        for h in neo4j_hashes + gcs_hashes:
+            if h not in ordered_hashes:
+                ordered_hashes.append(h)
+
+            articles = list_stage_articles(crisis_bucket, stage_prefix, selected_hash=h)
+            if not articles:
+                continue
+
+            bucket = articles_by_hash.setdefault(h, {})
+            for article in articles:
+                bucket[article["blob_name"]] = article
+
     result = []
-    for h in hashes:
-        articles = list_stage_articles(crisis_bucket, "pending_annotation_review", selected_hash=h)
-        if articles:
-            result.append({"hash": h, "articles": articles})
-    
+    for h in ordered_hashes:
+        merged_articles = list(articles_by_hash.get(h, {}).values())
+        if merged_articles:
+            merged_articles.sort(key=lambda a: (a.get("date", ""), a.get("filename", ""), a.get("blob_name", "")))
+            result.append({"hash": h, "articles": merged_articles})
+
     return result
 
 
@@ -265,24 +285,34 @@ def group_articles_by_date(articles: List[Dict]) -> List[Dict]:
 
 
 def validate_blob_is_latest_hash(blob_name: str, stage_prefix: str, crisis_bucket: str) -> bool:
-    """Validate that the blob's hash matches the latest hash from Neo4j.
-    
-    Returns True if valid (blob hash == latest hash), False otherwise.
+    """Validate that the blob belongs to the requested stage and exists.
+
+    Admin actions are allowed for any versioned hash, not just the latest Neo4j hash.
+    This only rejects malformed paths or missing blobs.
     """
-    latest_hash = query_latest_folder_hash_from_neo4j_env(f"{stage_prefix}/", crisis_bucket)
-    if not latest_hash:
-        return False
-    
+
     # Extract hash from blob path: {stage_prefix}/{hash}/{date}/{filename}
-    hash_match = re.match(rf"^{re.escape(stage_prefix)}/([^/]+)/", blob_name)
-    blob_hash = hash_match.group(1) if hash_match else None
-    
-    return blob_hash == latest_hash
+    stage_prefixes = ANNOTATION_STAGE_PREFIXES if stage_prefix == "pending_annotation_review" else (stage_prefix,)
+    hash_match = None
+    for candidate_prefix in stage_prefixes:
+        hash_match = re.match(rf"^{re.escape(candidate_prefix)}/([^/]+)/", blob_name)
+        if hash_match:
+            break
+    if not hash_match:
+        return False
+
+    try:
+        client = storage.Client()
+        bucket = client.bucket(crisis_bucket)
+        return bucket.blob(blob_name).exists(client)
+    except Exception as exc:
+        logger.warning(f"⚠️  Failed to validate blob {blob_name}: {exc}")
+        return False
 
 
 def get_review_actions(blob_name: str) -> Dict[str, str]:
     """Return the correct confirm/reject actions for a blob path."""
-    if blob_name.startswith("pending_annotation_review/"):
+    if any(blob_name.startswith(f"{prefix}/") for prefix in ANNOTATION_STAGE_PREFIXES):
         return {
             "confirm_action": "/admin/confirm_annotation",
             "reject_action": "/admin/reject_annotation",
@@ -301,13 +331,20 @@ def find_next_blob_after(blob_name: str, stage_prefix: str, crisis_bucket: str) 
     after `blob_name` in the stable ordering used by `list_stage_articles()`.
     """
     # Extract hash from blob path: {stage_prefix}/{hash}/{date}/{filename}
-    m = re.match(rf'^{re.escape(stage_prefix)}/([^/]+)/', blob_name)
-    if not m:
+    stage_prefixes = ANNOTATION_STAGE_PREFIXES if stage_prefix == "pending_annotation_review" else (stage_prefix,)
+    selected_hash = None
+    actual_stage_prefix = None
+    for candidate_prefix in stage_prefixes:
+        m = re.match(rf'^{re.escape(candidate_prefix)}/([^/]+)/', blob_name)
+        if m:
+            selected_hash = m.group(1)
+            actual_stage_prefix = candidate_prefix
+            break
+    if not selected_hash or not actual_stage_prefix:
         return None
-    selected_hash = m.group(1)
 
     try:
-        articles = list_stage_articles(crisis_bucket, stage_prefix, selected_hash=selected_hash)
+        articles = list_stage_articles(crisis_bucket, actual_stage_prefix, selected_hash=selected_hash)
         # stable sort by date then filename to provide deterministic "next"
         def keyfn(a):
             return (a.get('date',''), a.get('filename',''))
@@ -436,7 +473,7 @@ def admin_confirm():
 
     # Validate blob is from latest hash
     if not validate_blob_is_latest_hash(blob_name, "pending_review", crisis_bucket):
-        error_msg = "Cannot confirm article: not from latest hash version"
+        error_msg = "Cannot confirm article: invalid or missing blob"
         logger.warning(f"⚠️  {error_msg} - blob: {blob_name}")
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({"error": error_msg}), 403
@@ -532,9 +569,9 @@ def admin_confirm_annotation():
             return jsonify({"error": "Missing parameters"}), 400
         return "Missing parameters", 400
 
-    # Validate blob is from latest hash
+    # Validate blob is from an allowed annotation hash
     if not validate_blob_is_latest_hash(blob_name, "pending_annotation_review", crisis_bucket):
-        error_msg = "Cannot confirm annotation: not from latest hash version"
+        error_msg = "Cannot confirm annotation: invalid or missing blob"
         logger.warning(f"⚠️  {error_msg} - blob: {blob_name}")
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({"error": error_msg}), 403
@@ -546,11 +583,19 @@ def admin_confirm_annotation():
         source_blob = bucket.blob(blob_name)
 
         # pending_annotation_review/{hash}/{date}/{filename} -> annotated_articles/{same_hash}/{date}/{filename}
-        # Use the pending_annotation_review hash directly so that annotated_articles/ stays version-chain aligned.
-        pending_ann_match = re.match(r'^pending_annotation_review/([^/]+)/', blob_name)
+        # Use the annotation hash directly so that annotated_articles/ stays version-chain aligned.
+        pending_ann_match = None
+        for prefix in ANNOTATION_STAGE_PREFIXES:
+            pending_ann_match = re.match(rf'^{re.escape(prefix)}/([^/]+)/', blob_name)
+            if pending_ann_match:
+                break
         pending_ann_hash = pending_ann_match.group(1) if pending_ann_match else ""
         output_hash = pending_ann_hash or "unknown"
-        date_match = re.match(r'^pending_annotation_review/[^/]+/([0-9]{4}-[0-9]{2}-[0-9]{2})/', blob_name)
+        date_match = None
+        for prefix in ANNOTATION_STAGE_PREFIXES:
+            date_match = re.match(rf'^{re.escape(prefix)}/[^/]+/([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}})/', blob_name)
+            if date_match:
+                break
         date_str = date_match.group(1) if date_match else "unknown"
         filename = blob_name.split('/')[-1]
         destination_name = f'annotated_articles/{output_hash}/{date_str}/{filename}'
@@ -581,7 +626,7 @@ def admin_confirm_annotation():
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({"success": True, "message": f"Confirmed annotation: {blob_name}"}), 200
 
-    # Non-AJAX: redirect to next article in the same pending_annotation_review hash if available
+    # Non-AJAX: redirect to next article in the same pending annotation hash if available
     next_blob = find_next_blob_after(blob_name, 'pending_annotation_review', crisis_bucket)
     if next_blob:
         return redirect(f'/admin/view?blob={next_blob}')
@@ -612,7 +657,7 @@ def admin_reject_annotation():
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({"success": True, "message": f"Rejected annotation: {blob_name}"}), 200
 
-    # Non-AJAX: redirect to next article in the same pending_annotation_review hash if available
+    # Non-AJAX: redirect to next article in the same pending annotation hash if available
     next_blob = find_next_blob_after(blob_name, 'pending_annotation_review', crisis_bucket)
     if next_blob:
         return redirect(f'/admin/view?blob={next_blob}')

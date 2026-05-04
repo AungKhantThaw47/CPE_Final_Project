@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="300" viewBox="0 0 1100 300">
+  <style>.t{font:700 22px Arial,sans-serif;fill:#1f2a44}.n{font:700 15px Arial,sans-serif;fill:#1f2a44}.s{font:13px Arial,sans-serif;fill:#2b3657}.b{fill:#f3f7ff;stroke:#41547d;stroke-width:2;rx:12}.a{stroke:#2f3b52;stroke-width:3;marker-end:url(#m)}</style>
+  <defs><marker id="m" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2f3b52"/></marker></defs>
+  <text x="550" y="36" text-anchor="middle" class="t">Figure 4.3 State transitions in crisis-admin review</text>
+  <rect class="b" x="70" y="95" width="220" height="110"/><text x="180" y="130" text-anchor="middle" class="n">pending_review</text><text x="180" y="155" text-anchor="middle" class="s">classifier output queue</text>
+  <rect class="b" x="340" y="95" width="220" height="110"/><text x="450" y="130" text-anchor="middle" class="n">crisis_articles</text><text x="450" y="155" text-anchor="middle" class="s">after admin confirm</text>
+  <rect class="b" x="610" y="95" width="220" height="110"/><text x="720" y="130" text-anchor="middle" class="n">pending_review_annotation</text><text x="720" y="155" text-anchor="middle" class="s">annotator output queue</text>
+  <rect class="b" x="880" y="95" width="170" height="110"/><text x="965" y="130" text-anchor="middle" class="n">annotated_articles</text><text x="965" y="155" text-anchor="middle" class="s">approved for extraction</text>
+  <line class="a" x1="290" y1="150" x2="340" y2="150"/><line class="a" x1="560" y1="150" x2="610" y2="150"/><line class="a" x1="830" y1="150" x2="880" y2="150"/>
+</svg>

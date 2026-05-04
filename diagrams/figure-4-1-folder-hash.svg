@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="300" viewBox="0 0 1100 300">
+  <style>
+    .t{font:700 22px Arial,sans-serif;fill:#1f2a44}.n{font:700 15px Arial,sans-serif;fill:#1f2a44}.s{font:13px Arial,sans-serif;fill:#2b3657}
+    .b{fill:#f3f7ff;stroke:#41547d;stroke-width:2;rx:12}.a{stroke:#2f3b52;stroke-width:3;marker-end:url(#m)}
+  </style>
+  <defs><marker id="m" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2f3b52"/></marker></defs>
+  <text x="550" y="36" text-anchor="middle" class="t">Figure 4.1 Folder hash propagation across pipeline stages</text>
+  <rect class="b" x="40" y="90" width="210" height="110"/><text x="145" y="125" text-anchor="middle" class="n">Crawler Output</text><text x="145" y="150" text-anchor="middle" class="s">dvb/{H1}/{date}/</text>
+  <rect class="b" x="300" y="90" width="210" height="110"/><text x="405" y="125" text-anchor="middle" class="n">Cleaner Output</text><text x="405" y="150" text-anchor="middle" class="s">dvb_cleaned/{H2}/</text><text x="405" y="172" text-anchor="middle" class="s">H2 = sha256(H1:cleaner)</text>
+  <rect class="b" x="560" y="90" width="210" height="110"/><text x="665" y="125" text-anchor="middle" class="n">Classifier Output</text><text x="665" y="150" text-anchor="middle" class="s">pending_review/{H3}/</text><text x="665" y="172" text-anchor="middle" class="s">H3 = sha256(H2:classifier)</text>
+  <rect class="b" x="820" y="90" width="240" height="110"/><text x="940" y="125" text-anchor="middle" class="n">Annotator/Extractor Chain</text><text x="940" y="150" text-anchor="middle" class="s">next hashes derive similarly</text>
+  <line class="a" x1="250" y1="145" x2="300" y2="145"/><line class="a" x1="510" y1="145" x2="560" y2="145"/><line class="a" x1="770" y1="145" x2="820" y2="145"/>
+</svg>

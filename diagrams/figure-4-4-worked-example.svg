@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="320" viewBox="0 0 1100 320">
+  <style>.t{font:700 22px Arial,sans-serif;fill:#1f2a44}.n{font:700 16px Arial,sans-serif;fill:#1f2a44}.s{font:13px Arial,sans-serif;fill:#2b3657}.b{fill:#f3f7ff;stroke:#41547d;stroke-width:2;rx:12}.a{stroke:#2f3b52;stroke-width:3;marker-end:url(#m)}</style>
+  <defs><marker id="m" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2f3b52"/></marker></defs>
+  <text x="550" y="36" text-anchor="middle" class="t">Figure 4.4 Worked example: article to structured events</text>
+  <rect class="b" x="50" y="90" width="300" height="170"/><text x="200" y="125" text-anchor="middle" class="n">Cleaned Article Text</text><text x="200" y="152" text-anchor="middle" class="s">multi-paragraph narrative</text><text x="200" y="176" text-anchor="middle" class="s">contains two crisis incidents</text>
+  <rect class="b" x="400" y="90" width="300" height="170"/><text x="550" y="125" text-anchor="middle" class="n">Annotated Text</text><text x="550" y="152" text-anchor="middle" class="s">event boundaries tagged</text><text x="550" y="176" text-anchor="middle" class="s">&lt;event&gt;...&lt;/event&gt;</text>
+  <rect class="b" x="750" y="90" width="300" height="170"/><text x="900" y="125" text-anchor="middle" class="n">JSON Extraction</text><text x="900" y="152" text-anchor="middle" class="s">[{event_type, location, date}]</text><text x="900" y="176" text-anchor="middle" class="s">one object per event</text>
+  <line class="a" x1="350" y1="175" x2="400" y2="175"/><line class="a" x1="700" y1="175" x2="750" y2="175"/>
+</svg>

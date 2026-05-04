@@ -178,16 +178,16 @@ The gap addressed by this project is the integration of all these components int
 
 The system is designed as a seven-stage sequential data pipeline implemented on Google Cloud Platform. Each stage is packaged as an independent Docker container and deployed as either a Cloud Run Job (batch processing, triggered on demand) or a Cloud Run Service (long-running, always-on HTTP server). The pipeline is designed to be both modular and linearly sequential: each stage consumes the output of the previous stage and produces output for the next.
 
-The architecture makes two key choices about processing model: **event-driven chained triggering** and **content-hash path isolation**.
+The architecture makes two key choices about processing model: **direct job chaining for routine runs** and **content-hash path isolation**.
 
-In event-driven chained triggering, each stage directly triggers its downstream stage upon successful completion, rather than relying on an external workflow orchestrator. This eliminates the cost and operational overhead of a dedicated orchestration service (such as Cloud Workflows or Apache Airflow), while still achieving end-to-end automation. The triggering mechanism uses the Google Cloud Run Jobs API, called from within the completing job with the relevant date and hash parameters passed as environment variable overrides.
+In direct job chaining, the daily pipeline invokes each downstream stage upon successful completion of the preceding stage by calling the Google Cloud Run Jobs API with the relevant date and hash parameters passed as environment variable overrides. For large historical backfills, a separate coordinator job performs link discovery once and launches a single crawler sub-job, thereby avoiding repeated traversal of the DVB listing pages.
 
 In content-hash path isolation, each stage writes its output to a GCS path that includes a SHA-256 hash derived from the source code of that stage and all upstream stages. This ensures that outputs from different code versions never overwrite each other, enabling safe re-runs of any stage and preserving the complete history of all pipeline executions.
 
 The overall architecture is visualised in Figure 3.1:
 
 ```
-Cloud Scheduler (daily midnight)
+Cloud Scheduler (daily runs) / manual backfill entry points
            │
            ▼
     [Stage 1: Crawler]         Node.js, Cheerio, Axios
@@ -260,9 +260,9 @@ By deriving each stage's output path from a hash that incorporates all upstream 
 
 ### 3.3 Pipeline Data Flow
 
-Data flows through the pipeline in the following sequence:
+The data flows through the pipeline in the following sequence. In routine daily runs and small-range manual reruns, the crawler performs both link discovery and article retrieval directly. For large backfills, the coordinator first precomputes link manifests and then launches the crawler in manifest-driven mode.
 
-1. The **Crawler** scrapes DVB articles for date D and writes them to GCS under `dvb/{CRAWLER_HASH}/{D}/`.
+1. The **Crawler** scrapes DVB articles for date D in the direct path and writes them to GCS under `dvb/{CRAWLER_HASH}/{D}/`.
 2. The **Text Cleaner** reads from `dvb/{CRAWLER_HASH}/{D}/`, applies cleaning, and writes to `dvb_cleaned/{CLEANER_OUTPUT_HASH}/{D}/`, where `CLEANER_OUTPUT_HASH = SHA-256(CRAWLER_HASH + ":" + CLEANER_CONTENT_HASH)`.
 3. The **Classifier** reads from `dvb_cleaned/{CLEANER_OUTPUT_HASH}/{D}/`, classifies each article, and writes crisis articles to `pending_review/{CLASSIFIER_OUTPUT_HASH}/{D}/`.
 4. The **Admin Review** service reads from `pending_review/`, and upon analyst confirmation, moves approved articles to `crisis_articles/{CLASSIFIER_OUTPUT_HASH}/{D}/`.
@@ -307,7 +307,7 @@ For future scaling to higher volumes or multiple news sources, the architecture 
 
 This chapter describes the implementation of an automated Myanmar crisis event monitoring system that transforms raw Burmese-language news articles into structured, geolocated crisis event records displayed on an interactive web dashboard. The system is implemented as a seven-stage data pipeline deployed entirely on Google Cloud Platform (GCP), with each stage containerised as an independent Docker-based Cloud Run service or job.
 
-The pipeline is designed around three core principles. First, full automation: once deployed, the system operates daily without any manual triggering, driven by Cloud Scheduler and event-based triggers via Google Eventarc. Second, human-in-the-loop quality control: a human analyst reviews machine-generated classifications and annotations before they proceed to downstream stages, ensuring data quality. Third, infrastructure-as-code reproducibility: all cloud resources are managed by Terraform, and all container images are built and versioned using SHA-256 content hashing to ensure deterministic, reproducible deployments.
+The pipeline is designed around three core principles. First, operational automation: the routine path runs on a daily schedule, while bulk backfills can be initiated through the coordinator without modifying downstream stages. Second, human-in-the-loop quality control: a human analyst reviews machine-generated classifications and annotations before they proceed to downstream stages, ensuring data quality. Third, infrastructure-as-code reproducibility: all cloud resources are managed by Terraform, and all container images are built and versioned using SHA-256 content hashing to ensure deterministic, reproducible deployments.
 
 The overall data flow is illustrated in Figure 4.1:
 
@@ -315,7 +315,7 @@ The overall data flow is illustrated in Figure 4.1:
 DVB Burmese News
       │
       ▼
-[Stage 1] Crawler          — Node.js, Cloud Scheduler (daily midnight)
+[Stage 1] Crawler          — Node.js, Cloud Scheduler (daily) / Coordinator (backfill)
       │  GCS: dvb/{hash}/{date}/
       ▼
 [Stage 2] Text Cleaner     — Python, Cloud Run Job
@@ -347,13 +347,13 @@ All intermediate outputs are stored in Google Cloud Storage (GCS), with each sta
 
 #### 4.2.1 Overview
 
-The data acquisition stage is implemented as a Node.js web scraper that collects Burmese-language news articles from the Democratic Voice of Burma (DVB) online portal (burmese.dvb.no). The crawler is packaged as a Docker container and deployed as a Cloud Run Job, scheduled to execute automatically every day at midnight (Asia/Bangkok timezone) via Google Cloud Scheduler.
+The data acquisition layer is implemented as a Node.js web scraper that collects Burmese-language news articles from the Democratic Voice of Burma (DVB) online portal (burmese.dvb.no). The crawler is packaged as a Docker container and deployed as a Cloud Run Job, scheduled to execute automatically every day at midnight (Asia/Bangkok timezone) via Google Cloud Scheduler. For large historical backfills, a separate coordinator job performs link discovery and then launches the crawler once for the entire requested date range.
 
 #### 4.2.2 Implementation
 
-The crawler is implemented in `crawler_job/DVB_Burmese.crawler.js` using two primary libraries: **Axios** for HTTP requests and **Cheerio** for HTML parsing. The entry point parses a configurable date range from environment variables (`DATE_START`, `DATE_END`) or defaults to scraping the previous day's articles.
+The crawler is implemented in `crawler_job/DVB_Burmese.crawler.js` using two primary libraries: **Axios** for HTTP requests and **Cheerio** for HTML parsing. The entry point parses a configurable date range from environment variables (`START_DATE` / `END_DATE`, with backward-compatible support for `CRAWL_START_DATE` / `CRAWL_END_DATE`) or from the corresponding command-line flags (`--start-date` and `--end-date`), and defaults to the previous day when no custom range is supplied.
 
-The scraping logic follows a recursive pagination strategy. The `scrapePage()` function fetches the DVB news listing page at `https://burmese.dvb.no/categories/news?page=N` and extracts article metadata — title, publication date, and URL — from each listing entry. Pagination continues recursively until articles older than the target start date are encountered, at which point scraping stops. For each article URL, the `fetchPostContents()` function performs a second HTTP request to download the full article body by extracting text from the `div.full_content p` selector.
+The scraping logic uses iterative pagination rather than recursion. For each listing page at `https://burmese.dvb.no/categories/news?page=N`, the crawler extracts article metadata — title, publication date, and URL — from link blocks matched by the live DVB selector `a.block.hover\:text-blue-600`. Pagination continues until an article older than the target start date is encountered, at which point the crawler stops. In coordinator-driven runs, the crawler first attempts to load precomputed link manifests from GCS and skips listing traversal when those manifests are available. For each selected article URL, the crawler then fetches the article body from the article page itself.
 
 ```javascript
 // Recursive page scraper — stops when posts fall outside date range
@@ -364,7 +364,7 @@ async function scrapePage(baseUrl, url, page) {
 }
 ```
 
-Articles are grouped by publication date and uploaded to GCS under the path `dvb/{CONTENT_HASH}/{YYYY-MM-DD}/`, where `CONTENT_HASH` is an MD5 hash of the crawler's own source code computed at build time. This ensures that any change to the crawler logic produces a new hash, isolating outputs from different crawler versions. In addition to the article text files, a JSON metadata file is uploaded for each date containing titles, URLs, and article counts.
+Articles are grouped by publication date and uploaded to GCS under the path `dvb/{CONTENT_HASH}/{YYYY-MM-DD}/`, where `CONTENT_HASH` is a hash of the crawler's own source code computed at build time. This ensures that any change to the crawler logic produces a new hash, isolating outputs from different crawler versions. In addition to the article text files, a JSON metadata file is uploaded for each date containing titles, URLs, and article counts. When the coordinator is used, it stores link manifests under `dvb/links-manifests/{YYYY-MM-DD}/` and passes that prefix to the crawler as a separate input path.
 
 Upon completing the upload for each date, the crawler automatically triggers the downstream Text Cleaner job by invoking the Cloud Run Jobs API via the GCP metadata server, passing the relevant date and content hash as environment variable overrides.
 
@@ -642,7 +642,7 @@ events/{hash}/{date}/                     ← final extracted JSON
 
 | Container | Type | Trigger |
 |---|---|---|
-| `dvb-crawler` | Cloud Run Job | Cloud Scheduler (daily midnight) |
+| `dvb-crawler` | Cloud Run Job | Cloud Scheduler (daily) / coordinator backfill |
 | `text-cleaner` | Cloud Run Job | Triggered by crawler |
 | `crisis-classifier` | Cloud Run Job | Triggered by cleaner |
 | `crisis-admin` | Cloud Run Service | Always-on, HTTP |
@@ -737,7 +737,7 @@ The pipeline was operated over a 30-day evaluation period, processing DVB articl
 - The average number of articles scraped per day was 87, of which approximately 30% (26 articles) were classified as crisis-relevant.
 - The average number of crisis events extracted per day from confirmed articles was 14.
 
-The two crawler failures on days when the DVB website was down were handled gracefully: the crawler exited with an informational log message, and the downstream stages were not triggered, preventing any error propagation. Manual re-runs on the following day successfully captured the missed data via the `DATE_START`/`DATE_END` environment variable override mechanism.
+The two crawler failures on days when the DVB website was down were handled gracefully: the crawler exited with an informational log message, and the downstream stages were not triggered, preventing any error propagation. Manual re-runs on the following day successfully captured the missed data via the `CRAWL_START_DATE`/`CRAWL_END_DATE` environment variable override mechanism or the equivalent command-line flags.
 
 ### 5.6 Dashboard Usability Observations
 
@@ -1024,11 +1024,11 @@ All service accounts are also granted `roles/secretmanager.secretAccessor` for t
 
 | Job | vCPUs | Memory | Max Instances | Timeout |
 |---|---|---|---|---|
-| `dvb-crawler` | 1 | 512 Mi | 1 | 3600s |
-| `text-cleaner` | 1 | 1 Gi | 1 | 3600s |
-| `crisis-classifier` | 4 | 16 Gi | 1 | 7200s |
-| `annotator` | 1 | 2 Gi | 1 | 7200s |
-| `extractor` | 1 | 2 Gi | 1 | 7200s |
+| `dvb-crawler` | 2 | 512 Mi | 1 | 1200s |
+| `text-cleaner` | 1 | 512 Mi | 1 | 600s |
+| `crisis-classifier` | 4 | 16 Gi | 1 | 3600s |
+| `annotator` | 1 | 512 Mi | 1 | 600s |
+| `extractor` | 1 | 512 Mi | 1 | 600s |
 | `neo4j-sync` | 1 | 512 Mi | 1 | 600s |
 
 | Service | vCPUs | Memory | Min Instances | Max Instances |

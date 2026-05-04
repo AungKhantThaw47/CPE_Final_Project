@@ -33,6 +33,8 @@ SOURCE_PATTERNS = [
     re.compile(r'^သတင်းရင်းမြစ်\s*:\s*.+'),
 ]
 
+DATE_FORMATS = ("%Y-%m-%d", "%d-%m-%Y")
+
 def is_likely_author_name(line):
     """Check if a line is likely an author name."""
     line = line.strip()
@@ -144,6 +146,46 @@ def compute_folder_hash(previous_folder_hash: str, content_hash: str) -> str:
         return previous_folder_hash
 
     return hashlib.sha256(f"{previous_folder_hash}:{content_hash}".encode("utf-8")).hexdigest()
+
+
+def parse_date_string(value: str) -> datetime:
+    """Parse a date string in YYYY-MM-DD or DD-MM-YYYY format."""
+    if not value:
+        raise ValueError("Date value is empty")
+
+    raw = value.strip()
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+
+    raise ValueError(f"Invalid date '{value}'. Expected YYYY-MM-DD or DD-MM-YYYY")
+
+
+def resolve_dates_to_process(process_date: Optional[str], start_date: Optional[str], end_date: Optional[str]) -> List[str]:
+    """Return a normalized date list (YYYY-MM-DD) for processing."""
+    if process_date:
+        return [parse_date_string(process_date).strftime("%Y-%m-%d")]
+
+    if start_date or end_date:
+        if not start_date or not end_date:
+            raise ValueError("Both START_DATE and END_DATE must be provided when using a range")
+
+        start_dt = parse_date_string(start_date)
+        end_dt = parse_date_string(end_date)
+        if end_dt < start_dt:
+            raise ValueError("END_DATE must be on or after START_DATE")
+
+        dates = []
+        cursor = start_dt
+        while cursor <= end_dt:
+            dates.append(cursor.strftime("%Y-%m-%d"))
+            cursor += timedelta(days=1)
+        return dates
+
+    yesterday = datetime.now() - timedelta(days=1)
+    return [yesterday.strftime("%Y-%m-%d")]
 
 
 def fetch_articles_from_gcs(bucket_name: str, date_str: Optional[str] = None,
@@ -342,7 +384,9 @@ if __name__ == "__main__":
     # Uses same bucket by default (single-bucket layout), with optional override.
     print("Test")
     source_bucket = os.environ.get('GCS_BUCKET')
-    date_str = os.environ.get('PROCESS_DATE')
+    process_date = os.environ.get('PROCESS_DATE')
+    start_date = os.environ.get('START_DATE') or os.environ.get('DATE_START')
+    end_date = os.environ.get('END_DATE') or os.environ.get('DATE_END')
     prefix_path = os.environ.get('GCS_PREFIX', 'dvb')
     
     if not source_bucket:
@@ -357,44 +401,62 @@ if __name__ == "__main__":
     print(f"Configuration:")
     print(f"  Source bucket: {source_bucket}")
     print(f"  Target bucket: {target_bucket}")
-    print(f"  Process date: {date_str or 'yesterday (default)'}")
+    print(f"  Process date: {process_date or '(not set)'}")
+    print(f"  Start date: {start_date or '(not set)'}")
+    print(f"  End date: {end_date or '(not set)'}")
     print(f"  Prefix: {prefix_path}")
     print()
-    
-    # Process and clean articles
-    stats = process_and_clean_articles(source_bucket, target_bucket, date_str, prefix_path)
+
+    try:
+        dates_to_process = resolve_dates_to_process(process_date, start_date, end_date)
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        exit(1)
+
+    print(f"  Resolved dates: {dates_to_process[0]} to {dates_to_process[-1]} ({len(dates_to_process)} day(s))")
+    print()
+
+    aggregate_stats = {"total": 0, "cleaned": 0, "unchanged": 0, "skipped_existing": 0, "errors": 0}
+
+    for date_str in dates_to_process:
+        print("-" * 60)
+        print(f"Cleaning date: {date_str}")
+        print("-" * 60)
+        stats = process_and_clean_articles(source_bucket, target_bucket, date_str, prefix_path)
+        for key in aggregate_stats:
+            aggregate_stats[key] += stats.get(key, 0)
     
     print()
     print("=" * 60)
     print("Cleaning Complete!")
     print("=" * 60)
     print(f"📊 Statistics:")
-    print(f"   Total articles: {stats['total']}")
-    print(f"   ✅ Cleaned: {stats['cleaned']}")
-    print(f"   ⏭️  Unchanged: {stats['unchanged']}")
-    print(f"   ⏭️  Skipped existing outputs: {stats['skipped_existing']}")
-    print(f"   ❌ Errors: {stats['errors']}")
+    print(f"   Total articles: {aggregate_stats['total']}")
+    print(f"   ✅ Cleaned: {aggregate_stats['cleaned']}")
+    print(f"   ⏭️  Unchanged: {aggregate_stats['unchanged']}")
+    print(f"   ⏭️  Skipped existing outputs: {aggregate_stats['skipped_existing']}")
+    print(f"   ❌ Errors: {aggregate_stats['errors']}")
     print()
-    
-    if stats['errors'] > 0:
-        print(f"⚠️  Completed with {stats['errors']} errors")
+
+    if aggregate_stats['errors'] > 0:
+        print(f"⚠️  Completed with {aggregate_stats['errors']} errors")
         exit(1)
 
     print("✅ All articles processed successfully!")
-    final_date = date_str or (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     output_hash = os.environ.get("DVB_CLEANED_FOLDER_HASH", "").strip()
-    print(f"   Cleaned data: gs://{target_bucket}/dvb_cleaned/{output_hash}/{final_date}/")
+    print(f"   Cleaned data root: gs://{target_bucket}/dvb_cleaned/{output_hash}/")
 
-    # Create completion marker file to trigger classifier
+    # Create completion markers for all processed dates.
     try:
         client = storage.Client()
-        marker_path = f"dvb_cleaned/{output_hash}/{final_date}/_COMPLETE"
-        marker_blob = client.bucket(target_bucket).blob(marker_path)
-        if marker_blob.exists():
-            print(f"   Completion marker already exists: gs://{target_bucket}/{marker_path}")
-        else:
-            marker_blob.upload_from_string("", content_type='text/plain')
-            print(f"   Completion marker: gs://{target_bucket}/{marker_path}")
+        for date_str in dates_to_process:
+            marker_path = f"dvb_cleaned/{output_hash}/{date_str}/_COMPLETE"
+            marker_blob = client.bucket(target_bucket).blob(marker_path)
+            if marker_blob.exists():
+                print(f"   Completion marker already exists: gs://{target_bucket}/{marker_path}")
+            else:
+                marker_blob.upload_from_string("", content_type='text/plain')
+                print(f"   Completion marker: gs://{target_bucket}/{marker_path}")
     except Exception as e:
         print(f"   ⚠️  Failed to create completion marker: {e}")
 

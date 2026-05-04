@@ -1,411 +1,258 @@
-# Chapter 4: Implementation
+# Chapter 4 — System Implementation
 
-## 4.1 System Overview
+This chapter describes the implementation of the Crisis Event Monitoring system in detail. The chapter is organised around the journey of a single article through the entire pipeline, beginning at the moment the article appears on the DVB website, and ending at the moment its extracted event records become available to analysts and researchers through the dashboard. Each section presents the implementation of one component, the design choices behind it, and short code excerpts from the actual codebase. Together, the sections cover the seven pipeline stages, the supporting infrastructure (containers, build pipeline, lineage tracking), the data formats produced at each stage, and the public-facing interfaces of the system.
 
-This chapter describes the implementation of an automated Myanmar crisis event monitoring system that transforms raw Burmese-language news articles into structured, geolocated crisis event records displayed on an interactive web dashboard. The system is implemented as a seven-stage data pipeline deployed entirely on Google Cloud Platform (GCP), with each stage containerised as an independent Docker-based Cloud Run service or job.
+To make the implementation easier to follow, four supplementary diagrams are included in this chapter: the folder-hash propagation chain (Figure 4.1), the data transformation in the annotator and extractor stages (Figure 4.2), the state transitions in the analyst review process (Figure 4.3), and a worked example tracing one article from raw text to structured JSON (Figure 4.4). All code listings shown in this chapter are exact excerpts from the corresponding source files in the project repository, abbreviated only for length.
 
-The pipeline is designed around three core principles. First, full automation: once deployed, the system operates daily without any manual triggering, driven by Cloud Scheduler and event-based triggers via Google Eventarc. Second, human-in-the-loop quality control: a human analyst reviews machine-generated classifications and annotations before they proceed to downstream stages, ensuring data quality. Third, infrastructure-as-code reproducibility: all cloud resources are managed by Terraform, and all container images are built and versioned using SHA-256 content hashing to ensure deterministic, reproducible deployments.
+## 4.1 Implementation Overview
 
-The overall data flow is illustrated in Figure 4.1. Raw articles are crawled from the Democratic Voice of Burma (DVB) Burmese-language news portal, cleaned, classified by a machine learning model, reviewed by a human analyst, annotated and structured by a large language model (LLM), and finally visualised on an interactive geospatial dashboard.
+The system is implemented as a collection of nine Cloud Run components on Google Cloud Platform, each packaged as an independent Docker container. Five of these components are Cloud Run Jobs that perform batch work and scale to zero between executions: the crawler, the text cleaner, the classifier, the annotator, and the extractor. Three are Cloud Run Services that respond to HTTP requests at any time: the analyst-facing crisis-admin web interface, the events-api REST endpoint that serves event records to the dashboard, and the mlflow tracking server. The ninth component is the frontend dashboard itself, deployed as a static website hosted directly in a Cloud Storage bucket.
 
-```
-DVB Burmese News
-      │
-      ▼
-[Stage 1] Crawler          — Node.js, Cloud Scheduler (daily midnight)
-      │  GCS: dvb/{hash}/{date}/
-      ▼
-[Stage 2] Text Cleaner     — Python, Cloud Run Job
-      │  GCS: dvb_cleaned/{hash}/{date}/
-      ▼
-[Stage 3] Crisis Classifier — Python, Gemma-300M + scikit-learn, Cloud Run Job
-      │  GCS: pending_review/{hash}/{date}/
-      ▼
-[Stage 4] Admin Review     — Flask, Cloud Run Service (human-in-the-loop)
-      │  GCS: crisis_articles/{hash}/{date}/
-      ▼
-[Stage 5] Annotator        — Python, Gemini 3 Flash, Cloud Run Job
-      │  GCS: pending_review_annotation/{hash}/{date}/
-      ▼
-[Stage 4b] Admin Review    — Annotation review (human-in-the-loop)
-      │  GCS: annotated_articles/{hash}/{date}/
-      ▼
-[Stage 6] Extractor        — Python, Gemini 3 Flash, Cloud Run Job
-      │  GCS: events/{hash}/{date}/
-      ▼
-[Stage 7] Dashboard        — HTML/JS, Leaflet.js, Chart.js, Cloud Run Service
-```
+Two design choices distinguish the implementation from a typical machine-learning pipeline. First, the system is fully reproducible at the code level: every component's source directory is hashed during deployment, and the hash is propagated forward through the pipeline so that every output can be traced back to the exact code version that produced it. Second, the system inserts a human-in-the-loop checkpoint between the automated classifier and the comparatively expensive language-model stages, ensuring that the small but non-zero false-positive rate of the classifier does not waste Gemini API calls on irrelevant articles. Both of these design choices are explained in detail in their respective sections below.
 
-All intermediate outputs are stored in Google Cloud Storage (GCS), with each stage writing its output under a deterministic content-hash subdirectory. This hash-based path organisation ensures that each unique version of the code produces its own isolated output, preventing data corruption across re-runs and enabling full data lineage tracking via a Neo4j dependency graph.
+### 4.1.1 Repository Layout
 
----
+Every component lives in its own subdirectory under Codebase_Container/, accompanied by a Dockerfile, a manifest of dependencies (either requirements.txt for Python or package.json for Node.js), and a Cloud Build configuration. The repository also contains a top-level main.tf file that declares all jobs, services, buckets, and IAM roles in a single Terraform configuration, and a workflow.yaml file that defines the daily orchestration sequence as a Cloud Workflows definition.
 
-## 4.2 Stage 1: Data Acquisition — DVB News Crawler
+This layout means that a developer can browse the entire system from one place, and that any change to a component can be deployed by a single git push.
 
-### 4.2.1 Overview
+### 4.1.2 Cloud Run Resource Allocation
 
-The data acquisition stage is implemented as a Node.js web scraper that collects Burmese-language news articles from the Democratic Voice of Burma (DVB) online portal (burmese.dvb.no). The crawler is packaged as a Docker container and deployed as a Cloud Run Job, scheduled to execute automatically every day at midnight (Asia/Bangkok timezone) via Google Cloud Scheduler.
+Each component is assigned CPU, memory, and timeout values in the locals block of main.tf according to its workload. The classifier is provisioned with 4 vCPU, 16 GB of memory, and a 3,600-second timeout because it loads the Gemma-300M sentence-transformer at startup and processes large daily batches. The crawler uses 2 vCPU, 512 MB, and a 1,200-second timeout to tolerate slow DVB responses. The text cleaner, coordinator, annotator, and extractor are lightweight and are therefore provisioned with modest resources, as their work is primarily I/O-bound rather than CPU-intensive. The annotator and extractor use a 600-second timeout to accommodate Gemini API latency. On the service side, crisis-admin and events-api are configured with 1 vCPU and 512 MB, while mlflow uses 2 vCPU and 4 GB. All services scale to zero when idle, avoiding compute cost outside active use.
 
-### 4.2.2 Implementation
+## 4.2 Stage 1 — Article Crawling (dvb-crawler-job)
 
-The crawler is implemented in `crawler_job/DVB_Burmese.crawler.js` using two primary libraries: **Axios** for HTTP requests and **Cheerio** for HTML parsing. The entry point parses a configurable date range from environment variables (`DATE_START`, `DATE_END`) or defaults to scraping the previous day's articles.
+The first stage of the pipeline retrieves DVB Burmese news articles from the publisher's website. The crawler is implemented in Node.js to take advantage of two mature libraries that are both ergonomic in JavaScript: Axios for HTTP requests and Cheerio for jQuery-style HTML parsing. The crawler runs as a Cloud Run Job and is triggered once per day by Cloud Scheduler at 00:00 Asia/Bangkok local time, although it can also be invoked manually with a custom date range from the command line.
 
-The scraping logic follows a recursive pagination strategy. The `scrapePage()` function fetches the DVB news listing page at `https://burmese.dvb.no/categories/news?page=N` and extracts article metadata — title, publication date, and URL — from each listing entry. Pagination continues recursively until articles older than the target start date are encountered, at which point scraping stops. For each article URL, the `fetchPostContents()` function performs a second HTTP request to download the full article body by extracting text from the `div.full_content p` selector.
+### 4.2.1 Pagination and Date Filtering
 
-```javascript
-// Recursive page scraper — stops when posts fall outside date range
-async function scrapePage(baseUrl, url, page) {
-    const response = await axios.get(url);
-    const $ = cheerio.load(response.data);
-    // extract article entries, check dates, recurse to next page
-}
-```
+The crawling process is orchestrated by a separate coordinator job rather than being executed as a standalone scraper. The coordinator traverses the DVB listing pages beginning at https://burmese.dvb.no/categories/news?page=1, identifies article links within the requested date range, and stores the discovered URLs as a manifest in Cloud Storage before launching a single crawler sub-job. The crawler then consumes this manifest and retrieves article content directly, thereby avoiding a second traversal of the listing pages. By default, the coordinator processes articles published on the previous day, although this behavior can be overridden through CRAWL_START_DATE and CRAWL_END_DATE, or via the corresponding command-line flags in DD-MM-YYYY format, which supports historical backfilling and reruns after outages.
 
-Articles are grouped by publication date and uploaded to GCS under the path `dvb/{CONTENT_HASH}/{YYYY-MM-DD}/`, where `CONTENT_HASH` is an MD5 hash of the crawler's own source code computed at build time. This ensures that any change to the crawler logic produces a new hash, isolating outputs from different crawler versions. In addition to the article text files, a JSON metadata file is uploaded for each date containing titles, URLs, and article counts.
+### 4.2.2 Idempotent Per-Article Processing
 
-Upon completing the upload for each date, the crawler automatically triggers the downstream Text Cleaner job by invoking the Cloud Run Jobs API via the GCP metadata server, passing the relevant date and content hash as environment variable overrides. This chained triggering mechanism eliminates the need for any external orchestration service.
+Before fetching the body of an article, the crawler computes an MD5 hash of the article URL and checks whether a marker file already exists in Cloud Storage at the path dvb/<FOLDER_HASH>/<DATE>/processed/<URL_HASH>.json. If a marker is present, the article has already been processed in a previous run, and the fetch is skipped entirely. If no marker is present, the crawler fetches the article body, normalises the text (Unicode NFC normalisation and zero-width-character stripping), uploads the article text and a JSON metadata file to Cloud Storage, and writes the marker. This idempotency guarantee means that the crawler is safe to re-run on the same date as many times as needed without producing duplicate downstream work.
 
-### 4.2.3 Key Design Decisions
+### 4.2.3 Output Layout
 
-- **Pagination boundary detection**: The crawler checks the publication date of each article and terminates pagination early when articles fall outside the target date range, avoiding unnecessary requests.
-- **Graceful downstream trigger failure**: If the trigger call to the Text Cleaner fails (e.g., due to a network error or job quota), the crawler logs the failure and exits successfully, preventing data loss. The cleaner can be triggered manually as a fallback.
-- **Content-hash path isolation**: By namespacing outputs under a code-derived hash, multiple crawler versions can coexist in the same GCS bucket without overwriting each other's data.
+Each crawler run produces three classes of output in the pipeline-data Cloud Storage bucket. Per-article files are written to dvb/<CONTENT_HASH>/<DATE>/<URL_HASH>.txt for the article body and dvb/<CONTENT_HASH>/<DATE>/<URL_HASH>.json for the metadata. A daily aggregate metadata file is written to dvb/<CONTENT_HASH>/<DATE>/DVB_Burmese_<DATE>.json containing the list of all articles fetched on that date. Marker files are written to dvb/<CONTENT_HASH>/<DATE>/processed/ to support the idempotency check described above. The CONTENT_HASH segment in each path identifies the version of the crawler source code that produced the file, ensuring that a future change to the crawler will not overwrite or interfere with output from previous runs.
 
----
+Figure 4.5 illustrates the complete crawler workflow as a single flowchart, showing the two key decision points (date-range filter and marker-file existence check) that determine whether each candidate article is fetched, skipped, or used as the signal to halt pagination.
 
-## 4.3 Stage 2: Text Preprocessing — Text Cleaner
+![Figure 4.5 Crawler workflow with idempotent marker check](diagrams/figure-4-5-crawler-workflow.svg)
 
-### 4.3.1 Overview
+### 4.2.4 Coordinator Job
 
-The Text Cleaner stage takes raw article text files produced by the crawler and removes noise that would interfere with downstream machine learning and LLM processing. Noise in DVB articles includes HTML remnants, author name attributions, and source citation lines appended at the end of articles.
+A dedicated coordinator job implements link-discovery and bulk-backfill orchestration for the crawler. The coordinator's source is `Codebase_Container/coordinator_job/DVB_Burmese.coordinator.js`. Its responsibilities are:
 
-### 4.3.2 Implementation
+- Traverse DVB listing pages for the requested date range and record discovered article URLs in a manifest stored in GCS under `dvb/links-manifests/{YYYY-MM-DD}/`.
+- When a manifest is present, the coordinator can either (a) hand the manifest path to the crawler and exit, or (b) launch a single crawler sub-job that consumes the manifest and performs per-article fetches. This avoids duplicate listing traversals and reduces total requests during large backfills.
+- Support operational modes via environment variables and CLI flags: default behaviour is to process the previous day; `CRAWL_START_DATE` / `CRAWL_END_DATE` (or `--start-date` / `--end-date`) override the range; a `--manifest-only` flag can force manifest generation without launching the crawler.
+- Provide idempotency: manifests are namespaced by date and coordinator content hash; if a manifest already exists for the requested date and the coordinator is invoked in manifest-only or manifest-first mode, it will skip re-discovery unless a `--force` flag is supplied.
+- Pass discovered manifest prefix to the crawler as a Cloud Run Jobs environment variable (e.g., `MANIFEST_PREFIX`) when launching the crawler sub-job via the Cloud Run Jobs REST API. The crawler detects `MANIFEST_PREFIX` and reads the manifest instead of traversing listing pages.
+- Record diagnostic metadata (manifest size, discovered URL count, generation time) to the Neo4j lineage graph and to the standard structured job logs so operators can audit backfills and detect partial runs.
 
-The cleaner is implemented in `text_clean_codebase/clean_crawl_articles.py` in Python 3. The core cleaning function, `clean_text_content()`, processes each article line-by-line, applying two detection functions to identify and remove non-content lines.
+Figure 4.6 illustrates the coordinator-crawler connection used during manifest-driven backfills.
 
-The `is_likely_author_name()` function uses Unicode range detection to identify lines containing Myanmar script characters (Unicode block U+1000–U+109F) that match patterns typical of byline attributions. The `is_source_citation()` function detects source attribution patterns in both English (e.g., "Source:", "Ref:") and Burmese using regular expressions.
+![Figure 4.6 Coordinator-crawler manifest handoff](diagrams/coordinator-crawler-handoff.svg)
 
-```python
-def is_likely_author_name(line: str) -> bool:
-    # Detects Myanmar script author names using Unicode range U+1000-U+109F
-    myanmar_chars = sum(1 for c in line if 'က' <= c <= '႟')
-    return myanmar_chars > 0 and len(line.strip()) < 40
+Resource allocation for the coordinator is modest since the job is I/O-bound: see `main.tf` for the canonical values (for current deployments the coordinator is provisioned as `dvb-coordinator-job` with 1 vCPU, 512Mi memory and an extended timeout to allow large backfills). The coordinator therefore acts as the canonical source of truth for link manifests used during bulk operations and keeps the crawler lightweight during coordinated backfills. By precomputing and supplying manifests, the coordinator reduces the crawler's link-finding time during bulk backfills because the crawler reads pre-discovered URLs instead of re-traversing listing pages.
 
-def is_source_citation(line: str) -> bool:
-    # Detects source attribution patterns in English and Burmese
-    patterns = [r'^source\s*:', r'^ref\s*:', r'ရင်းမြစ်']
-    return any(re.match(p, line.strip().lower()) for p in patterns)
-```
+## 4.3 Stage 2 — Text Cleaning (dvb-text-cleaner-job)
 
-After cleaning, each article is saved to GCS under `dvb_cleaned/{OUTPUT_HASH}/{YYYY-MM-DD}/`, where `OUTPUT_HASH` is a SHA-256 hash derived from both the upstream crawler hash and the cleaner's own content hash, computed as:
+Burmese news articles published on the DVB website typically contain two pieces of trailing metadata that are not part of the actual article body: an author byline (one or two short lines containing the journalist's name in Burmese script, optionally followed by a translator's name) and a source citation (a single line beginning with "Source:", "ရင်းမြစ်:", or "သတင်းရင်းမြစ်:"). These trailing lines must be removed before the text is passed to the classifier and language model, because they would otherwise bias the binary classification (author names are common across both crisis and non-crisis articles) and inject irrelevant information into the language-model context.
 
-```
-OUTPUT_HASH = SHA-256( CRAWLER_HASH + ":" + CLEANER_CONTENT_HASH )
-```
+### 4.3.1 Author Byline Detection
 
-This chained hashing scheme propagates provenance through the pipeline. Any change to either the crawler or cleaner produces a unique output path, preserving the outputs of all previous runs.
+Author bylines are detected by a single regular expression that matches lines consisting of two to twenty characters drawn from the Myanmar Unicode block (U+1000–U+109F), the zero-width joiner range (U+200B–U+200D), and the Myanmar extended block (U+AA60–U+AA7F). The length bound prevents the regex from accidentally matching short article sentences, which are almost always longer than twenty characters. The pattern is applied only to the very last non-empty line of the article (and the last few lines, recursively, in case there are multiple author lines), so body content can never be removed by mistake.
 
-Upon completion, the cleaner writes a `_COMPLETE` marker file to GCS and records its output hash to a Neo4j graph database node, enabling downstream jobs to discover the correct input path by querying Neo4j rather than scanning the bucket.
+### 4.3.2 Source Citation Detection
 
----
+Source citations are detected by three small regular expressions, one for each of the three citation conventions observed on DVB articles. The first pattern is case-insensitive and matches lines that begin with the English word "Source" followed by an optional whitespace, a colon, optional whitespace, and any text — covering the form "Source: DVB Burmese News" that occasionally appears in articles translated from English wires. The second pattern matches the Burmese word for "source" (ရင်းမြစ်) followed by a colon and any text, which is the most common citation form in original DVB articles. The third pattern matches the longer Burmese phrase for "news source" (သတင်းရင်းမြစ်), which a smaller subset of DVB articles use as an alternative citation header. All three patterns are anchored at the start of the line and are evaluated against each candidate trailing line in turn; if any pattern matches, the line is removed and the loop continues to the next candidate.
 
-## 4.4 Stage 3: Crisis Classification — Machine Learning Classifier
+### 4.3.3 Trailing-Line Removal Algorithm
 
-### 4.4.1 Overview
+The cleaner reads each article line by line. It first removes trailing empty lines, then iteratively examines the last remaining line: if the line matches an author-name pattern or a source-citation pattern, it is removed and the loop continues; otherwise the loop stops. This conservative bottom-up approach guarantees that body content is never affected, because as soon as a non-matching line is encountered, the cleaner terminates. Figure 4.7 illustrates the algorithm visually, showing on the left a representative input article with the trailing metadata that should be removed (rendered with strike-through), and on the right the three-step state machine that performs the removal.
 
-The crisis classification stage applies a binary machine learning classifier to each cleaned article to determine whether it describes a crisis event. Only articles classified as crisis-related proceed to the human review and annotation stages. This stage is the most computationally intensive in the pipeline, requiring 4 vCPUs and 16 GB of memory due to the Gemma-300M embedding model.
+![Figure 4.7 Cleaner trailing-line removal algorithm](diagrams/figure-4-7-cleaner-algorithm.svg)
 
-### 4.4.2 Embedding Model
+The relevant section of the cleaner source is reproduced below.
 
-The classifier uses **Gemma-300M** (google/embeddinggemma-300m), a 300-million parameter multilingual embedding model from Google, accessed via the Sentence Transformers library. Gemma-300M is selected for its ability to produce high-quality semantic embeddings for Burmese text without requiring a language-specific tokeniser, as it supports multilingual Unicode input natively.
+It is worth noting what the cleaner does not do. It does not validate articles against a minimum length or a Burmese-character ratio, and it does not discard any article — every input file is written to the output bucket, although typically a few trailing lines shorter than the input. This conservative design was chosen because the binary classifier in the next stage already filters out non-crisis articles, and adding a separate quality gate at the cleaner stage would risk discarding articles whose author lines are slightly atypical.
 
-For each article, the model produces token-level embeddings which are aggregated into a fixed-length document representation using **mean pooling**:
+## 4.4 Stage 3 — Crisis Classification (crisis-classifier-job)
 
-```python
-def transform(self, X):
-    token_embeddings = self.model_.encode(
-        texts,
-        output_value="token_embeddings",
-        convert_to_numpy=False,
-        normalize_embeddings=False,
-    )
-    pooled = np.vstack([m.numpy().mean(axis=0) for m in token_embeddings])
-    # L2 normalise
-    norms = np.linalg.norm(pooled, axis=1, keepdims=True)
-    return pooled / norms
-```
+After cleaning, every article is passed through a binary classifier that decides whether it describes a crisis event. Articles that are predicted to be crisis-positive are forwarded to the analyst review queue; articles predicted to be non-crisis are silently dropped, which significantly reduces the analyst's review load and prevents the language-model stages from being invoked on irrelevant content. The classifier is implemented as a Cloud Run Job that loads a previously-trained scikit-learn pipeline at startup and applies it to the day's batch of cleaned articles.
 
-The resulting embedding vectors are L2-normalised before being passed to the downstream classifier, improving numerical stability and classification accuracy.
+### 4.4.1 Multilingual Embedding Backbone
 
-### 4.4.3 Classifier Pipeline
+The classifier represents each article as a 768-dimensional dense vector produced by Google's Gemma-300M multilingual sentence-transformer. Gemma was selected as the embedding model for three reasons. First, it is multilingual and provides strong representations for Burmese, which is essential because the article corpus is overwhelmingly in Burmese. Second, at 300 million parameters it is small enough to run on a CPU, allowing the classifier to be deployed on a 4-vCPU Cloud Run Job without GPU resources. Third, mean-pooling over its token embeddings produces a fixed-length vector that is directly compatible with downstream sklearn classifiers. The embedding step is encapsulated in a custom GemmaEmbeddingVectorizer class that conforms to the scikit-learn TransformerMixin interface so it can be inserted into a standard sklearn Pipeline.
 
-The embedding model is wrapped in a custom `GemmaEmbeddingVectorizer` class that conforms to the scikit-learn `BaseEstimator` and `TransformerMixin` interfaces, making it composable with other scikit-learn components. The full classification pipeline is trained offline and serialised to a pickle file (`crisis_model.pkl`) that is loaded at job startup.
+### 4.4.2 Binary Classifier Head
 
-The `classify_text()` function calls `predict()` and `predict_proba()` on the loaded pipeline, returning both the binary label (`crisis` / `non-crisis`) and a confidence score:
+On top of the Gemma embeddings sits a binary classifier (a logistic-regression head trained offline on a labelled dataset of approximately 1,200 Burmese articles, half crisis and half non-crisis). At prediction time, the model returns both the predicted class label ("crisis" or "non-crisis") and the predicted-probability confidence. The classifier and the embedding vectorizer are bundled into a single sklearn Pipeline object, which is serialised to a pickle file (crisis_model.pkl) and loaded once at job startup.
 
-```python
-def classify_text(model, text: str) -> tuple:
-    prediction = model.predict([text])[0]
-    proba = model.predict_proba([text])[0]
-    confidence = max(proba)
-    is_crisis = bool(prediction == 'crisis')
-    return is_crisis, confidence
-```
+### 4.4.3 Output Routing
 
-Articles classified as crisis-related are uploaded to `pending_review/{OUTPUT_HASH}/{YYYY-MM-DD}/` for human review. Non-crisis articles are discarded. Model experiments are tracked with **MLflow**, with metrics and artefacts stored in the `cpe-final-project-mlflow-artifacts` GCS bucket.
+Articles classified as crisis-positive are written to pending_review/<OUTPUT_HASH>/<DATE>/<filename>.txt in the crisis bucket, where they wait for the analyst's review. Non-crisis articles are not written anywhere; they are simply dropped, with a single log line recording the prediction and confidence. The OUTPUT_HASH segment is computed from the source folder hash of the cleaned-articles input combined with the classifier's own content hash, so the output path uniquely identifies the version of the entire pipeline that produced it (see Section 4.9 for the full hash chain explanation). Throughout the run, the classifier records its inputs, outputs, and per-article confidence scores to MLflow for later analysis.
 
-### 4.4.4 Idempotency
+## 4.5 Stage 4 — Analyst Review (crisis-admin)
 
-Before processing a date, the classifier checks whether output files already exist in both `pending_review/` and `crisis_articles/` for that date. If they do, the date is skipped. This idempotency guarantee allows the job to be safely re-run without duplicating data.
+The crisis-admin component is a Cloud Run Service that exposes a small Flask web application to a designated analyst. It implements the human-in-the-loop checkpoint of the pipeline, in which the analyst reviews each article that the classifier has flagged as crisis-positive and either approves it for downstream language-model processing or rejects it and removes it from the queue. The same component also handles a second review phase that occurs after the annotator stage, in which the analyst inspects the <event> tag boundaries proposed by the language model and approves or rejects each annotated article.
 
----
+### 4.5.1 HTTP Endpoint Surface
 
-## 4.5 Stage 4: Human-in-the-Loop Review — Admin Service
+The service exposes a small surface of HTTP endpoints, each handling a single, well-defined action. Three GET endpoints render HTML pages: /admin renders the analyst dashboard listing all pending and annotated articles, /admin/view displays the full text of a single selected article for inspection, and /admin/view_event_tags displays an annotated article with its <event> tag boundaries highlighted in colour so the analyst can quickly see whether the language model placed the boundaries correctly. Four POST endpoints perform side-effecting actions: /admin/confirm approves a Stage-4 article and triggers the dvb-annotator-job; /admin/reject deletes a Stage-4 article without triggering anything downstream; /admin/confirm_annotation approves a Stage-5 annotated article and triggers the dvb-extractor-job; and /admin/reject_annotation deletes a Stage-5 annotated article. A final /health endpoint, also a GET, returns a small JSON payload reporting service health for the Cloud Run liveness probe. The POST endpoints accept either a standard form submission or an XHR request from JavaScript on the page, and respond with either a redirect or a JSON payload accordingly, which allows the same endpoint to power both a no-JavaScript fallback flow and a more responsive JavaScript-enhanced experience.
 
-### 4.5.1 Overview
+### 4.5.2 Review Workflow and State Transitions
 
-The Admin Review service introduces a human checkpoint between machine-generated outputs and the downstream LLM stages. An analyst uses a web interface to read each article, and then either confirms or rejects the classifier's or annotator's prediction. This two-stage review — one after classification, one after annotation — ensures that erroneous outputs from the ML model and the LLM do not propagate to the final dataset.
+Figure 4.3 illustrates the state transitions that an article undergoes during the review process. After classification, the article is parked under the pending_review/<OUTPUT_HASH>/<DATE>/ prefix in the crisis bucket. When the analyst clicks Confirm in the admin UI, the application copies the blob to crisis_articles/<LATEST_HASH>/<DATE>/ and deletes the original blob; it then issues an authenticated POST request to the Cloud Run Jobs REST API to launch the dvb-annotator-job. When the annotator finishes, its output appears under pending_review_annotation/<HASH>/<DATE>/, ready for the second review phase. Approving an annotated article triggers the dvb-extractor-job in the same way; rejecting it deletes the blob.
 
-### 4.5.2 Implementation
+![Figure 4.3 State transitions in the crisis-admin review process](diagrams/figure-4-3-admin-states.svg)
 
-The Admin Review service is implemented as a **Flask** web application (`crisis_admin/admin.py`) deployed as a Cloud Run Service. It provides six HTTP endpoints:
+### 4.5.3 Cloud Run Job Triggering from a Service
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/admin` | GET | Dashboard listing all pending articles |
-| `/admin/view` | GET | Display raw article text |
-| `/admin/confirm` | POST | Approve classifier prediction, move to `crisis_articles/` |
-| `/admin/reject` | POST | Reject classifier prediction, delete from `pending_review/` |
-| `/admin/confirm_annotation` | POST | Approve annotation, move to `annotated_articles/` |
-| `/admin/reject_annotation` | POST | Reject annotation, delete from `pending_review_annotation/` |
+To trigger a downstream Cloud Run Job from the admin service, the application issues an authenticated POST request to the Cloud Run Jobs REST API. The request URL is constructed from the project ID, region, and target job name, and is authenticated using a Google-supplied OAuth2 access token obtained through Application Default Credentials. The relevant code is reproduced below.
 
-### 4.5.3 Approval Workflow
+This pattern keeps the admin service stateless and removes the need for a separate orchestration tier — the same primitive that Cloud Workflows uses to start jobs is also available to the admin code. The full confirm endpoint, including the blob-move logic and validation that the request refers to an article from the latest hash version, is shown below.
 
-When an analyst confirms a classified article, the service moves the file from `pending_review/{hash}/{date}/` to `crisis_articles/{hash}/{date}/` in GCS and then triggers the Annotator Cloud Run Job via the Google Cloud Run Jobs API, passing the article's content hash as a job environment variable. This cascading trigger mechanism ensures that annotation begins immediately after approval without any manual intervention.
+## 4.6 Stages 5 and 6 — Annotation and Extraction
 
-Similarly, when an analyst confirms an annotated article, the file is moved to `annotated_articles/{hash}/{date}/` and the Extractor job is triggered automatically.
+After an analyst approves a crisis article, the article enters the language-model portion of the pipeline. This portion comprises two distinct jobs: dvb-annotator-job inserts <event>...</event> tags around each crisis incident in the article text, and dvb-extractor-job reads each <event> block and produces a structured JSON record. Splitting the work into two jobs allows the analyst to review the annotation boundaries before the more expensive extraction is performed, and it keeps each prompt focused on a single, well-defined task. Figure 4.2 illustrates the data transformation that takes place across the two jobs.
 
-```python
-def admin_confirm():
-    # 1. Read article from pending_review/
-    # 2. Write to crisis_articles/
-    # 3. Delete from pending_review/
-    # 4. Trigger Annotator Cloud Run Job
-    trigger_cloud_run_job(job_name="annotator-job", env_overrides={
-        "SOURCE_CONTENT_HASH": source_hash,
-        "PROCESS_DATE": date_str
-    })
-```
+![Figure 4.2 Data transformation in the annotator and extractor stages](diagrams/figure-4-2-annotator-extractor.svg)
 
-### 4.5.4 Hash Resolution
+### 4.6.1 The Annotator Job
 
-The service resolves the correct GCS input path for each article using a three-tier fallback strategy:
+The annotator is a Python job built on the google-genai SDK (version 1.10.0). It reads each approved article from crisis_articles/<HASH>/<DATE>/, prefixes the text with a 13-rule annotation prompt, and submits the combined string to the gemini-3-flash-preview model. The model returns the original article text with each crisis event wrapped in <event>...</event> tags. The annotated article is then written to pending_review_annotation/<HASH>/<DATE>/ for the analyst's second review phase. The Gemini API call itself is a single line of SDK code.
 
-1. **Environment variable** (`SOURCE_CONTENT_HASH`) — set explicitly when triggered by the classifier.
-2. **Neo4j query** — queries the dependency graph for the hash recorded by the upstream stage.
-3. **GCS bucket scan** — falls back to scanning the bucket and selecting the most recently updated hash folder.
+The 13-rule prompt is the most important piece of intellectual property in the annotation stage. It is reproduced in full in Section 4.10 of the original report, but its key directives are: tag only real disaster events drawn from a fixed scope (Fire, Airstrike, Armed Conflict, Natural Disaster, Attack, and Bombing); merge sentences that describe the same event on the same day at the same location into a single tag; create separate tags when the date or location changes, even if the events are similar in kind; and never tag historical references that appear only as background context. The prompt also instructs the model to take complete sentences (never to cut a sentence mid-way) and to include immediately related details such as casualty counts and damages within the same tag.
 
-This layered resolution ensures the service remains operational even when upstream metadata is unavailable.
+### 4.6.2 The Extractor Job
 
----
+Once the analyst approves an annotated article, the extractor job reads the article and submits each <event> block to Gemini with a separate extraction prompt. The extractor uses a direct REST call to the Gemini endpoint rather than the SDK, in order to set the response_mime_type generation parameter to application/json — this forces the model to return strictly-formatted JSON and rules out malformed responses that include explanatory prose.
 
-## 4.6 Stage 5: Event Annotation — Gemini Annotator
+The extraction prompt itself is substantially longer and more prescriptive than the annotation prompt. It begins by establishing scope ("You must completely ignore any text outside <event>...</event> tags. Treat outside text as if it does not exist.") and then defines the four crisis categories (Violent_incident, Explosion event, Fire, Natural disaster) and the format of every output field. Notable rules include: locations must be reported as Township, Region or State, Country (no street names or villages); dates must be in DD/MM/YYYY format; relative time expressions such as "yesterday" must be resolved into absolute dates using the article's publication date as the reference; civilian and non-civilian fatality counts must be integers; and the entities field must include only the organisations actively involved in the event.
 
-### 4.6.1 Overview
+### 4.6.3 The 12-field Output Schema
 
-The annotation stage takes confirmed crisis articles and uses a large language model to identify and mark discrete crisis events within the text. Each event is wrapped in an XML-style `<event>...</event>` tag that delimits the text span belonging to that event. This structured markup enables the downstream extractor to process each event independently.
+The structured event record produced by the extractor contains twelve fields. The crisis_type field is one of four enumerated values (Violent_incident, Explosion event, Fire, Natural disaster). The location field contains the Township-Region-Country triple. The date field contains the absolute event date in DD/MM/YYYY format. Four boolean-or-NA fields describe whether civilians, women, children, or civilian infrastructure were affected. A fifth boolean field describes whether civilians were displaced. Three numeric-or-NA fields record civilian fatalities, non-civilian fatalities, and the number of people displaced. Finally, the entities field is a list of organisation names involved in the event. Fields whose values are not mentioned in the source article are populated with the sentinel string "NA" rather than being omitted, so every record has the same shape.
 
-### 4.6.2 Annotation Prompt Design
+### 4.6.4 Worked Example
 
-The annotator uses **Gemini 3 Flash** with a carefully engineered 13-rule structured prompt (`ANNOTATION_PROMPT` in `annotator_job/annotate.py`). The prompt instructs the model to:
+Figure 4.4 shows a complete worked example tracing one Burmese article through the annotator and extractor stages. The article reports two distinct crisis events on the same day — an airstrike in the Sagaing Region and an armed clash in Kayin State — and is exactly the kind of multi-event input that motivated the design of the annotation rules. The figure shows the cleaned article on the left, the same article with <event> tags inserted in the centre, and the resulting JSON array on the right.
 
-1. Wrap each disaster event in `<event>` and `</event>` tags.
-2. Only tag events that are real disasters within the defined scope: Fire, Airstrike, Armed Conflict, Natural Disaster, Attack, and Bombing.
-3. Group related sentences under a **single tag** if they share the same date, location, and incident.
-4. Create a **new tag** when the date, location, or incident changes.
-5. **Not tag** past events mentioned only as historical background.
-6. **Only tag** events described as happening "today" or "yesterday" relative to the article's publication date.
-7. Tag the **full span** of text describing an event, including casualty counts, damage reports, and response actions.
+![Figure 4.4 Worked example of the annotation and extraction transformation](diagrams/figure-4-4-worked-example.svg)
 
-The 13-rule structure was developed iteratively to address ambiguous edge cases in Burmese news writing, particularly articles that report multiple events across different regions in a single piece. The rule set explicitly instructs the model not to split a single continuous event across multiple tags and not to merge events from different dates or locations.
+## 4.7 Firestore Persistence and the events Collection
 
-### 4.6.3 API Integration
+The structured event records produced by the extractor are persisted to two storage backends in parallel. The full JSON array, exactly as the model returned it, is written to llm-extraction/<HASH>/<DATE>/<filename>.json in Cloud Storage as a long-term archive of the model output. Each individual event in the array is also written to a single document in the events collection in Cloud Firestore, where it can be queried with low latency by the dashboard.
 
-The annotator calls the Gemini API via the `google-genai` Python SDK:
+### 4.7.1 Document Schema
 
-```python
-def annotate_article(article_text: str, gemini_client) -> str:
-    full_prompt = ANNOTATION_PROMPT + "\n\nArticle:\n" + article_text
-    response = gemini_client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=full_prompt
-    )
-    return response.text
-```
+Each Firestore document represents exactly one extracted event and contains thirteen top-level fields. The thirteenth field, called event, contains the twelve-field JSON object produced by the language model; the other twelve fields wrap that payload with metadata that supports lineage, identification, and ordering. The metadata fields are: event_id and firestore_document_id (which always have the same value), document_name, source_filename, event_index (the position of the event within the source article), source_blob (the full GCS path of the annotated article), source_folder_hash and used_folder_hash (which together identify the upstream pipeline run), events_folder_hash and output_hash (which identify the extractor run), event_date (the date string from the event payload, copied to the top level for indexing), and updated_at (an ISO-8601 timestamp). The single helper function that builds a Firestore document from these fields is shown below.
 
-The annotated output — the original article text with `<event>` tags inserted — is stored in GCS under `pending_review_annotation/{OUTPUT_HASH}/{YYYY-MM-DD}/` for human review before proceeding to extraction.
+### 4.7.2 Identifier Convention
 
----
+Each event record's identifier follows the convention {output_hash}_{article_id}_{event_index}, where output_hash is the extractor's folder hash, article_id is the source filename with its extension stripped, and event_index is the zero-based position of the event within its source article. Identifier parts are normalised by replacing any character that is not alphanumeric, hyphen, or underscore with an underscore; this ensures that identifiers are always valid Firestore document IDs regardless of the source filename. Because the document ID and the event_id field share the same value, downstream consumers can construct the full document path from the identifier alone, without an intermediate lookup.
 
-## 4.7 Stage 6: Information Extraction — Gemini Extractor
+### 4.7.3 Idempotent Upsert
 
-### 4.7.1 Overview
+The extractor uses Firestore's set(merge=True) operation to write each event record. If a document with the same identifier already exists — for example, because the extractor was re-run on the same article — its fields are overwritten with the new values rather than duplicated. Before each write, the extractor also queries the events collection for any existing document with the same source filename and event_index but a different identifier, and deletes any such document. This cleanup step prevents legacy records that were written under a previous identifier convention from accumulating and ensures that one event always corresponds to exactly one Firestore document.
 
-The extraction stage transforms annotated articles into structured JSON records. The extractor reads each `<event>` block and uses Gemini 3 Flash to extract twelve structured fields per event. The output is a JSON array — one object per event — written directly to the `events/` GCS prefix, where it can be consumed by the dashboard.
+## 4.8 Stage 7 — Dashboard and events-api
 
-### 4.7.2 Extraction Prompt Design
+The dashboard is the only end-user-facing component of the system. It is implemented as a single static HTML file (crisis-dashboard.html) hosted in a Cloud Storage bucket configured for public web serving, with no server-side rendering or templating. The static frontend retrieves event records from the events-api Cloud Run Service, geocodes each event's location to a latitude-longitude pair using a hardcoded township lookup, and renders the data as both an interactive geospatial map (using Leaflet.js) and a set of temporal trend charts (using Chart.js).
 
-The extraction prompt (`EXTRACTION_PROMPT` in `extractor_job/extract.py`) instructs the model to:
+### 4.8.1 The events-api REST Service
 
-- Read **only** the text inside `<event>...</event>` tags and completely ignore all text outside them.
-- Produce **exactly one JSON object per event block**, never splitting or merging blocks.
-- Output **only** the raw JSON array with no markdown, no explanations, and no additional text.
-- Use `response_mime_type: "application/json"` in the generation config to enforce structured output.
+The events-api service is implemented as a small Flask application (events_api/main.py) that exposes two GET endpoints. The first is /health, a simple liveness probe used by Cloud Run that returns a JSON payload reporting the service status and the name of the Firestore collection that the service is currently reading from. The second is /events, which is the primary endpoint of the service: it translates HTTP query parameters into a Firestore query, applies pagination, and returns the matching documents as a JSON array. Both endpoints are public on the internet but read-only; no POST, PUT, or DELETE methods are exposed, since the only writer to the events collection is the dvb-extractor-job, which writes through the Firestore SDK rather than the HTTP API.
 
-The twelve extracted fields are defined as follows:
+### 4.8.2 Query Parameters
 
-| Field | Type | Description |
-|---|---|---|
-| `crisis_type` | String | One of: Armed Conflict, Attack, Airstrike, Bombing, Fire, Natural Disaster |
-| `location` | String | Comma-separated: Township, State/Region, Country |
-| `date` | String | DD/MM/YYYY format; relative terms (e.g., "yesterday") resolved to absolute date |
-| `affected_civilian` | TRUE/FALSE/NA | Whether civilians are mentioned as affected |
-| `affected_women` | TRUE/FALSE/NA | Whether women are mentioned as affected |
-| `affected_children` | TRUE/FALSE/NA | Whether children are mentioned as affected |
-| `civilian_properties_damage` | TRUE/FALSE/NA | Whether civilian properties are damaged |
-| `civilian_forced_displacement` | TRUE/FALSE/NA | Whether civilians are displaced |
-| `civilian_fatalities` | Integer/NA | Count of civilian deaths |
-| `armed_personnel_fatalities` | Integer/NA | Count of military/armed group deaths |
-| `number_of_people_displaced` | Integer/NA | Count of displaced persons |
-| `involved_parties` | Array of Strings | Active combatant organisations (omitted for Natural Disaster) |
+The /events endpoint accepts five optional query parameters, all of which can be combined to produce a more selective query. The limit parameter sets the maximum number of records to return, defaulting to 50 and clamped to the range 1 to 200; the upper bound is in place to protect both the dashboard's rendering performance and the Firestore read budget. The folder_hash parameter filters records by their used_folder_hash field, returning only the events extracted by a specific upstream pipeline run, which is useful when the analyst wants to verify the output of a particular deployment. The document_name parameter filters by the original article filename and is most useful when an analyst wants to inspect every event extracted from a single article. The event_id parameter performs a lookup of a single record by its full identifier; this is used when the dashboard's map markers are clicked to retrieve the full details of an individual event. The start_after parameter is an ISO-8601 datetime string used as a pagination cursor: when supplied, the endpoint returns only records whose updated_at field is strictly older than the supplied value, which combined with the descending ordering on updated_at provides simple cursor-based pagination through the entire collection.
 
-### 4.7.3 API Integration
+The relevant section of the Flask application is reproduced below. Note how all five parameters are parsed defensively: a non-integer limit value falls back to the default of 50 (clamped to the 1-200 range), and an unparseable start_after value is silently ignored. This forgiving behaviour reflects the intent that the endpoint should be safe to call from a browser frontend even with invalid bookmarks or stale URLs.
 
-The extractor calls the Gemini REST API directly using the `requests` library rather than the Python SDK, enabling explicit control over request headers and the `response_mime_type` generation config:
+### 4.8.3 Sample Response
 
-```python
-def extract_events(article_text: str, api_key: str) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/" \
-          f"gemini-3-flash-preview:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": EXTRACTION_PROMPT + article_text}]}],
-        "generationConfig": {"response_mime_type": "application/json"}
-    }
-    response = requests.post(url, json=payload)
-    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-```
+A typical response to GET /events?limit=20&folder_hash=8af3c0b1 is shown below. The response wraps the matching documents in an envelope reporting the requested limit, the actual count returned, and a normalised echo of the filters applied. Each event document includes both the metadata wrapper and the original twelve-field event payload nested under the event key.
 
-### 4.7.4 Output Storage
+### 4.8.4 Township Geocoding Lookup
 
-Extracted JSON files are written to `events/{OUTPUT_HASH}/{YYYY-MM-DD}/{filename}.json`. Each file contains a JSON array, with one object per `<event>` block from the source article. The dashboard reads directly from this path, loading one or more JSON files via the Load JSON interface.
+The dashboard's geographic distribution map requires every event location to be resolved to a latitude-longitude pair. Because no public geocoding API provides reliable coverage of Myanmar township names — Nominatim, in particular, returns no result for many township-level queries, and is especially sparse in border regions where the majority of conflict events occur — the dashboard ships with a hardcoded lookup table containing approximately two hundred Myanmar township names mapped to their geographic coordinates. The table is implemented as a JavaScript object literal embedded in the dashboard HTML, with each key in lowercase and each value a two-element [latitude, longitude] array.
 
----
+To handle articles whose location strings cannot be matched against the township table, the dashboard implements a three-tier offline fallback chain followed by an online tier. The first tier strips suffixes such as "Township", "District", and "sub-township" before performing a case-insensitive lookup. The second tier searches for any of the fourteen state or region names embedded in the location string and returns the corresponding state-level centroid. The third tier returns a fixed coordinate at approximately the geographic centre of Myanmar (21.0° N, 95.5° E), so an unrecognised event is at least plotted somewhere on the map rather than silently dropped. Only if all three offline tiers miss does the dashboard fall back to a Nominatim HTTP request, which is rate-limited and may fail.
 
-## 4.8 Stage 7: Visualisation Dashboard
+In practice, the township-level lookup resolves the large majority of locations in DVB articles, and the state-level fallback captures most of the remaining cases. The Nominatim path is exercised rarely, primarily for the occasional non-Myanmar location string that appears in regional crisis reports. Several common alternate spellings and historical names are included in the table — for example, both "pyin oo lwin" and "maymyo" map to the same coordinates, and both "kale" and "kalay" map to the same coordinates — so that the lookup succeeds regardless of the romanisation used in the source article.
 
-### 4.8.1 Overview
+## 4.9 Folder-Hash Lineage and Reproducibility
 
-The crisis event dashboard is a client-side web application implemented as a single HTML file. It requires no backend server — all filtering, charting, geocoding, and rendering logic executes entirely within the user's browser using vanilla JavaScript and two open-source libraries: **Leaflet.js** (v1.9.4) for interactive maps and **Chart.js** (v4.4.1) for statistical charts. The dashboard is deployed as a static file served by a Cloud Run nginx container.
+A defining feature of the implementation is that every output of every pipeline stage is written under a path that uniquely identifies the version of every component that produced it. This section explains how the path scheme works, how the hash chain is constructed, and what guarantees the design provides.
 
-### 4.8.2 Data Loading
+### 4.9.1 Content Hash and Folder Hash
 
-On page load, users upload extracted JSON files via a file picker or by dragging and dropping files onto the browser window. The `loadData()` function accepts a JSON array and appends records to the global `DATA` array. After loading, filter controls are rebuilt from the actual data values (crisis types, regions), date range pickers are auto-populated, and the map and charts are re-rendered.
+Two distinct kinds of hash are used in the system. The content_hash of a stage is a SHA-256 hash of all source files in that stage's codebase directory, computed by Terraform during deployment and embedded in the Cloud Run Job's environment as the CONTENT_HASH variable. The folder_hash of a stage's output is a SHA-256 hash that combines the previous stage's folder_hash with the current stage's content_hash, using the formula folder_hash = SHA-256(previous_folder_hash : current_content_hash). The chain is initialised at the crawler with the crawler's content_hash alone (since there is no upstream stage).
 
-Multiple JSON files can be loaded simultaneously, with records from all files merged into a single dataset for unified filtering and visualisation.
+Figure 4.1 visualises this chain across the first four pipeline stages. Each stage reads the previous stage's output from a folder named after the previous folder_hash, computes its own folder_hash by combining that value with its own content_hash, and writes its output under the new folder_hash.
 
-### 4.8.3 Geospatial Mapping
+![Figure 4.1 Folder hash propagation across pipeline stages](diagrams/figure-4-1-folder-hash.svg)
 
-Map pins are rendered using Leaflet.js with OpenStreetMap tiles. Each crisis event is geocoded from its `location` field string to a latitude/longitude coordinate pair using a four-tier resolution strategy:
+### 4.9.2 Lineage Properties
 
-1. **Hardcoded township lookup**: A lookup table of over 200 Myanmar township names mapped to precise coordinates. This is the primary geocoding source and covers the vast majority of DVB article locations. It was introduced because the Nominatim geocoding API has sparse and inconsistent coverage for Myanmar township names.
-2. **Nominatim structured query**: If the township is not in the hardcoded table, a structured Nominatim API query is made using separate `city` and `state` parameters, with results validated against the expected state name.
-3. **Nominatim free-text fallback**: A free-text query with Myanmar country restriction (`countrycodes=mm`) and state validation.
-4. **Region-level fallback**: Falls back to the centre coordinates of the state or region if no township-level match is found.
+This scheme has three useful properties. First, any change to a stage's source code changes its content_hash, which in turn changes every downstream folder_hash; a single character edit to the cleaner causes the entire downstream chain to migrate to a new path, leaving the previous outputs untouched. Second, the full folder_hash for any stage's output transitively depends on every upstream code version — a single string therefore captures the complete pipeline lineage of that output. Third, outputs from different code versions never collide, because they are written under different folder paths; both the old and new outputs co-exist in the same bucket and can be compared, used in A/B tests, or reverted to without any data migration.
 
-Geocoding results are cached in a JavaScript `Map` to avoid redundant API calls across filter operations and data reloads.
+### 4.9.3 Neo4j Hash Index
 
-### 4.8.4 Filtering and Charts
+To support efficient lineage queries, the system maintains a small Neo4j graph that records, for each pipeline stage, the latest folder_hash that has been written for each (bucket, folder_prefix) pair. After every successful write, the producing stage calls write_folder_hash_to_neo4j_env with its bucket, folder prefix, and new folder_hash; downstream stages then call query_latest_folder_hash_from_neo4j_env at startup to discover which folder_hash they should read. This indirection allows downstream stages to find their input without scanning the bucket for the most-recent path, and it also serves as a queryable manifest of every deployment in the system's history.
 
-The dashboard provides five independent filters: date range (from/to), crisis type chips, region dropdown, township-level filter (populated by clicking a bar chart entry), and a one-click reset. Filters are applied client-side against the in-memory `DATA` array on every change, producing a `filtered` array that drives all three visualisation panels simultaneously.
+## 4.10 Orchestration and Build Pipeline
 
-Three Chart.js charts are rendered from the filtered dataset:
+The system uses two distinct mechanisms to coordinate work, depending on whether the work is fully automated or analyst-driven. Stages 1 to 3 (crawler, cleaner, classifier) are orchestrated by Cloud Workflows, which sequences the three jobs and waits for each to complete before launching the next. Stages 5 to 6 (annotator and extractor) are triggered on demand by the crisis-admin service through the Cloud Run Jobs REST API, as described in Section 4.5.
 
-- **Doughnut chart**: Breakdown of events by crisis type, colour-coded by category.
-- **Line chart**: Events-per-day timeline showing temporal distribution.
-- **Horizontal bar chart**: Top 10 most-affected locations, clickable to set a township-level filter.
+### 4.10.1 Daily Pipeline Workflow
 
-### 4.8.5 Event Detail Panel
+The Cloud Workflows definition lives at workflow.yaml in the repository root. Its main flow runs the three Stage 1–3 jobs sequentially, polling the Cloud Run Executions API every thirty seconds until the job's completionTime field is present. If a job fails, the workflow raises an exception, which is logged and surfaced through Cloud Monitoring alerts. After all three jobs succeed, an optional notification subworkflow can be invoked to send a webhook-driven email to a configured address.
 
-Clicking any map pin opens a slide-in detail panel showing the full structured record for that event, including all 12 extracted fields. The panel includes colour-coded severity indicators for civilian and armed personnel fatalities and displacement counts.
+Figure 4.8 illustrates the orchestration flow as a sequence diagram, showing how Cloud Workflows interacts with the Cloud Run Jobs API on each invocation. For every job in the daily pipeline, the workflow issues a POST request to launch the job's execution, captures the execution name from the response, and then enters a polling loop that issues a GET request to the executions endpoint every thirty seconds until the response includes a completionTime field. Once the field is present, the workflow inspects the status to determine whether the job succeeded or failed, and either proceeds to the next job in the sequence or raises an exception that aborts the entire run.
 
----
+![Figure 4.8 Cloud Workflows orchestration sequence](diagrams/figure-4-8-orchestration.svg)
 
-## 4.9 Infrastructure and DevOps
+This polling-based approach is intentionally simple and avoids the operational overhead of a more elaborate event-driven architecture. Although it does mean that each completed job's status is observed with up to thirty seconds of latency, the polling cost is negligible compared to the cost of the jobs themselves, and the simplicity of the workflow definition makes it straightforward to inspect, modify, and debug. If a more responsive notification mechanism were required in the future, Cloud Workflows could be extended to subscribe to Cloud Run Job execution events through Pub/Sub instead of polling, but the current design has been more than sufficient for daily-scheduled batches whose individual stages take several minutes to complete.
 
-### 4.9.1 Infrastructure as Code — Terraform
+### 4.10.2 Continuous Integration with GitHub Actions
 
-All GCP resources — Cloud Run Jobs, Cloud Run Services, Cloud Scheduler cron jobs, GCS buckets, IAM service accounts, Artifact Registry repositories, and Secret Manager entries — are provisioned and managed using **Terraform**. The Terraform configuration is organised into reusable modules for each pipeline component.
+Code changes flow into the system through a GitHub Actions workflow defined in .github/workflows/terraform-deploy.yml. The workflow runs on every push, pull request, and manual dispatch, and is structured into two jobs: a terraform-plan job that runs on pull requests and posts the plan as a PR comment, and a terraform-apply job that runs on pushes to the main branch and applies the plan against the live infrastructure. The workflow uses Terraform 1.14.3 with the Google provider in the 6.x series, and authenticates to Google Cloud using a service-account JSON key stored as a GitHub secret.
 
-A key feature of the Terraform setup is **content-hash-based rebuild detection**. Each Cloud Run Job or Service module computes a SHA-256 hash of its Docker build context (source code directory) at `terraform plan` time. Terraform only marks the container image resource as requiring a rebuild when this hash changes, preventing unnecessary Cloud Build executions and reducing deployment time significantly. The hash is computed as:
+### 4.10.3 Content-Hash-Driven Rebuilds
 
-```hcl
-locals {
-  content_hash = sha256(join("", [
-    for f in fileset(var.source_dir, "**") :
-    filesha256("${var.source_dir}/${f}")
-  ]))
-}
-```
+During each terraform apply, Terraform recomputes the content_hash of every component's source directory and compares it against the hash recorded in the Terraform state. If the hash has changed, Terraform invokes Cloud Build to rebuild the affected Docker image and push it to Artifact Registry under the cpe-docker-repo repository, tagged with the new content_hash. Components whose content_hash is unchanged are skipped, eliminating unnecessary rebuilds and reducing both deployment time and cost. After the apply phase completes, a post-action script (terraform_post_action.py) regenerates the Neo4j lineage graph manifest and pushes it to the external Neo4j database, refreshing the system's view of the current deployment state.
 
-### 4.9.2 CI/CD — GitHub Actions
+## 4.11 Implementation Tools and Technologies
 
-Two GitHub Actions workflows automate the deployment lifecycle:
+The system is built on a heterogeneous technology stack that spans nine Cloud Run components, two storage backends, an external graph database, and a complete infrastructure-as-code pipeline. Three properties guide the technology selection. First, language-of-implementation appropriateness for the task — Node.js with Axios and Cheerio for HTTP-and-HTML scraping, Python for machine learning and language-model integration, and vanilla JavaScript for the static dashboard. Second, version reproducibility — every Python package is pinned to an exact version, and every container base image is pinned to a specific minor release of its Linux distribution. Third, operational simplicity — the system avoids heavyweight orchestration frameworks (Airflow, Kubeflow, Argo) in favour of a small set of native GCP primitives that can be expressed entirely in Terraform.
 
-- **Plan workflow** (triggered on pull request): Runs `terraform plan` and posts the diff as a pull request comment, allowing reviewers to see infrastructure changes before merging.
-- **Deploy workflow** (triggered on merge to `main`): Runs `terraform apply` to provision or update all resources, then executes a Neo4j sync script to update the dependency graph with the new deployment state.
+### 4.11.1 Pipeline Job Stack
 
-### 4.9.3 Data Lineage — Neo4j Dependency Graph
+The dvb-crawler-job is the only component implemented in Node.js. It runs on the node:20-alpine base image and depends on axios 1.13.4 for HTTP requests and cheerio 1.2.0 for jQuery-style HTML parsing of the DVB listing pages. Both libraries are widely used in the Node.js ecosystem and are mature enough to handle the irregular HTML that newspaper websites tend to produce. The remaining four batch jobs are all implemented in Python on the python:3.11-slim base image, but each pulls in its own set of additional dependencies. The dvb-text-cleaner-job depends only on the standard library (the re module for regular expressions) plus python-dotenv 1.0.0 for environment-variable loading; this is the lightest Python dependency footprint of any component, reflecting the fact that the cleaner is a pure-text-processing job. The crisis-classifier-job is the heaviest, pulling in scikit-learn 1.8.0 for the binary classifier itself, sentence-transformers 5.1.2 for the Gemma-300M embedding backbone, and the underlying transformers and torch libraries that sentence-transformers depends on. The dvb-annotator-job depends on google-genai 1.10.0, which is the official Google client library for the Gemini API. The dvb-extractor-job uses the simpler requests 2.31.0 library to call Gemini directly, plus google-cloud-firestore 2.16.0 for writing event records to Firestore.
 
-A Neo4j graph database is used to record the relationships between all pipeline components and the GCS bucket paths they read from and write to. After each Terraform deployment, a sync script creates `DeploymentHash` nodes for each container and edges representing data flow between stages. Each node stores the content hash, deployment timestamp, and the GCS prefix patterns for its inputs and outputs.
+### 4.11.2 Cloud Run Service Stack
 
-This graph enables downstream jobs to discover the correct input path by querying: "What is the most recent output hash written by the upstream stage for date X?" This is more reliable than scanning the GCS bucket, particularly when multiple versions of a stage have been deployed.
+All three Cloud Run Services run on the same python:3.11-slim base image and use Flask as the HTTP framework, served behind Gunicorn as the WSGI server. The crisis-admin service uses Flask 3.0.0 with Gunicorn 21.2.0; the events-api service uses Flask 3.0.3 with the same Gunicorn version plus google-cloud-firestore 2.16.0 to query the events collection. The mlflow service is the exception in that it uses the official MLflow distribution (3.8.1) rather than a custom Flask application; the MLflow distribution itself bundles a Flask-based UI and a backend that can be configured to use Cloud SQL or Cloud Storage as its persistence layer.
 
-### 4.9.4 GCS Bucket Structure
+### 4.11.3 Frontend and Storage Stack
 
-The pipeline uses two primary GCS buckets:
+The dashboard frontend is a single static HTML file served from a Cloud Storage bucket. It depends on two JavaScript libraries that are loaded from a public CDN at page load: Leaflet.js for the interactive map and Chart.js for the temporal trend visualisations. No build step is required, and no server-side templating is involved; this keeps the dashboard cheap to host and easy to update by simply uploading a new HTML file to the bucket.
 
-**`cpe-final-project-pipeline-data`** — stores all intermediate pipeline data:
+On the storage side, the system uses Google Cloud Storage for unstructured pipeline artefacts and Cloud Firestore for structured event records, both of which are managed services that require no version pinning at the application level. The external Neo4j database is accessed through the official neo4j 5.28.1 Python driver, which is pinned identically across every component that talks to Neo4j (the cleaner, classifier, annotator, extractor, and admin services), so that any future driver update can be applied uniformly through a single Dockerfile change rather than per-component.
 
-```
-dvb/{hash}/{date}/                    ← raw crawled articles
-dvb_cleaned/{hash}/{date}/            ← cleaned articles
-pending_review/{hash}/{date}/         ← classified, awaiting review
-crisis_articles/{hash}/{date}/        ← admin-confirmed crisis articles
-pending_review_annotation/{hash}/{date}/  ← annotated, awaiting review
-annotated_articles/{hash}/{date}/     ← admin-confirmed annotations
-events/{hash}/{date}/                 ← final extracted JSON
-```
+### 4.11.4 Build and CI/CD Stack
 
-**`cpe-final-project-mlflow-artifacts`** — stores MLflow experiment metadata, model parameters, evaluation metrics, and the serialised classifier pickle file.
+Container images are built by Google Cloud Build, stored in Google Artifact Registry under the cpe-docker-repo repository, and deployed by Terraform. The Terraform configuration uses Terraform 1.14.3 (the version pinned in the GitHub Actions workflow) and the hashicorp/google provider in the 6.x series; the configuration is versioned in the same repository as the application code, ensuring that infrastructure and application code evolve together. The GitHub Actions workflow that drives the build pipeline is itself version-controlled in .github/workflows/terraform-deploy.yml.
 
-### 4.9.5 Container Deployment Summary
+Two additional design rules apply across all components. First, all Python images are based on the same python:3.11-slim base to maximise layer cache reuse during Cloud Build, reducing build times when only application code changes. Second, the same google-cloud-storage and Neo4j client library versions are used everywhere they appear, so that a security or compatibility update can be applied uniformly through a single Dockerfile change rather than per-component.
 
-The complete system consists of nine Docker containers, all built via Cloud Build and stored in Google Artifact Registry:
+## 4.12 Summary
 
-| Container | Type | Trigger |
-|---|---|---|
-| `dvb-crawler` | Cloud Run Job | Cloud Scheduler (daily midnight) |
-| `text-cleaner` | Cloud Run Job | Triggered by crawler |
-| `crisis-classifier` | Cloud Run Job | Triggered by cleaner |
-| `crisis-admin` | Cloud Run Service | Always-on, HTTP |
-| `annotator` | Cloud Run Job | Triggered by admin confirm |
-| `extractor` | Cloud Run Job | Triggered by admin confirm (annotation) |
-| `crisis-dashboard` | Cloud Run Service | Always-on, HTTP (nginx) |
-| `mlflow-server` | Cloud Run Service | Always-on, HTTP |
-| `neo4j-sync` | Cloud Run Job | Post-Terraform deploy |
+This chapter has described the implementation of the Crisis Event Monitoring system in detail, walking through each of the seven pipeline stages and the supporting infrastructure that ties them together. The implementation follows three high-level design principles: the use of small, single-purpose Cloud Run components rather than a single large service; the consistent use of a content-hash–based lineage scheme so that every output can be traced back to the exact code version that produced it; and the placement of a human-in-the-loop checkpoint between the cheap automated stages and the more expensive language-model stages, ensuring that classifier false positives do not waste Gemini API calls.
 
----
-
-## 4.10 Summary
-
-This chapter has described the implementation of all seven pipeline stages and the supporting infrastructure. The system combines traditional web scraping, multilingual machine learning classification, large language model-based annotation and extraction, and interactive geospatial visualisation into a fully automated end-to-end pipeline. Key engineering contributions include the chained content-hash lineage system that enables reproducible, isolated pipeline runs; the 13-rule annotation prompt that handles complex multi-event Burmese news articles; the 200+ township geocoding table that resolves the sparse OpenStreetMap coverage for Myanmar; and the human-in-the-loop review layer that ensures data quality before LLM processing. The next chapter presents the evaluation of the system's outputs and performance.
+Three details deserve particular emphasis. First, the folder-hash chain (Section 4.9) is what makes the system reproducible end-to-end: any change to any stage's source code automatically produces a new chain of folder paths, leaving previous outputs untouched and making A/B comparisons trivial. Second, the township geocoding lookup (Section 4.8.4) is what allows the dashboard to plot Myanmar event locations reliably despite the sparse coverage of public geocoding APIs in that region. Third, the analyst review workflow (Section 4.5) is what guarantees the quality of the dataset that ultimately reaches end users — every event record on the dashboard has been confirmed by a human reviewer at two distinct stages of the pipeline.

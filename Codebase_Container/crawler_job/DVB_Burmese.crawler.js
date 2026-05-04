@@ -268,6 +268,30 @@ async function saveAndUploadGroupedMetadata(posts, sourceUrl) {
     return requestedDates;
 }
 
+function buildMonthlyRangesFromDates(dateStrings) {
+    const sorted = [...new Set(dateStrings)].sort();
+    const monthBounds = new Map();
+
+    for (const dateStr of sorted) {
+        const monthKey = dateStr.slice(0, 7); // YYYY-MM
+        const bounds = monthBounds.get(monthKey);
+        if (!bounds) {
+            monthBounds.set(monthKey, { startDate: dateStr, endDate: dateStr });
+            continue;
+        }
+        if (dateStr < bounds.startDate) {
+            bounds.startDate = dateStr;
+        }
+        if (dateStr > bounds.endDate) {
+            bounds.endDate = dateStr;
+        }
+    }
+
+    return Array.from(monthBounds.keys())
+        .sort()
+        .map((monthKey) => ({ monthKey, ...monthBounds.get(monthKey) }));
+}
+
 async function scrapePage(baseUrl, url, page) {
     try {
         console.log(`\nScraping page ${page}: ${url}`);
@@ -329,9 +353,11 @@ async function scrapePage(baseUrl, url, page) {
             console.log(`Finished at: ${new Date().toISOString()}`);
             console.log("============================================================");
 
-            // Trigger text cleaner once for each processed date.
-            for (const dateStr of processedDates) {
-                await triggerTextCleaner(dateStr);
+            // Trigger downstream jobs once per month window, not once per day.
+            const monthlyRanges = buildMonthlyRangesFromDates(processedDates);
+            for (const range of monthlyRanges) {
+                await triggerTextCleanerForRange(range.startDate, range.endDate);
+                await triggerClassifierForRange(range.startDate, range.endDate);
             }
         }
 
@@ -340,9 +366,9 @@ async function scrapePage(baseUrl, url, page) {
     }
 }
 
-async function triggerTextCleaner(dateStr) {
+async function triggerTextCleanerForRange(startDateStr, endDateStr) {
     console.log("\n============================================================");
-    console.log(`Triggering text cleaner for date: ${dateStr}`);
+    console.log(`Triggering text cleaner for range: ${startDateStr} to ${endDateStr}`);
     console.log("============================================================");
 
     try {
@@ -365,7 +391,10 @@ async function triggerTextCleaner(dateStr) {
         await axios.post(apiUrl, {
             overrides: {
                 containerOverrides: [{
-                    env: [{ name: 'PROCESS_DATE', value: dateStr }]
+                    env: [
+                        { name: 'START_DATE', value: startDateStr },
+                        { name: 'END_DATE', value: endDateStr }
+                    ]
                 }]
             }
         }, {
@@ -375,13 +404,55 @@ async function triggerTextCleaner(dateStr) {
             }
         });
 
-        console.log(`Text cleaner job triggered successfully for ${dateStr}`);
+        console.log(`Text cleaner job triggered successfully for ${startDateStr} to ${endDateStr}`);
         console.log("Pipeline: Crawler -> Text Cleaner -> Crisis Classifier");
 
     } catch (error) {
         // Log error but don't fail the crawler — cleaner has its own scheduler as fallback
         console.error(`Failed to trigger text cleaner: ${error.message}`);
         console.log("Text cleaner will run on its scheduled time as fallback.");
+    }
+}
+
+async function triggerClassifierForRange(startDateStr, endDateStr) {
+    console.log("\n============================================================");
+    console.log(`Triggering crisis classifier for range: ${startDateStr} to ${endDateStr}`);
+    console.log("============================================================");
+
+    try {
+        const metadataBase = 'http://metadata.google.internal/computeMetadata/v1';
+        const metaHeaders = { 'Metadata-Flavor': 'Google' };
+
+        const [tokenRes, projectRes] = await Promise.all([
+            axios.get(`${metadataBase}/instance/service-accounts/default/token`, { headers: metaHeaders }),
+            axios.get(`${metadataBase}/project/project-id`, { headers: metaHeaders })
+        ]);
+
+        const accessToken = tokenRes.data.access_token;
+        const projectId = projectRes.data;
+        const region = process.env.GCP_REGION || 'asia-southeast1';
+        const jobName = 'crisis-classifier-job';
+        const apiUrl = `https://run.googleapis.com/v2/projects/${projectId}/locations/${region}/jobs/${jobName}:run`;
+
+        await axios.post(apiUrl, {
+            overrides: {
+                containerOverrides: [{
+                    env: [
+                        { name: 'START_DATE', value: startDateStr },
+                        { name: 'END_DATE', value: endDateStr }
+                    ]
+                }]
+            }
+        }, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log(`Crisis classifier job triggered successfully for ${startDateStr} to ${endDateStr}`);
+    } catch (error) {
+        console.error(`Failed to trigger crisis classifier: ${error.message}`);
     }
 }
 
@@ -460,12 +531,14 @@ async function run() {
         console.log(`Finished at: ${new Date().toISOString()}`);
         console.log("============================================================");
 
-        for (const dateStr of processedDates) {
-            await triggerTextCleaner(dateStr);
+        const monthlyRanges = buildMonthlyRangesFromDates(processedDates);
+        for (const range of monthlyRanges) {
+            await triggerTextCleanerForRange(range.startDate, range.endDate);
+            await triggerClassifierForRange(range.startDate, range.endDate);
         }
     } else {
         console.log(`Starting crawl for date range: ${startDateStr} to ${endDateStr}`);
-        scrapePage(url, url, 1);
+        await scrapePage(url, url, 1);
     }
 }
 

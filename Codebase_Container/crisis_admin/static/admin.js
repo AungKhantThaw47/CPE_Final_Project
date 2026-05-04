@@ -53,6 +53,31 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
+    // Sidebar navigation: switch tabs and jump to a hash/date anchor
+    var sidebarLinks = document.querySelectorAll(".nav-link[data-tab], .nav-sublink[data-tab]");
+    sidebarLinks.forEach(function (link) {
+        link.addEventListener("click", function (e) {
+            e.preventDefault();
+
+            var tabName = link.getAttribute("data-tab");
+            var targetId = link.getAttribute("data-target");
+            var target = targetId ? document.getElementById(targetId) : null;
+
+            if (tabName) {
+                var tabButton = document.querySelector('.tab-button[data-tab="' + tabName + '"]');
+                if (tabButton && !tabButton.classList.contains("active")) {
+                    tabButton.click();
+                }
+            }
+
+            setTimeout(function () {
+                if (target) {
+                    target.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+            }, 50);
+        });
+    });
+
     // Handle confirm/reject buttons with AJAX to move to next article
     var actionForms = document.querySelectorAll(".action-form");
 

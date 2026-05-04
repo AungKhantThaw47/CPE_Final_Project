@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="320" viewBox="0 0 1100 320">
+  <style>.t{font:700 22px Arial,sans-serif;fill:#1f2a44}.n{font:700 15px Arial,sans-serif;fill:#1f2a44}.s{font:13px Arial,sans-serif;fill:#2b3657}.b{fill:#f3f7ff;stroke:#41547d;stroke-width:2;rx:12}.d{fill:#fff8e8;stroke:#8a6d3b;stroke-width:2;rx:12}.a{stroke:#2f3b52;stroke-width:3;marker-end:url(#m)}</style>
+  <defs><marker id="m" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2f3b52"/></marker></defs>
+  <text x="550" y="36" text-anchor="middle" class="t">Figure 4.7 Cleaner trailing-line removal algorithm</text>
+  <rect class="b" x="70" y="95" width="210" height="90"/><text x="175" y="130" text-anchor="middle" class="n">Trim trailing blanks</text>
+  <rect class="d" x="330" y="95" width="250" height="90"/><text x="455" y="130" text-anchor="middle" class="n">Last line matches author/source?</text>
+  <rect class="b" x="630" y="55" width="190" height="90"/><text x="725" y="90" text-anchor="middle" class="n">Remove last line</text><text x="725" y="112" text-anchor="middle" class="s">loop again</text>
+  <rect class="b" x="630" y="185" width="190" height="90"/><text x="725" y="220" text-anchor="middle" class="n">Stop cleanup</text><text x="725" y="242" text-anchor="middle" class="s">write cleaned text</text>
+  <line class="a" x1="280" y1="140" x2="330" y2="140"/><line class="a" x1="580" y1="120" x2="630" y2="100"/><line class="a" x1="580" y1="160" x2="630" y2="220"/>
+  <text x="600" y="108" class="s">Yes</text><text x="600" y="180" class="s">No</text>
+</svg>

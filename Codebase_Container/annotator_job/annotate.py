@@ -4,6 +4,7 @@ import logging
 import time
 import sys
 import hashlib
+from datetime import datetime
 from google.cloud import storage
 from google import genai
 
@@ -95,6 +96,11 @@ def compute_folder_hash(previous_folder_hash: str, content_hash: str) -> str:
     return hashlib.sha256(f"{previous_folder_hash}:{content_hash}".encode("utf-8")).hexdigest()
 
 
+def resolve_latest_crisis_articles_hash(bucket) -> str:
+    """Resolve the latest crisis_articles hash from Neo4j."""
+    return query_latest_folder_hash_from_neo4j_env("crisis_articles/", bucket_name=bucket.name)
+
+
 def annotate_article(article_text: str, gemini_client) -> str:
     """Annotate a single article using Gemini."""
     full_prompt = ANNOTATION_PROMPT + "\n\nArticle:\n" + article_text
@@ -123,20 +129,15 @@ def process_crisis_articles():
         bucket = storage_client.bucket(crisis_bucket)
         gemini_client = genai.Client(api_key=gemini_api_key)
 
-        # Traverse DERIVED_FROM from the latest pending_review/ hash to find the matching crisis_articles/ hash.
-        # Falls back to chain-tip query for backwards compatibility before edges are written.
-        source_hash = (
-            query_folder_hash_derived_from_env("crisis_articles/", "pending_review/", bucket_name=crisis_bucket)
-            or query_latest_folder_hash_from_neo4j_env("crisis_articles/", crisis_bucket)
-            or ""
-        )
+        # Annotate the latest classifier output in crisis_articles/.
+        source_hash = resolve_latest_crisis_articles_hash(bucket)
         if not source_hash:
-            logger.error("❌ No crisis_articles/ hash found in Neo4j (via DERIVED_FROM or chain tip)")
+            logger.error("❌ No crisis_articles/ hash found in Neo4j")
             return False
 
         logger.info(f"🔎 Neo4j source hash: {source_hash}")
 
-        # List only the latest crisis batch resolved from Neo4j.
+        # List only the latest classifier batch resolved from Neo4j.
         blobs = bucket.list_blobs(prefix=f'crisis_articles/{source_hash}/')
         
         processed_count = 0

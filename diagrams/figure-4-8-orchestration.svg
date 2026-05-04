@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="340" viewBox="0 0 1100 340">
+  <style>.t{font:700 22px Arial,sans-serif;fill:#1f2a44}.n{font:700 15px Arial,sans-serif;fill:#1f2a44}.s{font:13px Arial,sans-serif;fill:#2b3657}.b{fill:#f3f7ff;stroke:#41547d;stroke-width:2;rx:12}.a{stroke:#2f3b52;stroke-width:3;marker-end:url(#m)}</style>
+  <defs><marker id="m" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2f3b52"/></marker></defs>
+  <text x="550" y="36" text-anchor="middle" class="t">Figure 4.8 Cloud Workflows orchestration sequence</text>
+  <rect class="b" x="60" y="100" width="200" height="90"/><text x="160" y="135" text-anchor="middle" class="n">Cloud Workflow</text>
+  <rect class="b" x="320" y="80" width="200" height="90"/><text x="420" y="115" text-anchor="middle" class="n">Run Job (POST)</text>
+  <rect class="b" x="320" y="200" width="200" height="90"/><text x="420" y="235" text-anchor="middle" class="n">Poll Execution (GET)</text>
+  <rect class="b" x="580" y="80" width="220" height="90"/><text x="690" y="115" text-anchor="middle" class="n">Cloud Run Jobs API</text>
+  <rect class="b" x="860" y="80" width="180" height="90"/><text x="950" y="115" text-anchor="middle" class="n">Job Running</text>
+  <rect class="b" x="860" y="200" width="180" height="90"/><text x="950" y="235" text-anchor="middle" class="n">Completed/Failed</text>
+  <line class="a" x1="260" y1="130" x2="320" y2="125"/><line class="a" x1="520" y1="125" x2="580" y2="125"/><line class="a" x1="800" y1="125" x2="860" y2="125"/>
+  <line class="a" x1="950" y1="170" x2="950" y2="200"/><line class="a" x1="860" y1="245" x2="520" y2="245"/><line class="a" x1="320" y1="245" x2="260" y2="145"/>
+  <text x="700" y="264" class="s">repeat every 30s until completionTime</text>
+</svg>

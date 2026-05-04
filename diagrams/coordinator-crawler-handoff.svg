@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420" role="img" aria-labelledby="title desc">
+  <title id="title">Coordinator-crawler manifest handoff</title>
+  <desc id="desc">Coordinator discovers links, writes manifest to GCS, then crawler consumes MANIFEST_PREFIX and fetches articles.</desc>
+
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f3b52" />
+    </marker>
+    <style>
+      .title { font: 700 26px 'Arial', sans-serif; fill: #1f2a44; }
+      .node-title { font: 700 20px 'Arial', sans-serif; fill: #1f2a44; }
+      .node-text { font: 15px 'Arial', sans-serif; fill: #2a3350; }
+      .label { font: 700 14px 'Arial', sans-serif; fill: #1f2a44; }
+      .box { fill: #f5f8ff; stroke: #3f4f74; stroke-width: 2; rx: 14; ry: 14; }
+      .gcs { fill: #f2fbf8; stroke: #2f7a67; stroke-width: 2; rx: 14; ry: 14; }
+      .line { stroke: #2f3b52; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <text x="490" y="42" text-anchor="middle" class="title">Coordinator-Crawler Manifest Handoff</text>
+
+  <rect class="box" x="70" y="90" width="280" height="200" />
+  <text x="210" y="128" text-anchor="middle" class="node-title">Coordinator Job</text>
+  <text x="210" y="162" text-anchor="middle" class="node-text">Discover DVB article links</text>
+  <text x="210" y="190" text-anchor="middle" class="node-text">Build date-scoped manifest</text>
+  <text x="210" y="218" text-anchor="middle" class="node-text">Avoid repeated listing traversal</text>
+
+  <rect class="gcs" x="390" y="130" width="220" height="120" />
+  <text x="500" y="168" text-anchor="middle" class="node-title">GCS Manifest</text>
+  <text x="500" y="198" text-anchor="middle" class="node-text">dvb/links-manifests/{date}/</text>
+
+  <rect class="box" x="650" y="90" width="260" height="200" />
+  <text x="780" y="128" text-anchor="middle" class="node-title">Crawler Job</text>
+  <text x="780" y="162" text-anchor="middle" class="node-text">Read manifest URLs</text>
+  <text x="780" y="190" text-anchor="middle" class="node-text">Fetch article pages</text>
+  <text x="780" y="218" text-anchor="middle" class="node-text">Write text + metadata + markers</text>
+
+  <path class="line" d="M 350 190 L 390 190" />
+  <text x="370" y="178" text-anchor="middle" class="label">write manifest</text>
+
+  <path class="line" d="M 610 190 L 650 190" />
+  <text x="630" y="178" text-anchor="middle" class="label">MANIFEST_PREFIX</text>
+
+  <text x="490" y="352" text-anchor="middle" class="node-text">Outcome: coordinator precomputes links, reducing crawler link-finding time during backfills.</text>
+</svg>

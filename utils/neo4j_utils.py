@@ -214,18 +214,14 @@ def query_latest_folder_hash_from_neo4j(
 ) -> Optional[str]:
     """Return latest FolderHash.hash_value for a folder path.
 
-    Returns the current chain tip for the requested folder path.
-    When a bucket name is provided, only returns hashes whose GCS folder actually has blobs.
-    This avoids post-apply deployment seeds from hiding the last real output.
+    Returns the most recently updated FolderHash with real GCS content for the requested folder path.
+    When a bucket name is provided, checks multiple recent hashes to find one with real blobs (not just folder markers).
     """
     query = """
     MATCH (fh:FolderHash {folder_path: $folder_path})
-    WHERE NOT EXISTS {
-        MATCH (:FolderHash)-[:PREVIOUS_FOLDER_HASH]->(fh)
-    }
-    RETURN fh.hash_value AS hash_value
+    RETURN fh.hash_value AS hash_value, fh.updated_at AS updated_at
     ORDER BY fh.updated_at DESC
-    LIMIT 1
+    LIMIT 10
     """
 
     driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
@@ -249,15 +245,21 @@ def query_latest_folder_hash_from_neo4j(
 
                     prefix = f"{folder_path.rstrip('/')}/{value.strip()}/"
                     try:
-                        blob = next(client.list_blobs(bucket_name, prefix=prefix, max_results=1), None)
+                        blob = next(
+                            (
+                                candidate
+                                for candidate in client.list_blobs(bucket_name, prefix=prefix)
+                                if not candidate.name.endswith(".FOLDER_CREATED") and not candidate.name.endswith("/")
+                            ),
+                            None,
+                        )
                     except Exception:
                         blob = None
 
                     if blob is not None:
                         return value.strip()
 
-                value = records[0].get("hash_value")
-                return value.strip() if isinstance(value, str) and value.strip() else None
+                return None
 
             value = records[0].get("hash_value")
             return value.strip() if isinstance(value, str) and value.strip() else None
@@ -285,6 +287,77 @@ def query_latest_folder_hash_from_neo4j_env(folder_path: str, bucket_name: str =
         )
     except Exception:
         return None
+
+
+def query_folder_hashes_from_neo4j(
+    folder_path: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str = "neo4j",
+    bucket_name: str = "",
+) -> list[str]:
+    """Return all FolderHash.hash_value values for a folder path, newest first.
+
+    When a bucket name is provided, only hashes that still have blobs in GCS are returned.
+    """
+    query = """
+    MATCH (fh:FolderHash {folder_path: $folder_path})
+    RETURN fh.hash_value AS hash_value, fh.updated_at AS updated_at
+    ORDER BY fh.updated_at DESC
+    """
+
+    driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
+
+    with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
+        with driver.session(database=neo4j_database) as session:
+            records = session.run(query, folder_path=folder_path).data()
+
+            hashes: list[str] = []
+            if bucket_name:
+                client = storage.Client()
+                for record in records:
+                    value = record.get("hash_value")
+                    if not isinstance(value, str) or not value.strip():
+                        continue
+                    prefix = f"{folder_path.rstrip('/')}/{value.strip()}/"
+                    try:
+                        blob = next(client.list_blobs(bucket_name, prefix=prefix, max_results=1), None)
+                    except Exception:
+                        blob = None
+                    if blob is not None:
+                        hashes.append(value.strip())
+                return hashes
+
+            for record in records:
+                value = record.get("hash_value")
+                if isinstance(value, str) and value.strip():
+                    hashes.append(value.strip())
+            return hashes
+
+
+def query_folder_hashes_from_neo4j_env(folder_path: str, bucket_name: str = "") -> list[str]:
+    """Return all FolderHash hashes for a folder path using env-based Neo4j config."""
+    _load_env_file_if_present()
+    neo4j_uri = os.environ.get("NEO4J_URI", "").strip()
+    neo4j_user = os.environ.get("NEO4J_USER", "").strip()
+    neo4j_password = os.environ.get("NEO4J_PASSWORD", "").strip()
+    neo4j_database = os.environ.get("NEO4J_DATABASE", "neo4j").strip() or "neo4j"
+
+    if not neo4j_uri or not neo4j_user or not neo4j_password:
+        return []
+
+    try:
+        return query_folder_hashes_from_neo4j(
+            folder_path=folder_path,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            neo4j_database=neo4j_database,
+            bucket_name=bucket_name,
+        )
+    except Exception:
+        return []
 
 
 def write_folder_hash_to_neo4j(
@@ -451,10 +524,6 @@ def create_main_pipeline_linkage(
                     else:
                         stage_hashes[stage] = None
 
-                missing_stages = [s for s, h in stage_hashes.items() if h is None]
-                if missing_stages:
-                    return False, f"Missing FolderHash nodes for stages: {', '.join(missing_stages)}"
-
                 # Create DEPENDS_ON_DATA_FROM links between consecutive stages
                 edges_created = 0
                 for i in range(len(pipeline_stages) - 1):
@@ -500,6 +569,13 @@ def create_main_pipeline_linkage(
                         source_path=source_stage,
                     )
                     edges_created += 1
+
+                missing_stages = [s for s, h in stage_hashes.items() if h is None]
+                if missing_stages:
+                    return True, (
+                        f"Created {edges_created} main pipeline links; skipped missing stages: "
+                        f"{', '.join(missing_stages)}"
+                    )
 
                 return True, f"Successfully linked {edges_created} main pipeline stages: {' → '.join(pipeline_stages)}"
 
@@ -555,7 +631,14 @@ def query_folder_hash_derived_from(
                         continue
                     prefix = f"{target_folder_path.rstrip('/')}/{value.strip()}/"
                     try:
-                        blob = next(client.list_blobs(bucket_name, prefix=prefix, max_results=1), None)
+                        blob = next(
+                            (
+                                candidate
+                                for candidate in client.list_blobs(bucket_name, prefix=prefix)
+                                if not candidate.name.endswith(".FOLDER_CREATED") and not candidate.name.endswith("/")
+                            ),
+                            None,
+                        )
                     except Exception:
                         blob = None
                     if blob is not None:

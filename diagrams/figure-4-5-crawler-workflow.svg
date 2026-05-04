@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="360" viewBox="0 0 1100 360">
+  <style>.t{font:700 22px Arial,sans-serif;fill:#1f2a44}.n{font:700 15px Arial,sans-serif;fill:#1f2a44}.s{font:13px Arial,sans-serif;fill:#2b3657}.b{fill:#f3f7ff;stroke:#41547d;stroke-width:2;rx:12}.d{fill:#fff8e8;stroke:#8a6d3b;stroke-width:2;rx:12}.a{stroke:#2f3b52;stroke-width:3;marker-end:url(#m)}</style>
+  <defs><marker id="m" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2f3b52"/></marker></defs>
+  <text x="550" y="36" text-anchor="middle" class="t">Figure 4.5 Crawler workflow with idempotent marker check</text>
+  <rect class="b" x="60" y="85" width="190" height="90"/><text x="155" y="120" text-anchor="middle" class="n">List page URLs</text>
+  <rect class="d" x="290" y="85" width="230" height="90"/><text x="405" y="120" text-anchor="middle" class="n">Date in target range?</text>
+  <rect class="d" x="560" y="85" width="230" height="90"/><text x="675" y="120" text-anchor="middle" class="n">Processed marker exists?</text>
+  <rect class="b" x="830" y="60" width="220" height="90"/><text x="940" y="95" text-anchor="middle" class="n">Skip article fetch</text>
+  <rect class="b" x="830" y="190" width="220" height="120"/><text x="940" y="225" text-anchor="middle" class="n">Fetch article body</text><text x="940" y="248" text-anchor="middle" class="s">write text + metadata + marker</text>
+  <line class="a" x1="250" y1="130" x2="290" y2="130"/><line class="a" x1="520" y1="130" x2="560" y2="130"/><line class="a" x1="790" y1="105" x2="830" y2="105"/><line class="a" x1="790" y1="155" x2="830" y2="225"/>
+  <text x="810" y="94" class="s">Yes</text><text x="810" y="174" class="s">No</text>
+</svg>
