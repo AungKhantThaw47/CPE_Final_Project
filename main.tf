@@ -48,23 +48,6 @@ locals {
     #   ]
     # }
 
-    # daily-data-processor = {
-    #   codebase_path    = "${path.root}/Codebase_Container/cloud_scheduler_function"
-    #   container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/scheduler-job:latest"
-    #   description      = "Daily data processing job"
-    #   build_image      = true # Build from local Dockerfile
-    #   enable_scheduler = true
-    #   schedule         = "0 * * * *"
-    #   enable_gpu       = false
-    #   cpu_limit        = "1"
-    #   memory_limit     = "512Mi"
-    #   timeout          = "600s"
-    #   environment_variables = {
-    #     ENV = "production"
-    #   }
-    #   service_account_roles = []
-    # }
-
     dvb-crawler-job = {
       codebase_path    = "${path.root}/Codebase_Container/crawler_job"
       container_image  = "${var.region}-docker.pkg.dev/${var.project_id}/${var.docker_repository_id}/dvb-crawler:latest"
@@ -123,11 +106,12 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        GCS_BUCKET     = google_storage_bucket.pipeline_data.name
-        NEO4J_URI      = var.neo4j_uri
-        NEO4J_USER     = var.neo4j_user
-        NEO4J_PASSWORD = var.neo4j_password
-        NEO4J_DATABASE = var.neo4j_database
+        GCS_BUCKET            = google_storage_bucket.pipeline_data.name
+        NEO4J_URI             = var.neo4j_uri
+        NEO4J_USER            = var.neo4j_user
+        NEO4J_PASSWORD        = var.neo4j_password
+        NEO4J_DATABASE        = var.neo4j_database
+        NEO4J_SKIP_SSL_VERIFY = var.neo4j_skip_ssl_verify ? "true" : "false"
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -147,13 +131,14 @@ locals {
       memory_limit     = "16Gi"
       timeout          = "3600s" # 1 hour max for large batches
       environment_variables = {
-        GCS_BUCKET     = google_storage_bucket.pipeline_data.name
-        CRISIS_BUCKET  = google_storage_bucket.pipeline_data.name
-        HF_TOKEN       = var.hf_token
-        NEO4J_URI      = var.neo4j_uri
-        NEO4J_USER     = var.neo4j_user
-        NEO4J_PASSWORD = var.neo4j_password
-        NEO4J_DATABASE = var.neo4j_database
+        GCS_BUCKET            = google_storage_bucket.pipeline_data.name
+        CRISIS_BUCKET         = google_storage_bucket.pipeline_data.name
+        HF_TOKEN              = var.hf_token
+        NEO4J_URI             = var.neo4j_uri
+        NEO4J_USER            = var.neo4j_user
+        NEO4J_PASSWORD        = var.neo4j_password
+        NEO4J_DATABASE        = var.neo4j_database
+        NEO4J_SKIP_SSL_VERIFY = var.neo4j_skip_ssl_verify ? "true" : "false"
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -173,12 +158,13 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        CRISIS_BUCKET  = google_storage_bucket.pipeline_data.name
-        GEMINI_API_KEY = var.gemini_api_key
-        NEO4J_URI      = var.neo4j_uri
-        NEO4J_USER     = var.neo4j_user
-        NEO4J_PASSWORD = var.neo4j_password
-        NEO4J_DATABASE = var.neo4j_database
+        CRISIS_BUCKET         = google_storage_bucket.pipeline_data.name
+        GEMINI_API_KEY        = var.gemini_api_key
+        NEO4J_URI             = var.neo4j_uri
+        NEO4J_USER            = var.neo4j_user
+        NEO4J_PASSWORD        = var.neo4j_password
+        NEO4J_DATABASE        = var.neo4j_database
+        NEO4J_SKIP_SSL_VERIFY = var.neo4j_skip_ssl_verify ? "true" : "false"
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -198,14 +184,15 @@ locals {
       memory_limit     = "512Mi"
       timeout          = "600s"
       environment_variables = {
-        CRISIS_BUCKET        = google_storage_bucket.pipeline_data.name
-        EXTRACTION_BUCKET    = google_storage_bucket.pipeline_data.name
-        GEMINI_API_KEY       = var.gemini_api_key
-        NEO4J_URI            = var.neo4j_uri
-        NEO4J_USER           = var.neo4j_user
-        NEO4J_PASSWORD       = var.neo4j_password
-        NEO4J_DATABASE       = var.neo4j_database
-        FIRESTORE_COLLECTION = "events"
+        CRISIS_BUCKET         = google_storage_bucket.pipeline_data.name
+        EXTRACTION_BUCKET     = google_storage_bucket.pipeline_data.name
+        GEMINI_API_KEY        = var.gemini_api_key
+        NEO4J_URI             = var.neo4j_uri
+        NEO4J_USER            = var.neo4j_user
+        NEO4J_PASSWORD        = var.neo4j_password
+        NEO4J_DATABASE        = var.neo4j_database
+        NEO4J_SKIP_SSL_VERIFY = var.neo4j_skip_ssl_verify ? "true" : "false"
+        FIRESTORE_COLLECTION  = "events"
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -281,13 +268,14 @@ locals {
       port            = 8080
       allow_public    = true
       environment_variables = {
-        CRISIS_BUCKET        = google_storage_bucket.pipeline_data.name
-        GOOGLE_CLOUD_PROJECT = var.project_id
-        GCP_REGION           = var.region
-        NEO4J_URI            = var.neo4j_uri
-        NEO4J_USER           = var.neo4j_user
-        NEO4J_PASSWORD       = var.neo4j_password
-        NEO4J_DATABASE       = var.neo4j_database
+        CRISIS_BUCKET         = google_storage_bucket.pipeline_data.name
+        GOOGLE_CLOUD_PROJECT  = var.project_id
+        GCP_REGION            = var.region
+        NEO4J_URI             = var.neo4j_uri
+        NEO4J_USER            = var.neo4j_user
+        NEO4J_PASSWORD        = var.neo4j_password
+        NEO4J_DATABASE        = var.neo4j_database
+        NEO4J_SKIP_SSL_VERIFY = var.neo4j_skip_ssl_verify ? "true" : "false"
       }
       service_account_roles = [
         "roles/storage.objectAdmin",
@@ -495,6 +483,21 @@ resource "google_cloud_run_v2_job_iam_member" "invoker_can_run" {
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.job_invoker_sa.email}"
+}
+
+# Grant crisis-admin service account job-level permission to invoke annotation and extraction jobs
+# (project-level roles/run.invoker is insufficient; job-level binding required for run.jobs.runWithOverrides)
+resource "google_cloud_run_v2_job_iam_member" "crisis_admin_can_invoke_jobs" {
+  for_each = {
+    for job_name in ["dvb-annotator-job", "dvb-extractor-job"] :
+    job_name => job_name
+    if contains(keys(local.jobs), job_name)
+  }
+
+  name     = module.jobs[each.value].job_name
+  location = var.region
+  role     = "roles/run.admin"
+  member   = "serviceAccount:${module.services["crisis-admin"].service_account_email}"
 }
 
 # Note: Job-to-job chaining removed. Pipeline orchestration delegated to Cloud Workflows (workflow.yaml, manual_workflow.yaml)

@@ -1,15 +1,244 @@
 """Shared Neo4j utility helpers for runtime hash resolution."""
 
+import base64
+import json
 import os
 import ssl
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Optional
+from urllib import parse, request
 
 from google.cloud import storage
 from neo4j import GraphDatabase
 
 
+LATEST_ONLY_FOLDER_PATHS = {"dvb_cleaned/", "pending_review/"}
 _DOTENV_LOADED = False
+_NEO4J_WRITE_AUDIT_LOG = Path(__file__).resolve().parents[1] / "bootstrap" / "neo4j" / "neo4j_write_audit.jsonl"
+
+
+def _folder_hash_key(bucket_name: str, folder_path: str, hash_value: str) -> str:
+    folder_name = folder_path.strip("/")
+    return f"hash:folder:{bucket_name}:{folder_name}:{hash_value}"
+
+
+def _append_write_audit(event_type: str, payload: dict) -> None:
+    _NEO4J_WRITE_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": event_type,
+        "payload": payload,
+    }
+    with _NEO4J_WRITE_AUDIT_LOG.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True))
+        handle.write("\n")
+
+
+def _run_query_api_statement(
+    statement: str,
+    parameters: dict,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str,
+) -> list[dict]:
+    """Execute Cypher using Neo4j Query API v2 and return rows as dicts.
+
+    This is used as a fallback when Bolt connectivity is unavailable.
+    """
+    host = parse.urlparse(neo4j_uri).hostname
+    if not host:
+        return []
+
+    endpoint = f"https://{host}/db/{parse.quote(neo4j_database)}/query/v2"
+    payload = json.dumps({"statement": statement, "parameters": parameters}).encode("utf-8")
+    auth = base64.b64encode(f"{neo4j_user}:{neo4j_password}".encode("utf-8")).decode("ascii")
+    req = request.Request(
+        endpoint,
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Basic {auth}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+
+    skip_ssl_verify = os.environ.get("NEO4J_SKIP_SSL_VERIFY", "").strip().lower() in {"1", "true", "yes", "y", "on"}
+    context = ssl._create_unverified_context() if skip_ssl_verify else None
+
+    with request.urlopen(req, timeout=30, context=context) as resp:
+        payload = json.loads(resp.read())
+
+    data = payload.get("data", {})
+    fields = data.get("fields", [])
+    values = data.get("values", [])
+    return [dict(zip(fields, row)) for row in values]
+
+
+def _query_latest_folder_hash_via_query_api(
+    folder_path: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str,
+    bucket_name: str = "",
+) -> Optional[str]:
+    query = """
+    MATCH (fh:FolderHash {folder_path: $folder_path})
+    RETURN fh.hash_value AS hash_value, fh.updated_at AS updated_at
+    ORDER BY fh.updated_at DESC
+    """
+    records = _run_query_api_statement(
+        statement=query,
+        parameters={"folder_path": folder_path},
+        neo4j_uri=neo4j_uri,
+        neo4j_user=neo4j_user,
+        neo4j_password=neo4j_password,
+        neo4j_database=neo4j_database,
+    )
+    if not records:
+        return None
+
+    if bucket_name:
+        client = storage.Client()
+        for record in records:
+            value = record.get("hash_value")
+            if not isinstance(value, str) or not value.strip():
+                continue
+
+            prefix = f"{folder_path.rstrip('/')}/{value.strip()}/"
+            try:
+                blob = next(
+                    (
+                        candidate
+                        for candidate in client.list_blobs(bucket_name, prefix=prefix)
+                        if not candidate.name.endswith(".FOLDER_CREATED") and not candidate.name.endswith("/")
+                    ),
+                    None,
+                )
+            except Exception:
+                blob = None
+
+            if blob is not None:
+                return value.strip()
+
+        return None
+
+    value = records[0].get("hash_value")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _query_folder_hashes_via_query_api(
+    folder_path: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str,
+    bucket_name: str = "",
+) -> list[str]:
+    query = """
+    MATCH (fh:FolderHash {folder_path: $folder_path})
+    RETURN fh.hash_value AS hash_value, fh.updated_at AS updated_at
+    ORDER BY fh.updated_at DESC
+    """
+    records = _run_query_api_statement(
+        statement=query,
+        parameters={"folder_path": folder_path},
+        neo4j_uri=neo4j_uri,
+        neo4j_user=neo4j_user,
+        neo4j_password=neo4j_password,
+        neo4j_database=neo4j_database,
+    )
+    hashes: list[str] = []
+    if not records:
+        return hashes
+
+    if bucket_name:
+        client = storage.Client()
+        for record in records:
+            value = record.get("hash_value")
+            if not isinstance(value, str) or not value.strip():
+                continue
+            prefix = f"{folder_path.rstrip('/')}/{value.strip()}/"
+            try:
+                blob = next(client.list_blobs(bucket_name, prefix=prefix), None)
+            except Exception:
+                blob = None
+            if blob is not None:
+                hashes.append(value.strip())
+        return hashes
+
+    for record in records:
+        value = record.get("hash_value")
+        if isinstance(value, str) and value.strip():
+            hashes.append(value.strip())
+    return hashes
+
+
+def _query_folder_hash_derived_from_source_hash_via_query_api(
+    target_folder_path: str,
+    source_folder_path: str,
+    source_hash: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str,
+    bucket_name: str = "",
+) -> Optional[str]:
+    query = """
+    MATCH (target:FolderHash {folder_path: $target_folder_path})-[:DERIVED_FROM]->
+          (source:FolderHash {folder_path: $source_folder_path, hash_value: $source_hash})
+    RETURN target.hash_value AS hash_value, target.updated_at AS updated_at
+    ORDER BY target.updated_at DESC
+    """
+    records = _run_query_api_statement(
+        statement=query,
+        parameters={
+            "target_folder_path": target_folder_path,
+            "source_folder_path": source_folder_path,
+            "source_hash": source_hash,
+        },
+        neo4j_uri=neo4j_uri,
+        neo4j_user=neo4j_user,
+        neo4j_password=neo4j_password,
+        neo4j_database=neo4j_database,
+    )
+    if not records:
+        return None
+
+    if bucket_name:
+        client = storage.Client()
+        for record in records:
+            value = record.get("hash_value")
+            if not isinstance(value, str) or not value.strip():
+                continue
+
+            prefix = f"{target_folder_path.rstrip('/')}/{value.strip()}/"
+            try:
+                blob = next(
+                    (
+                        candidate
+                        for candidate in client.list_blobs(bucket_name, prefix=prefix)
+                        if not candidate.name.endswith(".FOLDER_CREATED") and not candidate.name.endswith("/")
+                    ),
+                    None,
+                )
+            except Exception:
+                blob = None
+
+            if blob is not None:
+                return value.strip()
+
+        # Fallback to Neo4j lineage mapping even when the target hash currently
+        # has no live blobs (e.g., downstream consumers already moved/deleted
+        # data and only markers/history remain).
+        value = records[0].get("hash_value")
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    value = records[0].get("hash_value")
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _load_env_file_if_present() -> None:
@@ -44,9 +273,25 @@ def _load_env_file_if_present() -> None:
 def _make_driver_kwargs(neo4j_uri: str, neo4j_user: str, neo4j_password: str) -> dict:
     driver_kwargs = {"auth": (neo4j_user, neo4j_password)}
     skip_ssl_verify = os.environ.get("NEO4J_SKIP_SSL_VERIFY", "").strip().lower() in {"1", "true", "yes", "y", "on"}
+    # Only attach an unverified SSL context for plain bolt/neo4j schemes.
+    # Secure schemes such as neo4j+s already encode TLS in the URI, and the
+    # driver rejects ssl_context there.
     if skip_ssl_verify and neo4j_uri.startswith(("bolt://", "neo4j://")):
         driver_kwargs["ssl_context"] = ssl._create_unverified_context()
     return driver_kwargs
+
+
+def _ensure_neo4j_connection(neo4j_uri: str, driver_kwargs: dict, neo4j_database: str) -> bool:
+    """Return True only when Neo4j accepts a live connectivity check.
+
+    This keeps write paths from attempting a MERGE/CREATE when the database is
+    unavailable or the credentials are stale.
+    """
+    with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
+        driver.verify_connectivity()
+        with driver.session(database=neo4j_database) as session:
+            session.run("RETURN 1 AS ok").single()
+    return True
 
 
 def query_latest_hash_from_neo4j(
@@ -124,6 +369,9 @@ def write_output_hash_to_neo4j(
 
     driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
 
+    # Fail fast when Neo4j is unreachable so we do not attempt a write after a
+    # broken connection has already been detected.
+    _ensure_neo4j_connection(neo4j_uri, driver_kwargs, neo4j_database)
     with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
         with driver.session(database=neo4j_database) as session:
             session.run(query, key=key, hash_value=hash_value)
@@ -221,7 +469,6 @@ def query_latest_folder_hash_from_neo4j(
     MATCH (fh:FolderHash {folder_path: $folder_path})
     RETURN fh.hash_value AS hash_value, fh.updated_at AS updated_at
     ORDER BY fh.updated_at DESC
-    LIMIT 10
     """
 
     driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
@@ -286,7 +533,17 @@ def query_latest_folder_hash_from_neo4j_env(folder_path: str, bucket_name: str =
             bucket_name=bucket_name,
         )
     except Exception:
-        return None
+        try:
+            return _query_latest_folder_hash_via_query_api(
+                folder_path=folder_path,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+                neo4j_database=neo4j_database,
+                bucket_name=bucket_name,
+            )
+        except Exception:
+            return None
 
 
 def query_folder_hashes_from_neo4j(
@@ -333,6 +590,9 @@ def query_folder_hashes_from_neo4j(
                 value = record.get("hash_value")
                 if isinstance(value, str) and value.strip():
                     hashes.append(value.strip())
+
+            if folder_path in LATEST_ONLY_FOLDER_PATHS:
+                return hashes[:1]
             return hashes
 
 
@@ -357,7 +617,17 @@ def query_folder_hashes_from_neo4j_env(folder_path: str, bucket_name: str = "") 
             bucket_name=bucket_name,
         )
     except Exception:
-        return []
+        try:
+            return _query_folder_hashes_via_query_api(
+                folder_path=folder_path,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+                neo4j_database=neo4j_database,
+                bucket_name=bucket_name,
+            )
+        except Exception:
+            return []
 
 
 def write_folder_hash_to_neo4j(
@@ -377,30 +647,50 @@ def write_folder_hash_to_neo4j(
     When source_folder_path and source_folder_hash are provided, also writes a
     DERIVED_FROM edge from the new FolderHash to the source FolderHash so that
     downstream jobs can traverse version chains across folder boundaries.
+    
+    IMPORTANT: Finds the true latest hash by timestamp (not by edge count) to prevent
+    creating multiple PREVIOUS_FOLDER_HASH edges when the chain is corrupted.
     """
     query = """
+    // Find the ACTUAL latest hash by timestamp (chain tip), not by absence of edges.
+    // This prevents creating multiple outgoing edges if the chain is already corrupted.
     OPTIONAL MATCH (latest:FolderHash {folder_path: $folder_path})
-    WHERE NOT EXISTS {
-        MATCH (:FolderHash)-[:PREVIOUS_FOLDER_HASH]->(latest)
-    }
+    WITH latest
+    ORDER BY latest.updated_at DESC
+    LIMIT 1
 
     OPTIONAL MATCH (bucket:StorageBucket)
     WHERE bucket.key IN $bucket_keys OR bucket.name IN $bucket_names OR bucket.bucket_name IN $bucket_names
 
     OPTIONAL MATCH (producer:DeploymentHash {component_key: $producer_component_key})
+    WHERE NOT EXISTS {
+        MATCH (:DeploymentHash)-[:PREVIOUS_HASH]->(producer)
+    }
 
     // Create the new FolderHash node
-    MERGE (new_hash:FolderHash {folder_path: $folder_path, hash_value: $hash_value})
+    MERGE (new_hash:FolderHash {key: $folder_key})
     SET new_hash.updated_at = datetime(),
+        new_hash.folder_path = coalesce(new_hash.folder_path, $folder_path),
+        new_hash.hash_value = coalesce(new_hash.hash_value, $hash_value),
         new_hash.hash_type = coalesce(new_hash.hash_type, "runtime"),
-        new_hash.bucket_name = coalesce(new_hash.bucket_name, $bucket_name)
+        new_hash.bucket_name = coalesce(new_hash.bucket_name, $bucket_name),
+        new_hash.name = coalesce(new_hash.name, $folder_key)
 
-    // Link new hash to previous hash if one exists
+    // Link new hash to ONLY the previous latest hash (by timestamp) if one exists and is different.
+    // This creates exactly ONE outgoing PREVIOUS_FOLDER_HASH edge (linear chain guarantee).
     WITH new_hash, latest, bucket, producer
     FOREACH (_ IN CASE WHEN latest IS NOT NULL AND latest.hash_value <> new_hash.hash_value THEN [1] ELSE [] END |
         CREATE (new_hash)-[:PREVIOUS_FOLDER_HASH]->(latest)
     )
 
+    // Delete old PRODUCED_BY relationships so we can re-link to only the latest producer
+    WITH new_hash, bucket, producer
+    OPTIONAL MATCH (new_hash)-[old_pb:PRODUCED_BY]->(old_producer:DeploymentHash)
+    WHERE old_producer <> producer
+    FOREACH (_ IN CASE WHEN old_pb IS NOT NULL THEN [1] ELSE [] END | DELETE old_pb)
+
+    // Link to bucket and producer
+    WITH new_hash, bucket, producer
     FOREACH (_ IN CASE WHEN bucket IS NOT NULL THEN [1] ELSE [] END |
         MERGE (bucket)-[:HAS_HASH]->(new_hash)
     )
@@ -409,9 +699,23 @@ def write_folder_hash_to_neo4j(
         MERGE (new_hash)-[:PRODUCED_BY]->(producer)
     )
 
+        // Keep each folder hash aligned to a single source edge for the same
+        // source folder path so latest-only folders do not accumulate historical
+        // DERIVED_FROM links across deploys.
+        WITH new_hash
+        OPTIONAL MATCH (new_hash)-[old_df:DERIVED_FROM]->(old_src:FolderHash)
+        WHERE old_src.folder_path = $source_folder_path
+            AND old_src.hash_value <> $source_folder_hash
+        FOREACH (_ IN CASE WHEN old_df IS NOT NULL THEN [1] ELSE [] END | DELETE old_df)
+
     // Write cross-folder DERIVED_FROM edge for version-chain traversal
     FOREACH (_ IN CASE WHEN $source_folder_path <> '' AND $source_folder_hash <> '' THEN [1] ELSE [] END |
-        MERGE (src:FolderHash {folder_path: $source_folder_path, hash_value: $source_folder_hash})
+        MERGE (src:FolderHash {key: $source_folder_key})
+        SET src.folder_path = coalesce(src.folder_path, $source_folder_path),
+            src.hash_value = coalesce(src.hash_value, $source_folder_hash),
+            src.hash_type = coalesce(src.hash_type, "runtime"),
+            src.bucket_name = coalesce(src.bucket_name, $bucket_name),
+            src.name = coalesce(src.name, $source_folder_key)
         MERGE (new_hash)-[:DERIVED_FROM]->(src)
     )
     """
@@ -426,21 +730,50 @@ def write_folder_hash_to_neo4j(
     driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
 
     try:
+        # Resolve the connection up front so the write path can return False
+        # cleanly when Neo4j is down or the configured credentials are invalid.
+        _ensure_neo4j_connection(neo4j_uri, driver_kwargs, neo4j_database)
+        _append_write_audit(
+            "folder_hash_write",
+            {
+                "folder_path": folder_path,
+                "hash_value": hash_value,
+                "bucket_name": bucket_name,
+                "producer_component_key": producer_component_key,
+                "source_folder_path": source_folder_path,
+                "source_folder_hash": source_folder_hash,
+            },
+        )
         with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
             with driver.session(database=neo4j_database) as session:
                 session.run(
                     query,
                     folder_path=folder_path,
                     hash_value=hash_value,
+                    folder_key=_folder_hash_key(bucket_name, folder_path, hash_value),
                     bucket_name=bucket_name,
                     bucket_names=sorted(bucket_candidates),
                     bucket_keys=sorted(bucket_keys),
                     producer_component_key=producer_component_key,
                     source_folder_path=source_folder_path or "",
                     source_folder_hash=source_folder_hash or "",
+                    source_folder_key=_folder_hash_key(bucket_name, source_folder_path, source_folder_hash)
+                    if source_folder_path and source_folder_hash
+                    else "",
                 )
         return True
     except Exception:
+        _append_write_audit(
+            "folder_hash_write_failed",
+            {
+                "folder_path": folder_path,
+                "hash_value": hash_value,
+                "bucket_name": bucket_name,
+                "producer_component_key": producer_component_key,
+                "source_folder_path": source_folder_path,
+                "source_folder_hash": source_folder_hash,
+            },
+        )
         return False
 
 
@@ -487,7 +820,7 @@ def create_main_pipeline_linkage(
 ) -> tuple[bool, str]:
     """Create DEPENDS_ON_DATA_FROM relationships for the main pipeline in correct order.
 
-    Pipeline order: dvb → dvb_cleaned → pending_review → crisis_articles → pending_annotation_review → annotated_articles → events
+    Pipeline order: dvb → dvb_cleaned → pending_review → crisis_articles → pending_review_annotation → annotated_articles → events
 
     Returns (success: bool, message: str) where message describes the result.
     """
@@ -496,7 +829,7 @@ def create_main_pipeline_linkage(
         "dvb_cleaned/",
         "pending_review/",
         "crisis_articles/",
-        "pending_annotation_review/",
+        "pending_review_annotation/",
         "annotated_articles/",
         "events/",
     ]
@@ -677,6 +1010,216 @@ def query_folder_hash_derived_from_env(
         )
     except Exception:
         return None
+
+
+def query_moving_target_hash_from_source_hash(
+    source_folder_path: str,
+    target_folder_path: str,
+    source_hash: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str = "neo4j",
+    bucket_name: str = "",
+) -> Optional[str]:
+    """Query for target hash using DEPENDS_ON_DATA_FROM relationship.
+    
+    This finds: source_folder[source_hash] -[DEPENDS_ON_DATA_FROM]-> target_folder[target_hash]
+    Used by admin UI to find where articles move to after review/classification.
+    """
+    query = """
+    MATCH (source:FolderHash {folder_path: $source_folder_path, hash_value: $source_hash})
+    MATCH (target:FolderHash {folder_path: $target_folder_path})-[:DEPENDS_ON_DATA_FROM]->(source)
+    RETURN target.hash_value AS hash_value, target.updated_at AS updated_at
+    ORDER BY target.updated_at DESC
+    LIMIT 1
+    """
+
+    try:
+        # Use simple auth without ssl_context to avoid configuration issues
+        with GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password)) as driver:
+            with driver.session(database=neo4j_database) as session:
+                records = session.run(
+                    query,
+                    source_folder_path=source_folder_path,
+                    target_folder_path=target_folder_path,
+                    source_hash=source_hash,
+                ).data()
+
+                if not records:
+                    return None
+
+                if bucket_name:
+                    client = storage.Client()
+                    for record in records:
+                        value = record.get("hash_value")
+                        if not isinstance(value, str) or not value.strip():
+                            continue
+                        prefix = f"{target_folder_path.rstrip('/')}/{value.strip()}/"
+                        try:
+                            blob = next(
+                                (
+                                    candidate
+                                    for candidate in client.list_blobs(bucket_name, prefix=prefix)
+                                    if not candidate.name.endswith(".FOLDER_CREATED") and not candidate.name.endswith("/")
+                                ),
+                                None,
+                            )
+                        except Exception:
+                            blob = None
+
+                        if blob is not None:
+                            return value.strip()
+
+                    return None
+
+                value = records[0].get("hash_value")
+                return value.strip() if isinstance(value, str) and value.strip() else None
+    except Exception as e:
+        return None
+
+
+def query_moving_target_hash_from_source_hash_env(
+    source_folder_path: str,
+    target_folder_path: str,
+    source_hash: str,
+    bucket_name: str = "",
+) -> Optional[str]:
+    """Env-based wrapper for query_moving_target_hash_from_source_hash."""
+    _load_env_file_if_present()
+    neo4j_uri = os.environ.get("NEO4J_URI", "").strip()
+    neo4j_user = os.environ.get("NEO4J_USER", "").strip()
+    neo4j_password = os.environ.get("NEO4J_PASSWORD", "").strip()
+    neo4j_database = os.environ.get("NEO4J_DATABASE", "neo4j").strip() or "neo4j"
+
+    if not neo4j_uri or not neo4j_user or not neo4j_password:
+        return None
+
+    try:
+        return query_moving_target_hash_from_source_hash(
+            source_folder_path=source_folder_path,
+            target_folder_path=target_folder_path,
+            source_hash=source_hash,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            neo4j_database=neo4j_database,
+            bucket_name=bucket_name,
+        )
+    except Exception:
+        return None
+
+
+def query_folder_hash_derived_from_source_hash(
+    target_folder_path: str,
+    source_folder_path: str,
+    source_hash: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+    neo4j_database: str = "neo4j",
+    bucket_name: str = "",
+) -> Optional[str]:
+    """Return the latest target FolderHash that has a DERIVED_FROM edge to the specific source hash.
+
+    Useful when a target folder was created earlier from a particular source hash and
+    callers need to find the exact target hash that was derived from that source value.
+    """
+    query = """
+    MATCH (src:FolderHash {folder_path: $source_folder_path, hash_value: $source_hash})
+    MATCH (target:FolderHash {folder_path: $target_folder_path})-[:DERIVED_FROM]->(src)
+    RETURN target.hash_value AS hash_value, target.updated_at AS updated_at
+    ORDER BY target.updated_at DESC
+    LIMIT 1
+    """
+
+    driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
+
+    with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
+        with driver.session(database=neo4j_database) as session:
+            records = session.run(
+                query,
+                source_folder_path=source_folder_path,
+                source_hash=source_hash,
+                target_folder_path=target_folder_path,
+            ).data()
+
+            if not records:
+                return None
+
+            if bucket_name:
+                client = storage.Client()
+                for record in records:
+                    value = record.get("hash_value")
+                    if not isinstance(value, str) or not value.strip():
+                        continue
+                    prefix = f"{target_folder_path.rstrip('/')}/{value.strip()}/"
+                    try:
+                        blob = next(
+                            (
+                                candidate
+                                for candidate in client.list_blobs(bucket_name, prefix=prefix)
+                                if not candidate.name.endswith(".FOLDER_CREATED") and not candidate.name.endswith("/")
+                            ),
+                            None,
+                        )
+                    except Exception:
+                        blob = None
+
+                    if blob is not None:
+                        return value.strip()
+
+                # Fallback to Neo4j lineage mapping even when the target hash
+                # has no non-marker blobs at query time.
+                value = records[0].get("hash_value")
+                return value.strip() if isinstance(value, str) and value.strip() else None
+
+            value = records[0].get("hash_value")
+            return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def query_folder_hash_derived_from_source_hash_env(
+    target_folder_path: str,
+    source_folder_path: str,
+    source_hash: str,
+    bucket_name: str = "",
+) -> Optional[str]:
+    """Env-based wrapper for `query_folder_hash_derived_from_source_hash`.
+    """
+    _load_env_file_if_present()
+    neo4j_uri = os.environ.get("NEO4J_URI", "").strip()
+    neo4j_user = os.environ.get("NEO4J_USER", "").strip()
+    neo4j_password = os.environ.get("NEO4J_PASSWORD", "").strip()
+    neo4j_database = os.environ.get("NEO4J_DATABASE", "neo4j").strip() or "neo4j"
+
+    if not neo4j_uri or not neo4j_user or not neo4j_password:
+        return None
+
+    try:
+        return query_folder_hash_derived_from_source_hash(
+            target_folder_path=target_folder_path,
+            source_folder_path=source_folder_path,
+            source_hash=source_hash,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            neo4j_database=neo4j_database,
+            bucket_name=bucket_name,
+        )
+    except Exception:
+        try:
+            return _query_folder_hash_derived_from_source_hash_via_query_api(
+                target_folder_path=target_folder_path,
+                source_folder_path=source_folder_path,
+                source_hash=source_hash,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+                neo4j_database=neo4j_database,
+                bucket_name=bucket_name,
+            )
+        except Exception:
+            return None
 
 
 def create_main_pipeline_linkage_env() -> tuple[bool, str]:

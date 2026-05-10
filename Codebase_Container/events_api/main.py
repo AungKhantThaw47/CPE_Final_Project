@@ -18,6 +18,7 @@ from utils.firestore_schema import (
 )
 
 app = Flask(__name__)
+app.logger.info("Events API initialized")
 
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip() or None
 COLLECTION = os.environ.get("FIRESTORE_COLLECTION", EVENT_COLLECTION_DEFAULT).strip() or EVENT_COLLECTION_DEFAULT

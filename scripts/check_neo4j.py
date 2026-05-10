@@ -117,16 +117,33 @@ for r in rows(run(q)):
 
 # ── 7. FolderHash DERIVED_FROM chain ─────────────────────────────
 print(f"\n{SEP}")
-print("DERIVED_FROM CHAIN (latest tips only)")
+print("DERIVED_FROM CHAIN (all working folder hashes)")
 print(SEP)
 q = """
-MATCH (fh:FolderHash)-[:DERIVED_FROM]->(src:FolderHash)
-WHERE NOT EXISTS { MATCH (:FolderHash)-[:PREVIOUS_FOLDER_HASH]->(fh) }
-RETURN fh.folder_path AS target, src.folder_path AS source,
-       fh.hash_value AS hash, fh.updated_at AS updated
-ORDER BY fh.folder_path
+WITH [
+    'dvb/',
+    'dvb_cleaned/',
+    'pending_review/',
+    'crisis_articles/',
+    'pending_review_annotation/',
+    'annotated_articles/',
+    'events/'
+] AS working_paths
+MATCH (fh:FolderHash)
+WHERE fh.folder_path IN working_paths
+OPTIONAL MATCH (fh)-[:PRODUCED_BY]->(prod:DeploymentHash)
+OPTIONAL MATCH (fh)-[:DERIVED_FROM]->(src:FolderHash)
+RETURN DISTINCT
+    fh.folder_path AS target,
+    src.folder_path AS source,
+    fh.hash_value AS hash,
+    prod.component_key AS producer,
+    fh.updated_at AS updated
+ORDER BY target, updated DESC, hash DESC
 """
 for r in rows(run(q)):
-    print(f"  {r['target']:<35} ← DERIVED_FROM {r['source']:<25}  {(r['hash'] or '')[:12]}...")
+        producer = r['producer'] or "(none)"
+        source = r['source'] or "(none)"
+        print(f"  {r['target']:<26} ← DERIVED_FROM {source:<22}  {(r['hash'] or '')[:12]}...  {producer}")
 
 print(f"\n{SEP}\nDone.\n")

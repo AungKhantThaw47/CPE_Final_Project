@@ -6,11 +6,13 @@ import os
 import ssl
 from pathlib import Path
 import sys
+from datetime import datetime, timezone
 from urllib import error, parse, request
 
 
 DEFAULT_MANIFEST = Path(__file__).with_name("graph_manifest.json")
 DEFAULT_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+DEFAULT_AUDIT_LOG = Path(__file__).with_name("load_graph_audit.jsonl")
 
 
 def load_env_file(path: Path) -> None:
@@ -48,6 +50,18 @@ def build_ssl_context() -> ssl.SSLContext | None:
     if env_flag("NEO4J_SKIP_SSL_VERIFY", default=False):
         return ssl._create_unverified_context()
     return None
+
+
+def append_audit_log(event_type: str, payload: dict) -> None:
+    DEFAULT_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": event_type,
+        "payload": payload,
+    }
+    with DEFAULT_AUDIT_LOG.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True))
+        handle.write("\n")
 
 
 def load_config() -> dict:
@@ -150,6 +164,7 @@ def build_http_base_uri(uri: str) -> str:
 
 def run_cypher(base_uri: str, user: str, password: str, database: str, statement: str, parameters: dict | None = None) -> None:
     endpoint = f"{base_uri}/db/{parse.quote(database)}/query/v2"
+    trimmed_statement = statement.strip().splitlines()[0] if statement.strip() else ""
     payload = json.dumps(
         {
             "statement": statement,
@@ -170,14 +185,39 @@ def run_cypher(base_uri: str, user: str, password: str, database: str, statement
     )
     ssl_context = build_ssl_context()
 
+    append_audit_log(
+        "neo4j_cypher_write",
+        {
+            "statement": trimmed_statement,
+            "parameters": sorted((parameters or {}).keys()),
+            "database": database,
+        },
+    )
+
     try:
         with request.urlopen(req, timeout=30, context=ssl_context) as response:
             raw = response.read().decode("utf-8")
     except error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
+        append_audit_log(
+            "neo4j_cypher_write_failed",
+            {
+                "statement": trimmed_statement,
+                "database": database,
+                "status_code": exc.code,
+            },
+        )
         print(f"Neo4j HTTP error: {exc.code} {exc.reason}\n{details}", file=sys.stderr)
         raise SystemExit(1)
     except error.URLError as exc:
+        append_audit_log(
+            "neo4j_cypher_write_failed",
+            {
+                "statement": trimmed_statement,
+                "database": database,
+                "error": str(exc),
+            },
+        )
         print(f"Neo4j connection error: {exc}", file=sys.stderr)
         raise SystemExit(1)
 
@@ -226,8 +266,8 @@ def load_graph(config: dict, manifest: dict) -> None:
             config["database"],
             """
             MATCH (n:SystemNode)
-            WHERE any(prefix IN $managed_prefixes WHERE n.key STARTS WITH prefix)
-              AND NOT n.key IN $allowed_managed_keys
+                        WHERE any(prefix IN $managed_prefixes WHERE n.key STARTS WITH prefix)
+                            AND (n.key IS NULL OR NOT n.key IN $allowed_managed_keys)
             DETACH DELETE n
             """,
             {
@@ -242,10 +282,46 @@ def load_graph(config: dict, manifest: dict) -> None:
             config["user"],
             config["password"],
             config["database"],
+            """
+            MATCH (n:FolderHash)
+            WHERE n.key IS NULL OR NOT n.key IN $allowed_managed_keys
+            DETACH DELETE n
+            """,
+            {
+                "allowed_managed_keys": allowed_managed_keys,
+            },
+        )
+
+        # BucketHash nodes are also regenerated from the current manifest.
+        run_cypher(
+            base_uri,
+            config["user"],
+            config["password"],
+            config["database"],
             "MATCH (n:BucketHash) DETACH DELETE n",
         )
 
+    latest_only_folder_paths = {"dvb_cleaned/", "pending_review/"}
+    latest_only_node_key_by_folder_path = {}
     for node in manifest.get("nodes", []):
+        if node.get("label") != "FolderHash":
+            continue
+        props = node.get("properties", {}) or {}
+        folder_path = (props.get("folder_path") or "").strip()
+        node_key = (node.get("key") or "").strip()
+        if folder_path in latest_only_folder_paths and node_key:
+            latest_only_node_key_by_folder_path[folder_path] = node_key
+
+    for node in manifest.get("nodes", []):
+        if node.get("label") == "FolderHash":
+            props = node.get("properties", {}) or {}
+            folder_path = (props.get("folder_path") or "").strip()
+            node_key = (node.get("key") or "").strip()
+            if folder_path in latest_only_folder_paths:
+                latest_key = latest_only_node_key_by_folder_path.get(folder_path, "")
+                if latest_key and node_key != latest_key:
+                    continue
+
         run_cypher(
             base_uri,
             config["user"],
@@ -260,6 +336,32 @@ def load_graph(config: dict, manifest: dict) -> None:
             {
                 "key": node["key"],
                 "properties": node.get("properties", {}),
+            },
+        )
+
+    for folder_path in latest_only_folder_paths:
+        run_cypher(
+            base_uri,
+            config["user"],
+            config["password"],
+            config["database"],
+            """
+            MATCH (fh:FolderHash {folder_path: $folder_path})
+            OPTIONAL MATCH (fh)-[:DERIVED_FROM]->(source:FolderHash)
+            WITH fh, count(source) AS derived_count
+            ORDER BY derived_count DESC, fh.updated_at DESC, fh.key DESC
+            WITH collect(fh) AS nodes
+            CALL {
+                WITH nodes
+                WITH nodes[1..] AS stale_nodes
+                UNWIND stale_nodes AS stale
+                DETACH DELETE stale
+                RETURN count(*) AS deleted
+            }
+            RETURN deleted
+            """,
+            {
+                "folder_path": folder_path,
             },
         )
 

@@ -12,10 +12,9 @@ if "/workspace" not in sys.path:
     sys.path.append("/workspace")
 
 from utils.neo4j_utils import (
-    query_latest_folder_hash_from_neo4j_env,
-    query_folder_hash_derived_from_env,
+    query_folder_hashes_from_neo4j_env,
+    query_folder_hash_derived_from_source_hash_env,
     write_folder_hash_to_neo4j_env,
-    create_main_pipeline_linkage_env,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -96,11 +95,6 @@ def compute_folder_hash(previous_folder_hash: str, content_hash: str) -> str:
     return hashlib.sha256(f"{previous_folder_hash}:{content_hash}".encode("utf-8")).hexdigest()
 
 
-def resolve_latest_crisis_articles_hash(bucket) -> str:
-    """Resolve the latest crisis_articles hash from Neo4j."""
-    return query_latest_folder_hash_from_neo4j_env("crisis_articles/", bucket_name=bucket.name)
-
-
 def annotate_article(article_text: str, gemini_client) -> str:
     """Annotate a single article using Gemini."""
     full_prompt = ANNOTATION_PROMPT + "\n\nArticle:\n" + article_text
@@ -112,13 +106,14 @@ def annotate_article(article_text: str, gemini_client) -> str:
 
 
 def process_crisis_articles():
-    """Batch process all files in crisis_articles/ folder and save annotated output."""
+    """Batch process ALL crisis_articles hashes from Neo4j and save annotated output."""
     logger.info("=" * 60)
     logger.info("BATCH ANNOTATION JOB STARTED")
     logger.info("=" * 60)
     
     crisis_bucket = os.environ.get('CRISIS_BUCKET')
     gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    admin_trigger_location = os.environ.get('ADMIN_TRIGGER_FILE_LOCATION', '').strip()
     
     if not crisis_bucket or not gemini_api_key:
         logger.error("❌ Missing env vars: CRISIS_BUCKET, GEMINI_API_KEY")
@@ -129,115 +124,155 @@ def process_crisis_articles():
         bucket = storage_client.bucket(crisis_bucket)
         gemini_client = genai.Client(api_key=gemini_api_key)
 
-        # Annotate the latest classifier output in crisis_articles/.
-        source_hash = resolve_latest_crisis_articles_hash(bucket)
-        if not source_hash:
-            logger.error("❌ No crisis_articles/ hash found in Neo4j")
-            return False
+        # If admin triggered with a specific file location, process just that directory.
+        # Otherwise, query Neo4j for all crisis_articles hashes.
+        if admin_trigger_location:
+            logger.info(f"📍 Admin-triggered: Processing directory: {admin_trigger_location}")
+            # Extract hash from path like "crisis_articles/{hash}/{date}/"
+            match = re.match(r'^crisis_articles/([^/]+)/', admin_trigger_location)
+            source_hashes = [match.group(1)] if match else []
+            if not source_hashes:
+                logger.error(f"❌ Could not extract hash from admin location: {admin_trigger_location}")
+                return False
+        else:
+            # Get ALL crisis_articles hashes from Neo4j (not just the latest).
+            # This ensures articles moved to non-latest hashes by admin are also processed.
+            source_hashes = query_folder_hashes_from_neo4j_env("crisis_articles/", bucket_name=crisis_bucket)
+            if not source_hashes:
+                logger.error("❌ No crisis_articles/ hashes found in Neo4j")
+                return False
 
-        logger.info(f"🔎 Neo4j source hash: {source_hash}")
+        logger.info(f"🔎 Found {len(source_hashes)} crisis_articles/ hashes: {source_hashes}")
 
-        # List only the latest classifier batch resolved from Neo4j.
-        blobs = bucket.list_blobs(prefix=f'crisis_articles/{source_hash}/')
-        
-        processed_count = 0
-        skipped_count = 0
-        error_count = 0
         annotator_content_hash = os.environ.get("CONTENT_HASH", "").strip()
-        output_hash = compute_folder_hash(source_hash, annotator_content_hash)
+        total_processed = 0
+        total_skipped = 0
+        total_errors = 0
+        all_output_hashes = set()
         
-        for blob in blobs:
-            # Skip directories and non-txt files
-            if blob.name.endswith('/') or not blob.name.endswith('.txt'):
-                continue
+        # Process each source hash separately
+        for source_hash in source_hashes:
+            logger.info(f"🔄 Processing crisis_articles/ hash: {source_hash}")
             
-            try:
-                # Parse source path
-                # hashed: crisis_articles/{hash}/{date}/{filename}
-                # legacy: crisis_articles/{date}/{filename}
-                hash_match = re.match(r'crisis_articles/([^/]+)/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
-                legacy_match = re.match(r'crisis_articles/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
+            # List all files under this hash
+            blobs = bucket.list_blobs(prefix=f'crisis_articles/{source_hash}/')
+            
+            processed_count = 0
+            skipped_count = 0
+            error_count = 0
+            output_hash = query_folder_hash_derived_from_source_hash_env(
+                target_folder_path="pending_review_annotation/",
+                source_folder_path="crisis_articles/",
+                source_hash=source_hash,
+                bucket_name=crisis_bucket,
+            ) or ""
+
+            if output_hash:
+                logger.info(
+                    "✅ Using Neo4j mapped hash for crisis_articles/%s... -> pending_review_annotation/%s...",
+                    source_hash[:16],
+                    output_hash[:16],
+                )
+            else:
+                # Fallback preserves behavior if mapping does not exist yet.
+                output_hash = compute_folder_hash(source_hash, annotator_content_hash)
+                logger.warning(
+                    "⚠️  No Neo4j mapping for crisis_articles/%s...; fallback computed pending_review_annotation/%s...",
+                    source_hash[:16],
+                    output_hash[:16],
+                )
+                # Persist fallback mapping so future runs and admin UI use the same lineage.
+                try:
+                    write_folder_hash_to_neo4j_env(
+                        folder_path="pending_review_annotation/",
+                        hash_value=output_hash,
+                        bucket_name=crisis_bucket,
+                        source_folder_path="crisis_articles/",
+                        source_folder_hash=source_hash,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "⚠️  Failed to persist fallback mapping for %s...: %s",
+                        source_hash[:16],
+                        e,
+                    )
+
+            all_output_hashes.add(output_hash)
+            
+            for blob in blobs:
+                # Skip directories and non-txt files
+                if blob.name.endswith('/') or not blob.name.endswith('.txt'):
+                    continue
                 
-                if hash_match:
+                try:
+                    # Parse source path
+                    # hashed: crisis_articles/{hash}/{date}/{filename}
+                    hash_match = re.match(r'crisis_articles/([^/]+)/(\d{4}-\d{2}-\d{2})/(.+\.txt)$', blob.name)
+                    
+                    if not hash_match:
+                        logger.warning(f"⏭️  Could not parse path: {blob.name}")
+                        skipped_count += 1
+                        continue
+                    
                     blob_hash = hash_match.group(1)
                     date_str = hash_match.group(2)
                     filename = hash_match.group(3)
-                elif legacy_match:
-                    blob_hash = source_hash
-                    date_str = legacy_match.group(1)
-                    filename = legacy_match.group(2)
-                else:
-                    logger.warning(f"⏭️  Could not parse path: {blob.name}")
-                    skipped_count += 1
-                    continue
 
-                if blob_hash != source_hash:
-                    logger.warning(
-                        "⚠️  Blob hash %s does not match Neo4j source hash %s; skipping %s",
-                        blob_hash,
-                        source_hash,
-                        blob.name,
-                    )
-                    skipped_count += 1
-                    continue
-                
-                annotated_blob_name = f"pending_annotation_review/{output_hash}/{date_str}/{filename}"
-                
-                # Check if already annotated
-                annotated_blob = bucket.blob(annotated_blob_name)
-                if annotated_blob.exists():
-                    logger.info(f"⏭️  Already annotated: {annotated_blob_name}")
-                    skipped_count += 1
+                    # Verify blob belongs to the current source_hash
+                    if blob_hash != source_hash:
+                        logger.warning(
+                            "⚠️  Blob hash %s does not match current source hash %s; skipping %s",
+                            blob_hash,
+                            source_hash,
+                            blob.name,
+                        )
+                        skipped_count += 1
+                        continue
+                    
+                    annotated_blob_name = f"pending_review_annotation/{output_hash}/{date_str}/{filename}"
+                    
+                    # Check if already annotated
+                    annotated_blob = bucket.blob(annotated_blob_name)
+                    if annotated_blob.exists():
+                        logger.info(f"⏭️  Already annotated: {annotated_blob_name}")
+                        skipped_count += 1
+                        blob.delete()
+                        logger.info(f"🗑️  Deleted source: {blob.name}")
+                        continue
+
+                    # Download and annotate
+                    logger.info(f"📄 Processing: {blob.name}")
+                    article_text = blob.download_as_text(encoding='utf-8')
+                    logger.info(f"✅ Downloaded ({len(article_text)} chars)")
+
+                    logger.info("🤖 Annotating with Gemini...")
+                    annotated_text = annotate_article(article_text, gemini_client)
+                    logger.info("✅ Annotation complete")
+
+                    # Save annotated output, then remove source
+                    annotated_blob.upload_from_string(annotated_text, content_type='text/plain; charset=utf-8')
+                    logger.info(f"✅ Saved to gs://{crisis_bucket}/{annotated_blob_name}")
                     blob.delete()
                     logger.info(f"🗑️  Deleted source: {blob.name}")
+
+                    processed_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error processing {blob.name}: {e}")
+                    error_count += 1
                     continue
-
-                # Download and annotate
-                logger.info(f"📄 Processing: {blob.name}")
-                article_text = blob.download_as_text(encoding='utf-8')
-                logger.info(f"✅ Downloaded ({len(article_text)} chars)")
-
-                logger.info("🤖 Annotating with Gemini...")
-                annotated_text = annotate_article(article_text, gemini_client)
-                logger.info("✅ Annotation complete")
-
-                # Save annotated output, then remove source
-                annotated_blob.upload_from_string(annotated_text, content_type='text/plain; charset=utf-8')
-                logger.info(f"✅ Saved to gs://{crisis_bucket}/{annotated_blob_name}")
-                blob.delete()
-                logger.info(f"🗑️  Deleted source: {blob.name}")
-
-                processed_count += 1
-                
-            except Exception as e:
-                logger.error(f"❌ Error processing {blob.name}: {e}")
-                error_count += 1
-                continue
-        
-        logger.info("=" * 60)
-        logger.info(f"BATCH COMPLETE: {processed_count} processed, {skipped_count} skipped, {error_count} errors")
-        logger.info("=" * 60)
-
-        if write_folder_hash_to_neo4j_env(
-            folder_path="pending_annotation_review/",
-            hash_value=output_hash,
-            bucket_name=crisis_bucket,
-            producer_component_key="job:dvb-annotator-job",
-            source_folder_path="crisis_articles/",
-            source_folder_hash=source_hash,
-        ):
-            logger.info(f"✅ Output folder hash saved to Neo4j: pending_annotation_review/ → {output_hash}")
             
-            # Create DEPENDS_ON_DATA_FROM relationships between consecutive pipeline stages
-            success, message = create_main_pipeline_linkage_env()
-            if success:
-                logger.info(f"✅ Pipeline linkages created: {message}")
-            else:
-                logger.warning(f"⚠️  Pipeline linkage creation incomplete: {message}")
-        else:
-            logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
+            logger.info(f"  ✅ {source_hash[:16]}... : {processed_count} processed, {skipped_count} skipped, {error_count} errors")
+            total_processed += processed_count
+            total_skipped += skipped_count
+            total_errors += error_count
         
-        return error_count == 0
+        logger.info("=" * 60)
+        logger.info(f"BATCH COMPLETE: {total_processed} processed, {total_skipped} skipped, {total_errors} errors")
+        logger.info(f"Output hashes: {all_output_hashes}")
+        logger.info("=" * 60)
+        
+        return total_errors == 0
     
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")

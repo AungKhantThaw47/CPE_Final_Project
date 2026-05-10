@@ -16,7 +16,8 @@ if "/workspace" not in sys.path:
 from utils.neo4j_utils import (
     query_folder_hashes_from_neo4j_env,
     query_latest_folder_hash_from_neo4j_env,
-    write_folder_hash_to_neo4j_env,
+    query_folder_hash_derived_from_source_hash_env,
+    query_moving_target_hash_from_source_hash_env,
 )
 
 logging.basicConfig(
@@ -30,7 +31,7 @@ app = Flask(__name__)
 
 # Keep this module local so content hashing captures admin runtime updates (rev2).
 
-ANNOTATION_STAGE_PREFIXES = ("pending_annotation_review", "pending_review_annotation")
+ANNOTATION_STAGE_PREFIXES = ("pending_review_annotation",)
 
 
 @app.route("/", methods=["GET"])
@@ -94,8 +95,8 @@ def resolve_latest_folder_hash_from_gcs(stage_prefix: str, bucket_name: str) -> 
         return None
 
 
-def trigger_cloud_run_job(job_name: str) -> None:
-    """Trigger a Cloud Run job asynchronously from admin actions."""
+def trigger_cloud_run_job(job_name: str, file_location: str = "") -> None:
+    """Trigger a Cloud Run job asynchronously from admin actions with optional file location."""
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT_ID", "")
     region = os.environ.get("GCP_REGION", "asia-southeast1")
     if not project_id:
@@ -109,9 +110,16 @@ def trigger_cloud_run_job(job_name: str) -> None:
             f"https://{region}-run.googleapis.com/apis/run.googleapis.com/v1/"
             f"namespaces/{project_id}/jobs/{job_name}:run"
         )
-        response = authed_session.post(url, json={})
+        payload = {}
+        if file_location:
+            payload["overrides"] = {
+                "containerOverrides": [{
+                    "env": [{"name": "ADMIN_TRIGGER_FILE_LOCATION", "value": file_location}]
+                }]
+            }
+        response = authed_session.post(url, json=payload)
         if 200 <= response.status_code < 300:
-            logger.info("🚀 Triggered Cloud Run job: %s", job_name)
+            logger.info("🚀 Triggered Cloud Run job: %s%s", job_name, f" (file: {file_location})" if file_location else "")
         else:
             logger.error("❌ Failed to trigger job %s: %s %s", job_name, response.status_code, response.text)
     except Exception as exc:
@@ -201,7 +209,7 @@ def list_pending_articles_all_hashes(crisis_bucket: str) -> List[Dict]:
 
 
 def list_pending_annotation_articles_all_hashes(crisis_bucket: str) -> List[Dict]:
-    """List all pending_annotation_review articles from all hashes, grouped by hash."""
+    """List all pending_review_annotation articles from all hashes, grouped by hash."""
     ordered_hashes: List[str] = []
     articles_by_hash: Dict[str, Dict[str, Dict]] = {}
 
@@ -272,6 +280,41 @@ def get_stage_hash_status_view(status: Dict[str, str]) -> Dict[str, str]:
     }
 
 
+def resolve_moving_hash(
+    source_folder_path: str,
+    target_folder_path: str,
+    source_hash: str,
+    crisis_bucket: str,
+) -> str:
+    """Resolve the target-stage hash that moves with a source hash via Neo4j.
+    
+    Tries DEPENDS_ON_DATA_FROM first (primary method), then falls back to DERIVED_FROM.
+    """
+    source_hash = (source_hash or "").strip()
+    if not source_hash or not crisis_bucket:
+        return "-"
+
+    # Try DEPENDS_ON_DATA_FROM first (primary method used in deployment)
+    # Don't filter by bucket - the target folder might be empty but still valid
+    mapped = query_moving_target_hash_from_source_hash_env(
+        source_folder_path=source_folder_path,
+        target_folder_path=target_folder_path,
+        source_hash=source_hash,
+        bucket_name="",
+    )
+    if mapped:
+        return mapped
+    
+    # Fall back to DERIVED_FROM if DEPENDS_ON_DATA_FROM doesn't find anything
+    mapped = query_folder_hash_derived_from_source_hash_env(
+        target_folder_path=target_folder_path,
+        source_folder_path=source_folder_path,
+        source_hash=source_hash,
+        bucket_name="",
+    )
+    return mapped or "-"
+
+
 def group_articles_by_date(articles: List[Dict]) -> List[Dict]:
     """Group articles by date for template rendering."""
     grouped: Dict[str, List[Dict]] = {}
@@ -292,7 +335,7 @@ def validate_blob_is_latest_hash(blob_name: str, stage_prefix: str, crisis_bucke
     """
 
     # Extract hash from blob path: {stage_prefix}/{hash}/{date}/{filename}
-    stage_prefixes = ANNOTATION_STAGE_PREFIXES if stage_prefix == "pending_annotation_review" else (stage_prefix,)
+    stage_prefixes = (stage_prefix,)
     hash_match = None
     for candidate_prefix in stage_prefixes:
         hash_match = re.match(rf"^{re.escape(candidate_prefix)}/([^/]+)/", blob_name)
@@ -331,7 +374,7 @@ def find_next_blob_after(blob_name: str, stage_prefix: str, crisis_bucket: str) 
     after `blob_name` in the stable ordering used by `list_stage_articles()`.
     """
     # Extract hash from blob path: {stage_prefix}/{hash}/{date}/{filename}
-    stage_prefixes = ANNOTATION_STAGE_PREFIXES if stage_prefix == "pending_annotation_review" else (stage_prefix,)
+    stage_prefixes = (stage_prefix,)
     selected_hash = None
     actual_stage_prefix = None
     for candidate_prefix in stage_prefixes:
@@ -374,6 +417,12 @@ def admin_page():
             dated_articles = group_articles_by_date(hash_group.get('articles', []))
             pending_grouped_with_dates.append({
                 'hash': hash_group['hash'],
+                'moving_hash': resolve_moving_hash(
+                    source_folder_path='pending_review/',
+                    target_folder_path='crisis_articles/',
+                    source_hash=hash_group['hash'],
+                    crisis_bucket=crisis_bucket,
+                ),
                 'date_groups': dated_articles
             })
         
@@ -382,6 +431,12 @@ def admin_page():
             dated_articles = group_articles_by_date(hash_group.get('articles', []))
             annotation_grouped_with_dates.append({
                 'hash': hash_group['hash'],
+                'moving_hash': resolve_moving_hash(
+                    source_folder_path='pending_review_annotation/',
+                    target_folder_path='annotated_articles/',
+                    source_hash=hash_group['hash'],
+                    crisis_bucket=crisis_bucket,
+                ),
                 'date_groups': dated_articles
             })
         
@@ -391,7 +446,7 @@ def admin_page():
         
         hash_statuses = [
             get_stage_hash_status_view(get_stage_hash_status("pending_review", crisis_bucket)),
-            get_stage_hash_status_view(get_stage_hash_status("pending_annotation_review", crisis_bucket)),
+            get_stage_hash_status_view(get_stage_hash_status("pending_review_annotation", crisis_bucket)),
         ] if crisis_bucket else []
         logger.info(hash_statuses)
     except Exception as e:
@@ -484,11 +539,26 @@ def admin_confirm():
         bucket = client.bucket(crisis_bucket)
         source_blob = bucket.blob(blob_name)
 
-        # pending_review/{hash}/{date}/{filename} -> crisis_articles/{same_hash}/{date}/{filename}
-        # Use the pending_review hash directly so that crisis_articles/ stays version-chain aligned.
+        # pending_review/{hash}/{date}/{filename} -> crisis_articles/{mapped_hash}/{date}/{filename}
+        # Prefer a previously-created crisis_articles hash that was DERIVED_FROM this pending_review hash
+        # If none exists, fallback to using the pending_review hash itself so the move remains version-aligned.
         pending_hash_match = re.match(r'^pending_review/([^/]+)/', blob_name)
         pending_review_hash = pending_hash_match.group(1) if pending_hash_match else ""
+        # Prefer a previously-created crisis_articles hash that maps from this pending_review hash.
+        # Use the general resolver which prefers DEPENDS_ON_DATA_FROM then falls back to DERIVED_FROM.
         output_hash = pending_review_hash or "unknown"
+        if pending_review_hash:
+            mapped = resolve_moving_hash(
+                source_folder_path='pending_review/',
+                target_folder_path='crisis_articles/',
+                source_hash=pending_review_hash,
+                crisis_bucket=crisis_bucket,
+            )
+            if mapped and mapped != "-":
+                output_hash = mapped
+                logger.info(f"✅ Using Neo4j mapping for crisis_articles/ → {output_hash}")
+            else:
+                logger.info("ℹ️ No Neo4j mapping found; falling back to pending_review hash")
         date_match = re.match(r'^pending_review/[^/]+/([0-9]{4}-[0-9]{2}-[0-9]{2})/', blob_name)
         date_str = date_match.group(1) if date_match else "unknown"
         filename = blob_name.split('/')[-1]
@@ -496,20 +566,12 @@ def admin_confirm():
         bucket.copy_blob(source_blob, bucket, destination_name)
         source_blob.delete()
 
-        if pending_review_hash:
-            if write_folder_hash_to_neo4j_env(
-                folder_path='crisis_articles/',
-                hash_value=pending_review_hash,
-                bucket_name=crisis_bucket,
-                producer_component_key='service:crisis-admin',
-                source_folder_path='pending_review/',
-                source_folder_hash=pending_review_hash,
-            ):
-                logger.info(f"✅ Folder hash saved to Neo4j: crisis_articles/ → {pending_review_hash}")
-            else:
-                logger.warning("⚠️  Neo4j folder hash write skipped (not configured or failed)")
+        logger.info(f"✅ File saved to gs://{crisis_bucket}/{destination_name}")
 
-        trigger_cloud_run_job("dvb-annotator-job")
+        if pending_review_hash:
+            logger.info(f"✅ Using Neo4j mapping for crisis_articles/ → {output_hash}")
+
+        trigger_cloud_run_job("dvb-annotator-job", file_location=f"crisis_articles/{output_hash}/{date_str}/")
 
         logger.info(f"✅ Confirmed: {blob_name} -> {destination_name}")
     except Exception as e:
@@ -570,7 +632,7 @@ def admin_confirm_annotation():
         return "Missing parameters", 400
 
     # Validate blob is from an allowed annotation hash
-    if not validate_blob_is_latest_hash(blob_name, "pending_annotation_review", crisis_bucket):
+    if not validate_blob_is_latest_hash(blob_name, "pending_review_annotation", crisis_bucket):
         error_msg = "Cannot confirm annotation: invalid or missing blob"
         logger.warning(f"⚠️  {error_msg} - blob: {blob_name}")
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -582,7 +644,7 @@ def admin_confirm_annotation():
         bucket = client.bucket(crisis_bucket)
         source_blob = bucket.blob(blob_name)
 
-        # pending_annotation_review/{hash}/{date}/{filename} -> annotated_articles/{same_hash}/{date}/{filename}
+        # pending_review_annotation/{hash}/{date}/{filename} -> annotated_articles/{same_hash}/{date}/{filename}
         # Use the annotation hash directly so that annotated_articles/ stays version-chain aligned.
         pending_ann_match = None
         for prefix in ANNOTATION_STAGE_PREFIXES:
@@ -602,19 +664,11 @@ def admin_confirm_annotation():
         bucket.copy_blob(source_blob, bucket, destination_name)
         source_blob.delete()
 
-        if write_folder_hash_to_neo4j_env(
-            folder_path='annotated_articles/',
-            hash_value=output_hash,
-            bucket_name=crisis_bucket,
-            producer_component_key='service:crisis-admin',
-            source_folder_path='pending_annotation_review/',
-            source_folder_hash=pending_ann_hash,
-        ):
-            logger.info(f"✅ Output folder hash saved to Neo4j: annotated_articles/ → {output_hash}")
-        else:
-            logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
+        logger.info(f"✅ File saved to gs://{crisis_bucket}/{destination_name}")
 
-        trigger_cloud_run_job("dvb-extractor-job")
+        logger.info(f"✅ Using existing Neo4j mapping for annotated_articles/ → {output_hash}")
+
+        trigger_cloud_run_job("dvb-extractor-job", file_location=f"annotated_articles/{output_hash}/{date_str}/")
 
         logger.info(f"✅ Confirmed annotation: {blob_name} -> {destination_name}")
     except Exception as e:
@@ -627,7 +681,7 @@ def admin_confirm_annotation():
         return jsonify({"success": True, "message": f"Confirmed annotation: {blob_name}"}), 200
 
     # Non-AJAX: redirect to next article in the same pending annotation hash if available
-    next_blob = find_next_blob_after(blob_name, 'pending_annotation_review', crisis_bucket)
+    next_blob = find_next_blob_after(blob_name, 'pending_review_annotation', crisis_bucket)
     if next_blob:
         return redirect(f'/admin/view?blob={next_blob}')
     return redirect('/admin')
@@ -658,7 +712,7 @@ def admin_reject_annotation():
         return jsonify({"success": True, "message": f"Rejected annotation: {blob_name}"}), 200
 
     # Non-AJAX: redirect to next article in the same pending annotation hash if available
-    next_blob = find_next_blob_after(blob_name, 'pending_annotation_review', crisis_bucket)
+    next_blob = find_next_blob_after(blob_name, 'pending_review_annotation', crisis_bucket)
     if next_blob:
         return redirect(f'/admin/view?blob={next_blob}')
     return redirect('/admin')

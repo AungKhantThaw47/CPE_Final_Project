@@ -9,5 +9,6 @@ neo4j_uri   = "neo4j+s://your-instance.databases.neo4j.io"
 neo4j_user  = "neo4j"
 neo4j_password = "your-neo4j-password"
 neo4j_database = "neo4j"
+neo4j_skip_ssl_verify = true
 daily_notify_email = "alerts@example.com"
 notify_webhook_url = "https://your-notification-endpoint.example/send-email"

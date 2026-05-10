@@ -42,6 +42,7 @@
                                             <a class="nav-link" href="#classification-hash-{{ hash_index }}" data-tab="classification" data-target="classification-hash-{{ hash_index }}">
                                                 Hash {{ hash_group.hash[:12] }}...
                                             </a>
+                                            <div class="nav-meta">Moving to: <code>{{ hash_group.moving_hash[:12] }}{% if hash_group.moving_hash != '-' %}...{% endif %}</code></div>
                                             <ul class="nav-sublist">
                                                 {% for date_group in hash_group.date_groups %}
                                                 <li>
@@ -71,6 +72,7 @@
                                             <a class="nav-link" href="#annotation-hash-{{ hash_index }}" data-tab="annotation" data-target="annotation-hash-{{ hash_index }}">
                                                 Hash {{ hash_group.hash[:12] }}...
                                             </a>
+                                            <div class="nav-meta">Moving to: <code>{{ hash_group.moving_hash[:12] }}{% if hash_group.moving_hash != '-' %}...{% endif %}</code></div>
                                             <ul class="nav-sublist">
                                                 {% for date_group in hash_group.date_groups %}
                                                 <li>
@@ -104,6 +106,7 @@
                                     {% set hash_index = loop.index0 %}
                                     <div class="hash-group" id="classification-hash-{{ loop.index0 }}">
                                         <h2 class="hash-header">Hash: <code>{{ hash_group.hash[:16] }}...</code></h2>
+                                        <div class="hash-meta">Moving hash: <code>{{ hash_group.moving_hash }}</code></div>
                                         {% for date_group in hash_group.date_groups %}
                                         <h3 class="date-header" id="classification-date-{{ hash_index }}-{{ loop.index0 }}">{{ date_group.date }} <span class="date-count">({{ date_group.articles | length }} articles)</span></h3>
                                         <table>
@@ -150,6 +153,7 @@
                                     {% set hash_index = loop.index0 %}
                                     <div class="hash-group" id="annotation-hash-{{ loop.index0 }}">
                                         <h2 class="hash-header">Hash: <code>{{ hash_group.hash[:16] }}...</code></h2>
+                                        <div class="hash-meta">Moving hash: <code>{{ hash_group.moving_hash }}</code></div>
                                         {% for date_group in hash_group.date_groups %}
                                         <h3 class="date-header" id="annotation-date-{{ hash_index }}-{{ loop.index0 }}">{{ date_group.date }} <span class="date-count">({{ date_group.articles | length }} articles)</span></h3>
                                         <table>

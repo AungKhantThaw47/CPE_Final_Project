@@ -21,8 +21,8 @@ from utils.firestore_schema import (
 from utils.neo4j_utils import (
     query_latest_folder_hash_from_neo4j_env,
     query_folder_hash_derived_from_env,
-    write_folder_hash_to_neo4j_env,
-    create_main_pipeline_linkage_env,
+    query_moving_target_hash_from_source_hash_env,
+    query_folder_hashes_from_neo4j_env,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -211,15 +211,134 @@ def process_annotated_articles():
         bucket = storage_client.bucket(crisis_bucket)
         firestore_client = firestore.Client()
 
-        # Traverse DERIVED_FROM from the latest pending_annotation_review/ hash to find the matching
-        # annotated_articles/ hash. Falls back to chain-tip query for backwards compatibility.
-        source_hash = (
-            query_folder_hash_derived_from_env(
-                "annotated_articles/", "pending_annotation_review/", bucket_name=crisis_bucket
-            )
-            or query_latest_folder_hash_from_neo4j_env("annotated_articles/", crisis_bucket)
-            or ""
+        # Emit Neo4j environment and query debug info to help diagnose runtime lookup failures.
+        logger.info(
+            "Neo4j env: NEO4J_URI=%s, NEO4J_DATABASE=%s, NEO4J_USER=%s, NEO4J_SKIP_SSL_VERIFY=%s",
+            os.environ.get("NEO4J_URI"),
+            os.environ.get("NEO4J_DATABASE"),
+            os.environ.get("NEO4J_USER"),
+            os.environ.get("NEO4J_SKIP_SSL_VERIFY"),
         )
+
+        # Connectivity check: use Bolt driver (preferred) to avoid HTTP 403 from HTTP endpoint.
+        try:
+            neo4j_uri = os.environ.get("NEO4J_URI", "").strip()
+            neo4j_user = os.environ.get("NEO4J_USER", "").strip()
+            neo4j_password = os.environ.get("NEO4J_PASSWORD", "").strip()
+            neo4j_database = os.environ.get("NEO4J_DATABASE", "neo4j").strip() or "neo4j"
+
+            if neo4j_uri and neo4j_user and neo4j_password:
+                try:
+                    from neo4j import GraphDatabase
+
+                    driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+                    with driver.session(database=neo4j_database) as session:
+                        rec = session.run("RETURN 1 AS ok").single()
+                        ok = rec.get("ok") if rec is not None else None
+                        logger.info("Neo4j Bolt check ok=%r", ok)
+                except Exception as bolt_exc:
+                    logger.warning("Neo4j Bolt check failed: %s", bolt_exc)
+        except Exception:
+            logger.exception("Unexpected error during Neo4j Bolt debug check")
+
+        # Traverse DERIVED_FROM from the latest pending_review_annotation/ hash to find the matching
+        # annotated_articles/ hash. Falls back to the chain tip, then to the newest annotated_articles/
+        # hash that actually has GCS content so marker-only tips do not block extraction.
+        derived = None
+        latest = None
+        content_hash = None
+
+        def has_real_article_blob(folder_hash: str) -> bool:
+            prefix = f"annotated_articles/{folder_hash}/"
+            try:
+                for blob in bucket.list_blobs(prefix=prefix):
+                    name = blob.name or ""
+                    if name.endswith("/") or name.endswith(".FOLDER_CREATED"):
+                        continue
+                    if name.endswith(".txt"):
+                        return True
+            except Exception as e:
+                logger.warning("Neo4j content fallback GCS probe failed for %s: %s", folder_hash, e)
+            return False
+
+        def latest_gcs_annotated_hash_with_content() -> str | None:
+            hash_state: dict[str, dict[str, object]] = {}
+            try:
+                for blob in bucket.list_blobs(prefix="annotated_articles/"):
+                    name = blob.name or ""
+                    parts = name.split("/")
+                    if len(parts) < 2:
+                        continue
+
+                    hash_value = parts[1]
+                    state = hash_state.setdefault(hash_value, {"latest_updated": None, "has_txt": False})
+                    updated = getattr(blob, "updated", None)
+                    if updated is not None and (state["latest_updated"] is None or updated > state["latest_updated"]):
+                        state["latest_updated"] = updated
+                    if name.endswith(".txt"):
+                        state["has_txt"] = True
+            except Exception as e:
+                logger.warning("Annotated_articles GCS scan failed: %s", e)
+                return None
+
+            candidates = [
+                (hash_value, state["latest_updated"])
+                for hash_value, state in hash_state.items()
+                if state["has_txt"] and state["latest_updated"] is not None
+            ]
+            if not candidates:
+                return None
+
+            candidates.sort(key=lambda item: item[1], reverse=True)
+            return candidates[0][0]
+
+        # Prefer DEPENDS_ON_DATA_FROM resolution: find the annotated_articles/ hash
+        # that depends on the latest pending_review_annotation/ hash. This follows
+        # the actual data-movement linkage (where articles are moved/assigned)
+        # instead of the DERIVED_FROM version-chain path.
+        derived = None
+        try:
+            latest_pending = query_latest_folder_hash_from_neo4j_env("pending_review_annotation/", crisis_bucket)
+            logger.info("Neo4j latest pending_review_annotation tip: %r", latest_pending)
+            if latest_pending:
+                # Ask Neo4j for the mapping regardless of GCS content so we get
+                # the recorded DEPENDS_ON_DATA_FROM relationship even when marker
+                # files exist. We'll verify content presence separately.
+                derived = query_moving_target_hash_from_source_hash_env(
+                    source_folder_path="pending_review_annotation/",
+                    target_folder_path="annotated_articles/",
+                    source_hash=latest_pending,
+                )
+                # If the mapped target has no real article blobs, ignore it so
+                # downstream GCS-aware checks can pick a real contentful hash.
+                if derived and not has_real_article_blob(derived):
+                    logger.info("DEPENDS_ON result %s has no GCS .txt content; ignoring", derived)
+                    derived = None
+            logger.info("Neo4j DEPENDS_ON_DATA_FROM query result: %r", derived)
+        except Exception as e:
+            logger.exception("Neo4j DEPENDS_ON_DATA_FROM query failed: %s", e)
+
+        try:
+            latest = query_latest_folder_hash_from_neo4j_env("annotated_articles/", crisis_bucket)
+            logger.info("Neo4j chain-tip query result: %r", latest)
+        except Exception as e:
+            logger.exception("Neo4j chain-tip query failed: %s", e)
+
+        if not derived or not latest:
+            try:
+                annotated_hashes = query_folder_hashes_from_neo4j_env("annotated_articles/", crisis_bucket)
+                for candidate_hash in annotated_hashes:
+                    if has_real_article_blob(candidate_hash):
+                        content_hash = candidate_hash
+                        break
+                logger.info("Neo4j content-hash fallback result: %r", content_hash)
+                if not content_hash:
+                    content_hash = latest_gcs_annotated_hash_with_content()
+                    logger.info("GCS content-hash fallback result: %r", content_hash)
+            except Exception as e:
+                logger.exception("Neo4j content-hash fallback query failed: %s", e)
+
+        source_hash = (derived or latest or content_hash or "")
         if not source_hash:
             logger.error("❌ No annotated_articles/ hash found in Neo4j (via DERIVED_FROM or chain tip)")
             return False
@@ -340,25 +459,6 @@ def process_annotated_articles():
         logger.info("=" * 60)
         logger.info(f"BATCH COMPLETE: {processed_count} processed, {skipped_count} skipped, {error_count} errors")
         logger.info("=" * 60)
-
-        if write_folder_hash_to_neo4j_env(
-            folder_path="events/",
-            hash_value=output_hash,
-            bucket_name=crisis_bucket,
-            producer_component_key="job:dvb-extractor-job",
-            source_folder_path="annotated_articles/",
-            source_folder_hash=source_hash,
-        ):
-            logger.info(f"✅ Output folder hash saved to Neo4j: events/ → {output_hash}")
-            
-            # Create DEPENDS_ON_DATA_FROM relationships between consecutive pipeline stages
-            success, message = create_main_pipeline_linkage_env()
-            if success:
-                logger.info(f"✅ Pipeline linkages created: {message}")
-            else:
-                logger.warning(f"⚠️  Pipeline linkage creation incomplete: {message}")
-        else:
-            logger.warning("⚠️  Neo4j write skipped (not configured or failed)")
         
         return error_count == 0
     

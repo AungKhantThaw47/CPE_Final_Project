@@ -152,6 +152,12 @@ variable "neo4j_database" {
   default     = "neo4j"
 }
 
+variable "neo4j_skip_ssl_verify" {
+  description = "Skip SSL verification for Neo4j connections (secure neo4j+s:// URIs)."
+  type        = bool
+  default     = true
+}
+
 variable "daily_notify_email" {
   description = "Default email recipient used by daily/manual workflows when sending completion notifications."
   type        = string

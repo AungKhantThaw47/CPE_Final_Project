@@ -6,14 +6,18 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 from google.cloud import storage
+from neo4j import GraphDatabase
 
 # Add utils to path for Neo4j utilities
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils.neo4j_utils import (
+    _make_driver_kwargs,
     query_latest_folder_hash_from_neo4j_env,
-    query_folder_hash_derived_from_env,
+    query_folder_hashes_from_neo4j_env,
+    query_folder_hash_derived_from_source_hash_env,
     write_folder_hash_to_neo4j_env,
 )
 
@@ -23,12 +27,25 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BASE_GRAPH_MANIFEST = REPO_ROOT / "bootstrap" / "neo4j" / "graph_manifest.json"
 GENERATED_GRAPH_DIR = REPO_ROOT / "bootstrap" / "neo4j" / "generated"
 GENERATED_GRAPH_MANIFEST = GENERATED_GRAPH_DIR / "terraform_post_action_graph.json"
+GENERATED_GRAPH_AUDIT_LOG = GENERATED_GRAPH_DIR / "terraform_post_action_audit.jsonl"
 BOOTSTRAP_ENV_PATH = REPO_ROOT / ".env"
 NEO4J_LOADER_SCRIPT = REPO_ROOT / "bootstrap" / "neo4j" / "load_graph.py"
 
 
 def print_line(text=""):
     print(text)
+
+
+def append_audit_log(event_type: str, payload: dict) -> None:
+    GENERATED_GRAPH_DIR.mkdir(parents=True, exist_ok=True)
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": event_type,
+        "payload": payload,
+    }
+    with GENERATED_GRAPH_AUDIT_LOG.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True))
+        handle.write("\n")
 
 
 def sanitize_key_part(value: str) -> str:
@@ -343,6 +360,8 @@ def filter_base_manifest_by_outputs(base_manifest: dict, outputs: dict) -> dict:
 def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
     nodes = []
     relationships = []
+    # Track the generated graph pieces separately so we can deduplicate
+    # hash nodes and reason about lineage before merging everything back.
     hash_node_keys = {}
     component_hash_values = {}
     component_hash_types = {}
@@ -354,6 +373,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
     folder_source_edges = set()
 
     bucket_name_by_key = {}
+    # Build a quick lookup so bucket hash nodes can preserve the human-readable
+    # bucket name even when the manifest only stores the bucket key.
     for node in base_manifest.get("nodes", []):
         key = node.get("key", "")
         if key.startswith("bucket:"):
@@ -369,6 +390,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
         if node.get("key", "").startswith(("job:", "service:"))
     }
 
+    # Create one DeploymentHash node per component so downstream relationships
+    # can point at the exact content hash that was deployed.
     for component_kind, components in component_sets:
         for component_name, component in sorted(components.items()):
             if not component:
@@ -393,6 +416,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
             component_hash_values[component_key] = hash_value
             component_hash_types[component_key] = hash_type
 
+            # The HAS_HASH edge preserves the trace from the live component to
+            # the hash object that represents its deployment state.
             relationships.append(
                 {
                     "from": component_key,
@@ -439,6 +464,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
             readers_by_bucket.setdefault(target, set()).add(source)
             reader_inputs_by_component.setdefault(source, []).append((target, rel_path))
 
+    # Infer which upstream component supplied the first usable input for each
+    # reader so folder hashes can inherit a realistic source hash chain.
     for reader, inputs in sorted(reader_inputs_by_component.items()):
         for input_bucket, input_path in sorted(inputs):
             candidate_writers = [
@@ -489,6 +516,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
 
         upstream_folder_hashes = []
         input_hash = ""
+        # Prefer the upstream folder hash for the exact source component/path;
+        # if that does not exist yet, fall back to the component hash itself.
         if source_component:
             upstream_folder_hashes = sorted(
                 folder_hashes_by_component_path.get((source_component, source_bucket, source_path), set())
@@ -506,6 +535,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
         folder_hash_node_id = f"{target}|{rel_path}|{folder_hash_value}"
         folder_hash_key = folder_hash_keys.get(folder_hash_node_id, "")
         if not folder_hash_key:
+            # Each folder path gets a single FolderHash node for this hash value
+            # so repeated writes reuse the same node and stay graph-stable.
             folder_hash_node = build_folder_hash_node(target, bucket_name, rel_path, folder_hash_value, "pipeline")
             nodes.append(folder_hash_node)
             folder_hash_key = folder_hash_node["key"]
@@ -528,6 +559,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
 
         producer_edge_key = (folder_hash_key, source_hash_key)
         if producer_edge_key not in folder_hash_producer_edges:
+            # PRODUCED_BY records the content-to-folder relationship so the
+            # generated graph can explain why this folder hash exists.
             folder_hash_producer_edges.add(producer_edge_key)
             relationships.append(
                 {
@@ -550,6 +583,12 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
             )
             if not upstream_folder_hashes:
                 upstream_folder_hashes = sorted(folder_hashes_by_component.get(source_component, set()))
+            
+            # When processing annotated_articles from crisis-admin, filter out crisis_articles
+            # to enforce the correct pipeline: crisis_articles → pending_review_annotation → annotated_articles
+            if rel_path == "annotated_articles/":
+                upstream_folder_hashes = [h for h in upstream_folder_hashes if ":crisis_articles:" not in h]
+            
             for upstream_folder_hash_key in upstream_folder_hashes:
                 if upstream_folder_hash_key == folder_hash_key:
                     continue
@@ -557,6 +596,8 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                 if lineage_edge_key in folder_source_edges:
                     continue
                 folder_source_edges.add(lineage_edge_key)
+                # DEPENDS_ON_DATA_FROM describes the data-flow lineage between
+                # folder hashes so downstream checks can traverse the pipeline.
                 relationships.append(
                     {
                         "from": folder_hash_key,
@@ -583,6 +624,9 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                     lineage_edge_key = (folder_hash_key, pending_key)
                     if lineage_edge_key not in folder_source_edges:
                         folder_source_edges.add(lineage_edge_key)
+                        # This explicit override keeps the documented pipeline
+                        # order intact even if the heuristic source inference is
+                        # too coarse to find the pending_review folder directly.
                         relationships.append(
                             {
                                 "from": folder_hash_key,
@@ -597,10 +641,9 @@ def build_dynamic_hash_graph(outputs: dict, base_manifest: dict) -> dict:
                             }
                         )
 
-            # Special-case: ensure `annotated_articles/` also depends on
-            # `pending_review_annotation/` when that folder hash exists. This
-            # covers the case where crisis-admin produces both stages and the
-            # generator's single-source heuristic may miss the explicit link.
+            # Special-case: ensure `annotated_articles/` depends on
+            # `pending_review_annotation/` when that folder hash exists. This enforces
+            # the correct pipeline order: crisis_articles → pending_review_annotation → annotated_articles
             if rel_path == "annotated_articles/":
                 pending_key = None
                 for v in folder_hash_keys.values():
@@ -1050,6 +1093,14 @@ def write_generated_graph(outputs: dict) -> Path:
 
     GENERATED_GRAPH_DIR.mkdir(parents=True, exist_ok=True)
     GENERATED_GRAPH_MANIFEST.write_text(json.dumps(merged_graph, indent=2), encoding="utf-8")
+    append_audit_log(
+        "manifest_write",
+        {
+            "path": str(GENERATED_GRAPH_MANIFEST),
+            "node_count": len(merged_graph.get("nodes", [])),
+            "relationship_count": len(merged_graph.get("relationships", [])),
+        },
+    )
     return GENERATED_GRAPH_MANIFEST
 
 
@@ -1058,6 +1109,225 @@ def refresh_generated_graph_from_existing_file() -> Path:
     current_base = load_json_file(BASE_GRAPH_MANIFEST)
     rebuilt = rebuild_graph_with_current_base(existing, current_base)
     GENERATED_GRAPH_MANIFEST.write_text(json.dumps(rebuilt, indent=2), encoding="utf-8")
+    append_audit_log(
+        "manifest_refresh",
+        {
+            "path": str(GENERATED_GRAPH_MANIFEST),
+            "node_count": len(rebuilt.get("nodes", [])),
+            "relationship_count": len(rebuilt.get("relationships", [])),
+        },
+    )
+    return GENERATED_GRAPH_MANIFEST
+
+
+def sync_generated_graph_from_neo4j(generated_graph_path: Path) -> Path:
+    manifest = load_json_file(generated_graph_path)
+    nodes = list(manifest.get("nodes", []))
+    relationships = list(manifest.get("relationships", []))
+
+    latest_only_folder_paths = {"dvb_cleaned/", "pending_review/"}
+    folder_nodes_by_path: dict[str, list[str]] = {}
+    derived_from_keys: set[str] = set()
+    for relationship in relationships:
+        if relationship.get("type") == "DERIVED_FROM":
+            source_key = (relationship.get("from") or "").strip()
+            if source_key:
+                derived_from_keys.add(source_key)
+
+    for node in nodes:
+        if node.get("label") != "FolderHash":
+            continue
+        props = node.get("properties", {}) or {}
+        folder_path = (props.get("folder_path") or "").strip()
+        node_key = (node.get("key") or "").strip()
+        if folder_path in latest_only_folder_paths and node_key:
+            folder_nodes_by_path.setdefault(folder_path, []).append(node_key)
+
+    keep_keys: set[str] = set()
+    for folder_path, folder_keys in folder_nodes_by_path.items():
+        derived_keys = [key for key in folder_keys if key in derived_from_keys]
+        if derived_keys:
+            keep_keys.update(derived_keys)
+        elif folder_keys:
+            keep_keys.add(folder_keys[-1])
+
+    if keep_keys:
+        removed_keys = {
+            node.get("key", "")
+            for node in nodes
+            if node.get("label") == "FolderHash"
+            and (node.get("properties", {}) or {}).get("folder_path", "").strip() in latest_only_folder_paths
+            and node.get("key", "") not in keep_keys
+        }
+        if removed_keys:
+            nodes = [node for node in nodes if node.get("key", "") not in removed_keys]
+            relationships = [
+                relationship
+                for relationship in relationships
+                if relationship.get("from", "") not in removed_keys and relationship.get("to", "") not in removed_keys
+            ]
+            append_audit_log(
+                "manifest_prune_latest_only",
+                {
+                    "removed_keys": sorted(removed_keys),
+                    "kept_keys": sorted(keep_keys),
+                    "path": str(generated_graph_path),
+                },
+            )
+
+    node_by_key = {node.get("key", ""): node for node in nodes if node.get("key", "")}
+    relationship_keys = {
+        (
+            relationship.get("from", ""),
+            relationship.get("to", ""),
+            relationship.get("type", ""),
+            json.dumps(relationship.get("properties", {}) or {}, sort_keys=True),
+        )
+        for relationship in relationships
+    }
+
+    folder_bucket_key_by_path = {}
+    folder_bucket_name_by_path = {}
+    folder_paths = []
+    for node in nodes:
+        if node.get("label") != "FolderHash":
+            continue
+        props = node.get("properties", {}) or {}
+        folder_path = (props.get("folder_path") or "").strip()
+        bucket_key = (props.get("bucket_key") or "").strip()
+        bucket_name = (props.get("bucket_name") or "").strip()
+        if folder_path and folder_path not in folder_bucket_key_by_path:
+            folder_paths.append(folder_path)
+        if folder_path and bucket_key:
+            folder_bucket_key_by_path[folder_path] = bucket_key
+        if folder_path and bucket_name:
+            folder_bucket_name_by_path[folder_path] = bucket_name
+
+    pipeline_pairs: list[tuple[str, str]] = [
+        ("dvb_cleaned/", "dvb/"),
+        ("pending_review/", "dvb_cleaned/"),
+        ("crisis_articles/", "pending_review/"),
+        ("pending_review_annotation/", "crisis_articles/"),
+        ("annotated_articles/", "pending_review_annotation/"),
+        ("events/", "annotated_articles/"),
+    ]
+
+    def add_relationship(source_key: str, target_key: str, rel_type: str, properties: dict) -> None:
+        rel_key = (source_key, target_key, rel_type, json.dumps(properties, sort_keys=True))
+        if rel_key in relationship_keys:
+            return
+        relationship_keys.add(rel_key)
+        relationships.append(
+            {
+                "from": source_key,
+                "to": target_key,
+                "type": rel_type,
+                "properties": properties,
+            }
+        )
+
+    def ensure_folder_hash_node(folder_path: str, hash_value: str) -> str:
+        bucket_key = folder_bucket_key_by_path.get(folder_path, "bucket:pipeline-data")
+        bucket_name = folder_bucket_name_by_path.get(folder_path, bucket_key.split(":", 1)[1])
+        node = build_folder_hash_node(bucket_key, bucket_name, folder_path, hash_value, "pipeline")
+        node_key = node["key"]
+        if node_key not in node_by_key:
+            node_by_key[node_key] = node
+            nodes.append(node)
+        add_relationship(
+            bucket_key,
+            node_key,
+            "HAS_HASH",
+            {
+                "hash_type": "pipeline",
+                "hash_value": hash_value,
+                "path": folder_path,
+            },
+        )
+        return node_key
+
+    # Expand the manifest with live Neo4j FolderHash nodes, but keep
+    # latest-only folders to a single newest hash so stale tips are not
+    # re-imported into the generated manifest.
+    env_values = load_env_file(BOOTSTRAP_ENV_PATH)
+    for k, v in env_values.items():
+        os.environ.setdefault(k, v)
+
+    neo4j_uri = os.environ.get("NEO4J_URI", "").strip()
+    neo4j_user = os.environ.get("NEO4J_USER", "").strip()
+    neo4j_password = os.environ.get("NEO4J_PASSWORD", "").strip()
+    neo4j_database = os.environ.get("NEO4J_DATABASE", "neo4j").strip() or "neo4j"
+    if neo4j_uri and neo4j_user and neo4j_password:
+        try:
+            seen_latest_only_folder_paths: set[str] = set()
+            with GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password)) as driver:
+                with driver.session(database=neo4j_database) as session:
+                    records = session.run(
+                        "MATCH (fh:FolderHash) RETURN fh.folder_path AS folder_path, fh.hash_value AS hash_value, fh.bucket_name AS bucket_name ORDER BY fh.updated_at DESC"
+                    ).data()
+                    for rec in records:
+                        fp = (rec.get("folder_path") or "").strip()
+                        hv = (rec.get("hash_value") or "").strip()
+                        if fp and hv:
+                            if fp in latest_only_folder_paths:
+                                if fp in seen_latest_only_folder_paths:
+                                    continue
+                                seen_latest_only_folder_paths.add(fp)
+                            ensure_folder_hash_node(fp, hv)
+        except Exception:
+            # If Neo4j scan fails, fall back to per-folder queries from the existing manifest
+            for folder_path in folder_paths:
+                neo4j_hashes = query_folder_hashes_from_neo4j_env(folder_path) or []
+                for hash_value in neo4j_hashes:
+                    if folder_path in latest_only_folder_paths:
+                        existing = [
+                            node
+                            for node in nodes
+                            if node.get("label") == "FolderHash"
+                            and (node.get("properties", {}) or {}).get("folder_path") == folder_path
+                        ]
+                        if existing:
+                            continue
+                    ensure_folder_hash_node(folder_path, hash_value)
+
+    for target_folder, source_folder in pipeline_pairs:
+        source_hashes = query_folder_hashes_from_neo4j_env(source_folder) or []
+        for source_hash in source_hashes:
+            target_hash = query_folder_hash_derived_from_source_hash_env(
+                target_folder_path=target_folder,
+                source_folder_path=source_folder,
+                source_hash=source_hash,
+            )
+            if not target_hash:
+                continue
+
+            source_node_key = ensure_folder_hash_node(source_folder, source_hash)
+            target_node_key = ensure_folder_hash_node(target_folder, target_hash)
+            add_relationship(
+                target_node_key,
+                source_node_key,
+                "DEPENDS_ON_DATA_FROM",
+                {
+                    "source_relation": "folder_hash_lineage",
+                    "source_hash": source_hash,
+                    "source_bucket": folder_bucket_key_by_path.get(source_folder, "bucket:pipeline-data"),
+                    "source_path": source_folder,
+                },
+            )
+
+    refreshed = {
+        "nodes": nodes,
+        "relationships": relationships,
+    }
+    GENERATED_GRAPH_MANIFEST.write_text(json.dumps(refreshed, indent=2), encoding="utf-8")
+    append_audit_log(
+        "manifest_refresh_from_neo4j",
+        {
+            "path": str(generated_graph_path),
+            "node_count": len(nodes),
+            "relationship_count": len(relationships),
+        },
+    )
     return GENERATED_GRAPH_MANIFEST
 
 
@@ -1129,34 +1399,86 @@ def seed_folder_created_markers(generated_graph_path: Path, outputs: dict) -> li
     if not folder_nodes:
         return []
 
-    # Build a folder_path → computed_hash map from the manifest for DERIVED_FROM seeding.
-    computed_hash_by_folder: dict[str, str] = {}
-    for node in folder_nodes:
-        props = node.get("properties", {}) or {}
-        fp = (props.get("folder_path") or "").strip()
-        hv = (props.get("hash_value") or "").strip()
-        if fp and hv:
-            computed_hash_by_folder[fp] = hv
+    client = storage.Client()
+    bucket = client.bucket(gcs_bucket)
 
-    # The ordered pipeline stages and the folder that each stage is derived from.
-    # Matches the runtime DERIVED_FROM chain written by the job scripts.
-    pipeline_derived_from: list[tuple[str, str]] = [
-        ("dvb_cleaned/",               "dvb/"),
-        ("pending_review/",            "dvb_cleaned/"),
-        ("crisis_articles/",           "pending_review/"),
+    def collect_folder_hashes(folder_path: str) -> list[str]:
+        hashes: list[str] = []
+        for node in folder_nodes:
+            props = node.get("properties", {}) or {}
+            fp = (props.get("folder_path") or "").strip()
+            hv = (props.get("hash_value") or "").strip()
+            if fp == folder_path and hv and hv not in hashes:
+                hashes.append(hv)
+
+        try:
+            for neo4j_hash in query_folder_hashes_from_neo4j_env(folder_path, bucket_name=gcs_bucket):
+                if neo4j_hash and neo4j_hash not in hashes:
+                    hashes.append(neo4j_hash)
+        except Exception as e:
+            print(f"Warning: could not query Neo4j hashes for {folder_path}: {e}", file=sys.stderr)
+
+        return sorted(hashes)
+
+    def resolve_latest_hash(folder_path: str) -> str:
+        try:
+            latest_hash = query_latest_folder_hash_from_neo4j_env(folder_path, gcs_bucket)
+            if latest_hash:
+                return latest_hash
+        except Exception as e:
+            print(f"Warning: could not query latest Neo4j hash for {folder_path}: {e}", file=sys.stderr)
+
+        hashes = collect_folder_hashes(folder_path)
+        return hashes[-1] if hashes else ""
+
+    def folder_hash_has_data(folder_path: str, folder_hash: str) -> bool:
+        prefix = f"{folder_path.rstrip('/')}/{folder_hash}/"
+        try:
+            for blob in bucket.list_blobs(prefix=prefix):
+                name = blob.name or ""
+                if name.endswith("/"):
+                    continue
+                if name.endswith(".FOLDER_CREATED"):
+                    continue
+                if name.endswith(".txt"):
+                    return True
+        except Exception as e:
+            print(
+                f"Warning: could not inspect GCS data for {folder_path}{folder_hash}: {e}",
+                file=sys.stderr,
+            )
+        return False
+
+    # Pipeline stages are applied in order so each stage can consume the output
+    # from the previous one.
+    
+    # Step 1 -> Step 2 -> Step 3
+    # latest_only_pairs: only the latest version is kept at each stage.
+    latest_only_pairs: list[tuple[str, str]] = [
+        ("dvb_cleaned/", "dvb/"),
+        ("pending_review/", "dvb_cleaned/"),
+    ]
+    
+    # Step 4 and Step 6
+    # n_to_n_pairs: every source version is kept and mapped forward.
+    n_to_n_pairs: list[tuple[str, str]] = [
+        ("crisis_articles/", "pending_review/"),
+        ("annotated_articles/", "pending_review_annotation/"),
+    ]
+    
+    # Step 5 and Step 7
+    # one_to_one_pairs: the target is one-per-source-version, and the source
+    # comes from the immediately previous stage.
+    one_to_one_pairs: list[tuple[str, str]] = [
         ("pending_review_annotation/", "crisis_articles/"),
-        ("annotated_articles/",        "pending_review_annotation/"),
-        ("events/",                    "annotated_articles/"),
+        ("events/", "annotated_articles/"),
     ]
 
-    for target_folder, source_folder in pipeline_derived_from:
-        target_hash = computed_hash_by_folder.get(target_folder, "")
-        source_hash = computed_hash_by_folder.get(source_folder, "")
+    # Process the first three stages in order.
+    for target_folder, source_folder in latest_only_pairs:
+        target_hash = resolve_latest_hash(target_folder)
+        source_hash = resolve_latest_hash(source_folder)
         if not target_hash or not source_hash:
-            continue
-        # Skip if a runtime DERIVED_FROM edge already exists for this target folder.
-        existing = query_folder_hash_derived_from_env(target_folder, source_folder, bucket_name=gcs_bucket)
-        if existing:
             continue
         write_folder_hash_to_neo4j_env(
             folder_path=target_folder,
@@ -1166,8 +1488,59 @@ def seed_folder_created_markers(generated_graph_path: Path, outputs: dict) -> li
             source_folder_hash=source_hash,
         )
 
-    client = storage.Client()
-    bucket = client.bucket(gcs_bucket)
+    def seed_source_driven_pairs(target_folder: str, source_folder: str) -> None:
+        """Create DERIVED_FROM edges for all source hashes (including empty/stale versions).
+        
+        For both N-to-N and 1-to-1 relationships, create edges for every source hash version
+        that exists in Neo4j, preserving complete version history.
+
+        The upstream folder versioning is controlled by the source folder itself. This function
+        only maps each source version to the correct target version for that stage.
+        """
+        # Collect source hashes
+        source_hashes = collect_folder_hashes(source_folder)
+        if not source_hashes:
+            return
+
+        target_hashes = collect_folder_hashes(target_folder)
+        target_hashes_by_index = list(target_hashes)
+
+        for index, source_hash in enumerate(source_hashes):
+            # Prefer index-based mapping for pipeline alignment
+            target_hash = target_hashes_by_index[index] if index < len(target_hashes_by_index) else ""
+
+            # Fall back to querying existing Neo4j relationship
+            if not target_hash:
+                target_hash = query_folder_hash_derived_from_source_hash_env(
+                    target_folder_path=target_folder,
+                    source_folder_path=source_folder,
+                    source_hash=source_hash,
+                    bucket_name=gcs_bucket,
+                )
+
+            # Fall back to latest target hash if no mapping exists yet
+            if not target_hash:
+                target_hash = resolve_latest_hash(target_folder)
+
+            if not target_hash:
+                continue
+
+            write_folder_hash_to_neo4j_env(
+                folder_path=target_folder,
+                hash_value=target_hash,
+                bucket_name=gcs_bucket,
+                source_folder_path=source_folder,
+                source_folder_hash=source_hash,
+            )
+
+    # Process Step 4 and Step 6.
+    for target_folder, source_folder in n_to_n_pairs:
+        seed_source_driven_pairs(target_folder, source_folder)
+
+    # Process Step 5 and Step 7.
+    for target_folder, source_folder in one_to_one_pairs:
+        seed_source_driven_pairs(target_folder, source_folder)
+
     created = []
 
     for node in folder_nodes:
@@ -1343,13 +1716,262 @@ def sync_dashboard_events_api_url(outputs: dict) -> None:
     print_line(f"Dashboard API sync: set crisis-dashboard EVENTS_API_URL to {desired_events_url}")
 
 
+def create_pipeline_schema(outputs: dict) -> None:
+    """Create all FolderHash nodes for pipeline stages based on deployment hash and source versioning.
+    
+    For each pipeline stage pair, computes output hashes from source hashes + deployment hash:
+    - latest_only_pairs: Only latest source → one output hash
+    - n_to_n_pairs: All source versions → N output hashes
+    - one_to_one_pairs: All source versions → N output hashes
+    
+    Formula: output_hash = sha256(source_hash:deployment_hash)
+    """
+    env_values = load_env_file(BOOTSTRAP_ENV_PATH)
+    
+    if not env_flag("NEO4J_CREATE_PIPELINE_SCHEMA", default=True, env_values=env_values):
+        return
+    
+    required_keys = ["NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD"]
+    missing_keys = [key for key in required_keys if not (os.environ.get(key) or env_values.get(key))]
+    if missing_keys:
+        return
+    
+    env = os.environ.copy()
+    for key, value in env_values.items():
+        env.setdefault(key, value)
+    
+    # Derive deployment hash from all job/service content hashes
+    deployment_hash = (outputs.get("deployments", {}).get("content_hash") or "").strip()
+    
+    if not deployment_hash:
+        hashes_to_combine = []
+        jobs = outputs.get("jobs") or {}
+        for job_name, job_info in sorted(jobs.items()):
+            if job_info and job_info.get("content_hash"):
+                hashes_to_combine.append(job_info["content_hash"])
+        
+        services = outputs.get("services") or {}
+        for service_name, service_info in sorted(services.items()):
+            if service_info and service_info.get("content_hash"):
+                hashes_to_combine.append(service_info["content_hash"])
+        
+        if hashes_to_combine:
+            combined = ":".join(hashes_to_combine)
+            deployment_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
+        else:
+            print_line("Pipeline schema creation skipped: no job or service hashes available.")
+            return
+    
+    # Bucket name
+    storage_buckets = outputs.get("storage_buckets") or {}
+    crisis_bucket = (storage_buckets.get("crisis_data_bucket") or "").strip()
+    if not crisis_bucket:
+        crisis_bucket = (outputs.get("crisis_bucket") or "").strip()
+    if not crisis_bucket:
+        crisis_bucket = (outputs.get("gcs_output_bucket") or "").strip()
+    if not crisis_bucket:
+        project_id = env.get("TF_VAR_project_id", "").strip() or env.get("GOOGLE_CLOUD_PROJECT", "project")
+        crisis_bucket = f"{project_id}-pipeline-data"
+    
+    # Pipeline pair definitions with cardinality rules
+    latest_only_pairs: list[tuple[str, str]] = [
+        ("dvb_cleaned/", "dvb/"),
+        ("pending_review/", "dvb_cleaned/"),
+    ]
+    
+    n_to_n_pairs: list[tuple[str, str]] = [
+        ("crisis_articles/", "pending_review/"),
+        ("annotated_articles/", "pending_review_annotation/"),
+    ]
+    
+    one_to_one_pairs: list[tuple[str, str]] = [
+        ("pending_review_annotation/", "crisis_articles/"),
+        ("events/", "annotated_articles/"),
+    ]
+    
+    print_line(f"📌 Creating pipeline schema with deployment hash: {deployment_hash[:16]}...")
+    
+    # Map each target folder to its producing job's component key
+    producer_by_folder = {
+        "dvb_cleaned/": "job:dvb-text-cleaner-job",
+        "pending_review/": "job:crisis-classifier-job",  # Classifier produces pending_review/
+        "crisis_articles/": "job:crisis-classifier-job",
+        "pending_review_annotation/": "job:dvb-annotator-job",
+        "annotated_articles/": "job:dvb-annotator-job",  # Same producer as pending_review_annotation/
+        "events/": "job:dvb-extractor-job",
+    }
+    
+    # Process latest_only_pairs: one source hash → one output hash
+    for target_folder, source_folder in latest_only_pairs:
+        # pending_review/ must still be seeded from the latest dvb_cleaned/ tip
+        # even when the corresponding bucket prefix has not appeared yet. The
+        # graph should reflect the pipeline dependency, not the current storage
+        # availability, so this path intentionally does not gate on GCS.
+        if target_folder == "pending_review/":
+            source_hashes = query_folder_hashes_from_neo4j_env(source_folder) or []
+        else:
+            source_hashes = query_folder_hashes_from_neo4j_env(source_folder, bucket_name=crisis_bucket) or []
+        # If the "all versions" query returned nothing, fall back to the latest single hash
+        if not source_hashes:
+            if target_folder == "pending_review/":
+                latest_fallback = query_latest_folder_hash_from_neo4j_env(source_folder) or ""
+            else:
+                latest_fallback = query_latest_folder_hash_from_neo4j_env(source_folder, bucket_name=crisis_bucket) or ""
+            if latest_fallback:
+                source_hashes = [latest_fallback]
+                print_line(f"ℹ️ fallback to latest for {source_folder}: {latest_fallback[:16]}...")
+            else:
+                continue
+        # Use only the latest source hash
+        latest_source = sorted(source_hashes)[-1]
+        output_hash = hashlib.sha256(f"{latest_source}:{deployment_hash}".encode("utf-8")).hexdigest()
+        
+        write_folder_hash_to_neo4j_env(
+            folder_path=target_folder,
+            hash_value=output_hash,
+            bucket_name=crisis_bucket,
+            producer_component_key=producer_by_folder.get(target_folder, ""),
+            source_folder_path=source_folder,
+            source_folder_hash=latest_source,
+        )
+        print_line(f"✅ {target_folder} ← {source_folder} (latest only): {output_hash[:16]}...")
+    
+    # Process n_to_n_pairs: each source hash → corresponding output hash
+    for target_folder, source_folder in n_to_n_pairs:
+        source_hashes = query_folder_hashes_from_neo4j_env(source_folder, bucket_name=crisis_bucket) or []
+        # If no all-versions list is available, fall back to the single latest hash
+        if not source_hashes:
+            latest_fallback = query_latest_folder_hash_from_neo4j_env(source_folder, bucket_name=crisis_bucket) or ""
+            if latest_fallback:
+                source_hashes = [latest_fallback]
+                print_line(f"ℹ️ fallback to latest for {source_folder}: {latest_fallback[:16]}...")
+            else:
+                continue
+        
+        for source_hash in sorted(source_hashes):
+            output_hash = hashlib.sha256(f"{source_hash}:{deployment_hash}".encode("utf-8")).hexdigest()
+            
+            write_folder_hash_to_neo4j_env(
+                folder_path=target_folder,
+                hash_value=output_hash,
+                bucket_name=crisis_bucket,
+                producer_component_key=producer_by_folder.get(target_folder, ""),
+                source_folder_path=source_folder,
+                source_folder_hash=source_hash,
+            )
+        print_line(f"✅ {target_folder} ← {source_folder}: {len(source_hashes)} versions")
+    
+    # Process one_to_one_pairs: seed a mapping for each known source hash so
+    # annotator/admin paths can resolve lineage for non-latest historical hashes.
+    for target_folder, source_folder in one_to_one_pairs:
+        source_hashes = query_folder_hashes_from_neo4j_env(source_folder, bucket_name=crisis_bucket) or []
+        if not source_hashes:
+            latest_fallback = query_latest_folder_hash_from_neo4j_env(source_folder, bucket_name=crisis_bucket) or ""
+            if latest_fallback:
+                source_hashes = [latest_fallback]
+                print_line(f"ℹ️ fallback to latest for {source_folder}: {latest_fallback[:16]}...")
+            else:
+                continue
+
+        for source_hash in sorted(source_hashes):
+            output_hash = hashlib.sha256(f"{source_hash}:{deployment_hash}".encode("utf-8")).hexdigest()
+
+            write_folder_hash_to_neo4j_env(
+                folder_path=target_folder,
+                hash_value=output_hash,
+                bucket_name=crisis_bucket,
+                producer_component_key=producer_by_folder.get(target_folder, ""),
+                source_folder_path=source_folder,
+                source_folder_hash=source_hash,
+            )
+
+        print_line(f"✅ {target_folder} ← {source_folder} (1-to-1): {len(source_hashes)} versions")
+    
+    print_line(f"✨ Pipeline schema ready ({deployment_hash[:16]}...)")
+
+
+def reconcile_neo4j_to_manifest(manifest_path: Path) -> None:
+    """Ensure Neo4j FolderHash nodes exactly match the generated manifest.
+
+    Deletes any `FolderHash` nodes whose `key` property is not present in the
+    manifest's `nodes[].key`. This makes the DB mirror the manifest snapshot.
+    """
+    # Load repo .env values if present so reconciliation can read credentials
+    env_values = load_env_file(BOOTSTRAP_ENV_PATH)
+    for k, v in env_values.items():
+        os.environ.setdefault(k, v)
+
+    neo4j_uri = os.environ.get("NEO4J_URI", "").strip()
+    neo4j_user = os.environ.get("NEO4J_USER", "").strip()
+    neo4j_password = os.environ.get("NEO4J_PASSWORD", "").strip()
+    neo4j_database = os.environ.get("NEO4J_DATABASE", "neo4j").strip() or "neo4j"
+
+    if not neo4j_uri or not neo4j_user or not neo4j_password:
+        raise RuntimeError("Neo4j credentials not configured for reconciliation")
+
+    manifest = load_json_file(manifest_path)
+    allowed_names = [n.get("key") for n in manifest.get("nodes", []) if n.get("label") == "FolderHash"]
+    allowed_names = [n for n in allowed_names if isinstance(n, str) and n]
+
+    driver_kwargs = _make_driver_kwargs(neo4j_uri, neo4j_user, neo4j_password)
+    with GraphDatabase.driver(neo4j_uri, **driver_kwargs) as driver:
+        with driver.session(database=neo4j_database) as session:
+            # Safety: only delete FolderHash nodes that are NOT in allowed_names
+            # Use batching if the allowed_names list is large.
+            BATCH = 1000
+            # Build a temporary parameter that contains the allowed list
+            stmt = """
+            UNWIND $allowed AS a
+            // no-op UNWIND to ensure the parameter is available to the query
+            WITH collect(a) AS allowed
+            MATCH (fh:FolderHash)
+            WHERE NOT fh.key IN allowed
+            DETACH DELETE fh
+            RETURN COUNT(*) AS deleted
+            """
+            result = session.run(stmt, allowed=allowed_names)
+            deleted = 0
+            try:
+                deleted = result.single().get("deleted")
+            except Exception:
+                deleted = None
+
+    print_line(f"Reconciliation complete: removed {deleted if deleted is not None else 'unknown'} FolderHash nodes not in manifest")
+
+
 def main() -> int:
     terraform_binary = os.environ.get("TF", "terraform")
     try:
         outputs = get_terraform_outputs(terraform_binary)
+        print_line("Terraform outputs retrieved successfully.")
+        # print(outputs)
         generated_graph_path = write_generated_graph(outputs)
+        # print_line(f"Generated graph manifest written to {generated_graph_path}")
         neo4j_status = sync_graph_to_neo4j(generated_graph_path)
+
+        # Load .env values for env_flag checks
+        env_values = load_env_file(BOOTSTRAP_ENV_PATH)
+
+        # Optional reconciliation: remove FolderHash nodes that are not present
+        # in the generated manifest so Neo4j reflects the manifest exactly after deploy.
+        reconcile_flag = env_flag("NEO4J_RECONCILE_ON_DEPLOY", default=False, env_values=env_values)
+        if reconcile_flag:
+            try:
+                reconcile_neo4j_to_manifest(generated_graph_path)
+            except Exception as e:
+                print_line(f"Warning: reconciliation failed: {e}")
+
+        generated_graph_path = sync_generated_graph_from_neo4j(generated_graph_path)
+        print_line(f"Generated graph refreshed from Neo4j at {generated_graph_path}")
+        create_pipeline_schema(outputs)
+        # After creating FolderHash nodes in Neo4j, refresh the manifest so it records
+        # all DB changes (ensures manifest includes writes made by create_pipeline_schema).
+        generated_graph_path = sync_generated_graph_from_neo4j(generated_graph_path)
+        print_line(f"Generated graph refreshed from Neo4j after schema creation at {generated_graph_path}")
         marker_files = seed_folder_created_markers(generated_graph_path, outputs)
+        # Seed may have written new markers and also written DERIVED_FROM edges; refresh once more
+        generated_graph_path = sync_generated_graph_from_neo4j(generated_graph_path)
+        print_line(f"Generated graph refreshed from Neo4j after seeding markers at {generated_graph_path}")
         print_summary(outputs, generated_graph_path, neo4j_status)
         sync_dashboard_events_api_url(outputs)
         if marker_files:
@@ -1358,6 +1980,7 @@ def main() -> int:
         if exc.code == 0 and GENERATED_GRAPH_MANIFEST.exists():
             generated_graph_path = refresh_generated_graph_from_existing_file()
             neo4j_status = sync_graph_to_neo4j(generated_graph_path)
+            generated_graph_path = sync_generated_graph_from_neo4j(generated_graph_path)
             print_line("Terraform post-action summary")
             print_line("==============================")
             print_line("Terraform outputs were unavailable; reused existing generated graph manifest.")
