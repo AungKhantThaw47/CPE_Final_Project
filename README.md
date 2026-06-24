@@ -1,17 +1,86 @@
 # CPE Final Project - Cloud Infrastructure & Data Pipeline
 
-Terraform-managed GCP infrastructure for GPU batch processing, MLflow tracking, and web scraping with automated scheduling.
+Terraform-managed GCP infrastructure for a DVB Burmese crisis-news data pipeline, MLflow tracking, admin review, event extraction, and dashboard services.
 
 > **Note**: Hash preservation system with smart rebuild detection - only builds when code changes!
 
 ## Project Overview
 
 This project provides a complete cloud infrastructure setup with:
-- **GPU Batch Jobs**: CUDA-accelerated processing on Cloud Run with NVIDIA L4 GPUs
-- **MLflow Tracking Server**: Experiment tracking and model registry
-- **Web Crawler**: Automated DVB Burmese news scraper with GCS storage
-- **Scheduled Jobs**: Automated data processing pipelines
+- **DVB Data Pipeline**: Coordinator, crawler, cleaner, classifier, annotator, and extractor jobs
+- **Admin and Dashboard Services**: Crisis article review, events API, and dashboard frontend
+- **MLflow Tracking Server**: Experiment tracking and model artifact storage
+- **Cloud Workflows**: Daily and manual date-range pipeline orchestration
 - **Neo4j Dependency Graph**: Auto-synced system graph with content-hash dependency nodes after deploy
+
+## Infrastructure Diagram
+
+```mermaid
+flowchart LR
+    Dev["Developer / GitHub Actions"] --> TF["Terraform root module<br/>main.tf"]
+    TF --> APIs["GCP APIs<br/>Run, Build, Workflows, Firestore, IAM"]
+    TF --> AR["Artifact Registry<br/>container images"]
+    TF --> GCS["Cloud Storage<br/>pipeline-data + mlflow-artifacts"]
+    TF --> FS["Firestore<br/>events collection"]
+    TF --> WF["Cloud Workflows<br/>daily + manual pipelines"]
+
+    subgraph Jobs["Cloud Run Jobs"]
+        Coordinator["dvb-coordinator-job"]
+        Crawler["dvb-crawler-job"]
+        Cleaner["dvb-text-cleaner-job"]
+        Classifier["crisis-classifier-job"]
+        Annotator["dvb-annotator-job"]
+        Extractor["dvb-extractor-job"]
+    end
+
+    subgraph Services["Cloud Run Services"]
+        Admin["crisis-admin"]
+        API["events-api"]
+        Dashboard["crisis-dashboard"]
+        MLflow["mlflow"]
+    end
+
+    AR --> Coordinator
+    AR --> Crawler
+    AR --> Cleaner
+    AR --> Classifier
+    AR --> Annotator
+    AR --> Extractor
+    AR --> Admin
+    AR --> API
+    AR --> Dashboard
+    AR --> MLflow
+    WF --> Coordinator
+    WF --> Crawler
+    WF --> Cleaner
+    WF --> Classifier
+    Admin --> Annotator
+    Admin --> Extractor
+
+    Crawler --> GCS
+    Cleaner --> GCS
+    Classifier --> GCS
+    Annotator --> GCS
+    Extractor --> FS
+    API --> FS
+    Dashboard --> API
+    MLflow --> GCS
+
+    TF --> Post["Post-apply scripts<br/>hash manifest generation"]
+    Post --> Neo4j["Neo4j<br/>deployment hash graph"]
+    Coordinator -.->|content hashes| Neo4j
+    Crawler -.->|content hashes| Neo4j
+    Cleaner -.->|content hashes| Neo4j
+    Classifier -.->|content hashes| Neo4j
+    Annotator -.->|content hashes| Neo4j
+    Extractor -.->|content hashes| Neo4j
+    Admin -.->|content hashes| Neo4j
+    API -.->|content hashes| Neo4j
+    Dashboard -.->|content hashes| Neo4j
+    MLflow -.->|content hashes| Neo4j
+```
+
+Full architecture diagrams are in [diagrams/README.md](diagrams/README.md).
 
 ## Quick Start (Simplified Deployment)
 
@@ -39,10 +108,10 @@ terraform apply
 - ✅ **Neo4j graph sync** updates the external database automatically when configured
 
 **Documentation:**
-- 📘 [CONTENT_HASH_AUTOMATED.md](CONTENT_HASH_AUTOMATED.md) - How content hashing works
-- 📘 [DEPLOYMENT_SIMPLIFIED.md](DEPLOYMENT_SIMPLIFIED.md) - Deployment details
-- 📘 [MIGRATION_COMPLETE.md](MIGRATION_COMPLETE.md) - What changed
-- 📘 [MANUAL_PIPELINE_COMMANDS.md](MANUAL_PIPELINE_COMMANDS.md) - Manual workflow/job invocation commands
+- [CODEBASE_SUMMARY.md](CODEBASE_SUMMARY.md) - Codebase map, runtime components, and data flow
+- [HOW_TO_USE.md](HOW_TO_USE.md) - Setup, deploy, run, clean, and maintenance instructions
+- [MANUAL_PIPELINE_COMMANDS.md](MANUAL_PIPELINE_COMMANDS.md) - Manual workflow/job invocation commands
+- [diagrams/README.md](diagrams/README.md) - Architecture and workflow diagrams
 
 **Helper scripts** in `scripts/` are now optional utilities.
 
@@ -111,23 +180,25 @@ CPE_Final_Project/
 
 ## Infrastructure Components
 
-### Cloud Run Jobs (Scheduled)
-1. **GPU Batch Job** (`gpu-batch-job`)
-   - NVIDIA L4 GPU acceleration
-   - 4 CPU / 16Gi memory
-   - Manual trigger (no scheduler)
-   - Results saved to GCS
+### Cloud Run Jobs
+1. **DVB Coordinator** (`dvb-coordinator-job`)
+   - Discovers article links for date ranges
+   - Invokes crawler jobs for discovered articles
 
-2. **Daily Data Processor** (`daily-data-processor`)
-   - Runs every hour
-   - 1 CPU / 512Mi memory
-   - Scheduled data processing tasks
+2. **DVB Crawler** (`dvb-crawler-job`)
+   - Fetches DVB Burmese article content
+   - Stores raw article data in GCS
 
-3. **DVB Crawler Job** (`dvb-crawler-job`)
-   - Runs daily at midnight (Asia/Bangkok timezone)
-   - Scrapes yesterday's DVB Burmese news
-   - Uploads articles and metadata to GCS
-   - 1 CPU / 512Mi memory
+3. **Text Cleaner** (`dvb-text-cleaner-job`)
+   - Cleans crawled article text
+   - Preserves content-hash lineage
+
+4. **Crisis Classifier** (`crisis-classifier-job`)
+   - Classifies cleaned articles as crisis-related or non-crisis
+
+5. **Annotator and Extractor** (`dvb-annotator-job`, `dvb-extractor-job`)
+   - Annotates crisis articles
+   - Extracts structured events into Firestore
 
 ### Cloud Run Services (Always-On HTTP)
 1. **MLflow Tracking Server** (`mlflow`)
@@ -137,10 +208,19 @@ CPE_Final_Project/
    - Artifacts stored in GCS
    - Port 8080 (internal by default)
 
+2. **Crisis Admin** (`crisis-admin`)
+   - Review portal for crisis articles
+   - Can trigger annotation and extraction jobs
+
+3. **Events API** (`events-api`)
+   - Reads extracted event records from Firestore
+
+4. **Crisis Dashboard** (`crisis-dashboard`)
+   - Frontend visualization for crisis event data
+
 ### Storage Buckets
-- `{project-id}-gpu-job-outputs` - GPU job results (30-day retention)
+- `{project-id}-pipeline-data` - Shared pipeline data bucket (180-day retention)
 - `{project-id}-mlflow-artifacts` - MLflow artifacts (90-day retention)
-- `{project-id}-crawler-data` - Crawler output (90-day retention)
 
 ## Quick Start
 
@@ -259,14 +339,17 @@ If you only need to refresh the Neo4j graph without a full reset, use `make rest
 
 For a complete command reference (full workflow execution, job-by-job execution, and monitoring), see [MANUAL_PIPELINE_COMMANDS.md](MANUAL_PIPELINE_COMMANDS.md).
 
-**GPU Batch Job:**
+**Daily workflow:**
 ```bash
-gcloud run jobs execute gpu-batch-job \
-  --region=asia-southeast1 \
-  --wait
+make daily-pipeline
 ```
 
-**DVB Crawler (manual run):**
+**Manual date-range workflow:**
+```bash
+make manual-coordinator START_DATE=20-03-2026 END_DATE=21-03-2026
+```
+
+**DVB crawler job direct run:**
 ```bash
 gcloud run jobs execute dvb-crawler-job \
   --region=asia-southeast1 \
@@ -290,12 +373,12 @@ gcloud run services proxy mlflow --region=asia-southeast1
 
 **List crawled files:**
 ```bash
-gsutil ls gs://{project-id}-crawler-data/dvb/
+gsutil ls gs://{project-id}-pipeline-data/
 ```
 
 **Download specific date:**
 ```bash
-gsutil -m cp -r gs://{project-id}-crawler-data/dvb/2026-01-28/ ./
+gsutil -m cp -r gs://{project-id}-pipeline-data/<prefix>/<content-hash>/2026-03-20/ ./
 ```
 
 ### Monitoring
@@ -307,9 +390,9 @@ gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=dv
   --format=json
 ```
 
-**Check scheduler status:**
+**Check workflow executions:**
 ```bash
-gcloud scheduler jobs describe dvb-crawler-job \
+gcloud workflows executions list daily-pipeline \
   --location=asia-southeast1
 ```
 
@@ -354,16 +437,17 @@ Provides:
 ## Architecture Details
 
 ### DVB Crawler Pipeline
-1. **Scheduler**: Triggers job daily at midnight (Asia/Bangkok)
-2. **Scraper**: Collects yesterday's articles from DVB Burmese news
-3. **Storage**: Uploads to GCS organized by hash + date
-  - Articles: `gs://bucket/dvb/<CONTENT_HASH>/YYYY-MM-DD/DVB_YYYY-MM-DD_hash.txt`
-  - Metadata: `gs://bucket/dvb/<CONTENT_HASH>/YYYY-MM-DD/DVB_Burmese_YYYY-MM-DD.json`
+1. **Workflow**: `daily-pipeline` or `manual-coordinator` orchestrates the run.
+2. **Coordinator**: Discovers article URLs for the requested date range.
+3. **Crawler**: Fetches DVB Burmese article text and metadata.
+4. **Storage**: Uploads outputs to the shared pipeline GCS bucket organized by component hash and date.
+5. **Downstream jobs**: Cleaning, classification, annotation, and extraction advance the data toward Firestore event records.
 
-### GPU Processing
-- **GPU Type**: NVIDIA L4 (24GB VRAM)
-- **Auto-scaling**: Starts on-demand, stops after completion
-- **Cost Optimization**: Pay only for execution time
+### Deployment Hash Tracking
+- **Content hashes**: Computed from each deployable code directory.
+- **Change detection**: Images rebuild only when code content changes.
+- **Lineage**: Runtime jobs write and read hash-aware GCS prefixes.
+- **Neo4j sync**: Terraform post-actions can load deployment hash nodes and dependency edges.
 
 ### MLflow Integration
 - **Backend Store**: SQLite (upgradeable to Cloud SQL)
@@ -378,20 +462,17 @@ Provides:
 ```hcl
 project_id             = "your-project-id"
 region                 = "asia-southeast1"
-job_name               = "gpu-batch-job"
 docker_repository_id   = "gpu-jobs"
-image_name             = "gpu-batch-job"
 image_tag              = "latest"
-service_account_id     = "gpu-job-sa"
-gpu_type               = "nvidia-l4"
+service_account_id     = "gpu-job-runner"
 mlflow_public_access   = false  # Set true for public access
 ```
 
-### Scheduler Cron Expressions
+### Workflow Entrypoints
 
-Modify in [main.tf](main.tf):
-- DVB Crawler: `0 0 * * *` (daily at midnight)
-- Data Processor: `0 * * * *` (every hour)
+- `workflow.yaml`: Daily pipeline entrypoint.
+- `manual_workflow.yaml`: Date-range manual coordinator entrypoint.
+- `main.tf`: Registers the workflows and the Cloud Run jobs/services they invoke.
 
 ## Cost Estimation
 
@@ -511,8 +592,8 @@ gcloud run jobs delete dvb-crawler-job --region=asia-southeast1
 # Delete a service  
 gcloud run services delete mlflow --region=asia-southeast1
 
-# Delete bucket
-gsutil -m rm -r gs://{project-id}-crawler-data
+# Delete shared pipeline bucket contents
+gsutil -m rm -r gs://{project-id}-pipeline-data/**
 ```
 
 ## License

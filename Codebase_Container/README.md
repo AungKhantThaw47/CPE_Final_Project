@@ -1,76 +1,42 @@
 # Codebase Container
 
-This directory contains all application logic codebases for different Cloud Run jobs and scheduled tasks.
+`Codebase_Container/` contains the application code that Terraform builds and deploys as Cloud Run jobs and Cloud Run services. Each deployable folder is intended to be self-contained with its own `Dockerfile` and dependency file.
 
-## Structure
+## Jobs
 
-```
-Codebase_Container/
-├── crawler_codebase/          # Web crawler application
-│   └── default/
-│       └── main.py
-├── text_clean_codebase/       # Text cleaning application
-│   └── default/
-│       └── main.py
-└── cloud_scheduler_function/  # Cloud Scheduler function
-    ├── Dockerfile
-    ├── main.py
-    └── requirements.txt
-```
+- `coordinator_job`: Node.js DVB link discovery and crawler fan-out.
+- `crawler_job`: Node.js DVB article crawler.
+- `text_clean_codebase`: Python text cleaning job for crawled articles.
+- `crisis_classifier_job`: Python crisis classification job.
+- `annotator_job`: Python Gemini-based article annotation job.
+- `extractor_job`: Python event extraction job that writes structured output.
+- `gcs_folder_rename_job`: Python utility job for moving GCS prefixes.
+- `gpu_batch_job`: GPU batch workload kept as optional/reference code.
+- `cloud_scheduler_function`: Older scheduled processor container kept for compatibility/reference.
 
-## Adding New Codebases
+## Services
 
-When adding a new codebase to this container:
+- `mlflow`: MLflow tracking server container.
+- `crisis_admin`: Flask-style admin portal for article review and job triggers.
+- `events_api`: API service that reads extracted events from Firestore.
+- `FrontEnd_Dashboard`: Static/dashboard frontend container.
 
-1. Create a new folder with a descriptive name (e.g., `data_processing_function`)
-2. Include the necessary files for your application:
-   - `Dockerfile` - Container image definition
-   - `main.py` - Application entry point
-   - `requirements.txt` - Python dependencies
-3. Update Terraform configuration to reference the new codebase location
+## Test And Sample Files
 
-## Usage with Terraform
+- `test_GCS_annotation_sample`: Small tracked sample articles for annotation testing.
+- Some folders include local test scripts such as `test_pipeline_article.py` or `test_gcs.py`.
 
-### Cloud Scheduler Module
+## How Terraform Uses These Folders
 
-To use a codebase from this container with the cloud-scheduler module:
+Root `main.tf` registers deployable jobs in `locals.jobs` and services in `locals.services`. Each entry points `codebase_path` at one folder in this directory. The Terraform modules use that path to compute content hashes, build container images, and deploy Cloud Run resources.
 
-```hcl
-module "my_scheduled_job" {
-  source = "./modules/cloud-scheduler"
-  
-  project_id       = var.project_id
-  region           = var.region
-  job_name         = "my-job"
-  schedule         = "0 2 * * *"
-  container_image  = "gcr.io/my-project/my-image:latest"
-  
-  # Specify the codebase path
-  codebase_path    = "${path.root}/Codebase_Container/cloud_scheduler_function"
-}
-```
+When adding a new component:
 
-### Example: Using Different Codebases
+1. Create a new folder with a clear name.
+2. Add the application entry point.
+3. Add a `Dockerfile`.
+4. Add `requirements.txt` for Python or `package.json` for Node.js.
+5. Register the folder in `main.tf`.
+6. Run `make fmt`, `make validate`, and `make plan` from the repository root.
 
-```hcl
-# Crawler job
-module "crawler_job" {
-  source        = "./modules/cloud-scheduler"
-  codebase_path = "${path.root}/Codebase_Container/crawler_codebase/default"
-  # ... other variables
-}
-
-# Text cleaning job
-module "text_clean_job" {
-  source        = "./modules/cloud-scheduler"
-  codebase_path = "${path.root}/Codebase_Container/text_clean_codebase/default"
-  # ... other variables
-}
-```
-
-## Best Practices
-
-1. **Isolation**: Each codebase should be self-contained with its own dependencies
-2. **Documentation**: Add a README.md in each codebase folder explaining its purpose
-3. **Naming**: Use clear, descriptive names for codebase folders
-4. **Structure**: Follow a consistent structure across all codebases for maintainability
+See `../HOW_TO_USE.md` for deployment and pipeline commands.

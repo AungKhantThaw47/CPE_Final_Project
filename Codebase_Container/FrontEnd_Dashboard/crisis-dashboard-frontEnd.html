@@ -227,9 +227,9 @@ tbody tr:hover td{color:var(--tx)}
     <!-- DATE RANGE -->
     <div class="tb-label">Date</div>
     <div class="f-date">
-      <input class="f-input" type="date" id="f-from" value="2023-01-01" onchange="applyFilters()">
+      <input class="f-input" type="date" id="f-from" value="2023-01-01" onchange="dateFilterActive=true;applyFilters()">
       <span style="color:var(--tx3);font-size:10px">–</span>
-      <input class="f-input" type="date" id="f-to" value="2023-12-31" onchange="applyFilters()">
+      <input class="f-input" type="date" id="f-to" value="2023-12-31" onchange="dateFilterActive=true;applyFilters()">
     </div>
 
     <div class="tb-divider"></div>
@@ -251,7 +251,7 @@ tbody tr:hover td{color:var(--tx)}
       <option value="">All regions</option>
     </select>
 
-    <button class="btn-reset" onclick="resetFilters()">Reset</button>
+<button class="btn-reset" onclick="resetFilters()">Reset</button>
     <div class="tb-count" id="tb-count">17 events</div>
     <div class="tb-divider"></div>
     <button class="btn-theme" id="btn-theme" onclick="toggleTheme()" title="Toggle light / dark mode">
@@ -395,6 +395,7 @@ let DATA = RAW;           // original
 let filtered = [];        // after filters
 let activeTypes = new Set(); // populated dynamically from loaded data
 let sortCol = "date", sortDir = 1;
+let dateFilterActive = false; // true only when user has manually changed the date inputs
 let activeTownship = ""; // township-level filter set by clicking top locations
 let typeChartInst = null, tlChartInst = null;
 let mapMarkers = [];
@@ -458,6 +459,7 @@ function applyFilters() {
 
   filtered = DATA.filter(d => {
     const dt = parseDate(d.date);
+    if (dateFilterActive && !dt) return false;
     if (from && dt && dt < from) return false;
     if (to   && dt && dt > to)   return false;
     if (activeTypes.size && !activeTypes.has(d.crisis_type)) return false;
@@ -471,6 +473,7 @@ function applyFilters() {
 }
 
 function resetFilters() {
+  dateFilterActive = false;
   const dates = DATA.map(d => parseDate(d.date)).filter(Boolean);
   document.getElementById("f-from").value = dates.length ? toISO(new Date(Math.min(...dates))) : "";
   document.getElementById("f-to").value   = dates.length ? toISO(new Date(Math.max(...dates))) : "";
@@ -1291,15 +1294,12 @@ async function preGeocodeAll(data) {
   hideMapStatus();
 }
 
-/* Append/replace new records in DATA, geocode new locations, then re-render */
-async function loadData(jsonArray, options = {}) {
-  const { replace = false, suppressEmptyAlert = false } = options;
+/* Append new records to DATA, geocode new locations, then re-render */
+async function loadData(jsonArray) {
   const incoming = Array.isArray(jsonArray) ? jsonArray : (jsonArray.data || []);
-  if (!incoming.length) {
-    if (!suppressEmptyAlert) alert("JSON loaded but contains no records.");
-    return 0;
-  }
-  DATA = replace ? incoming : DATA.concat(incoming);
+  if (!incoming.length) { alert("JSON loaded but contains no records."); return; }
+  dateFilterActive = false;
+  DATA = DATA.concat(incoming);
 
   // Auto-set date range from all data
   const dates = DATA.map(d => parseDate(d.date)).filter(Boolean);
@@ -1316,65 +1316,6 @@ async function loadData(jsonArray, options = {}) {
 
   await preGeocodeAll(incoming);
   applyFilters();
-  return incoming.length;
-}
-
-function inferEventsApiUrlFromHost() {
-  const host = window.location.hostname || "";
-  const match = host.match(/^crisis-dashboard-(.+)$/);
-  if (!match) return null;
-  return `https://events-api-${match[1]}/events`;
-}
-
-function resolveEventsApiUrl() {
-  const fromQuery = new URLSearchParams(window.location.search).get("api");
-  if (fromQuery) return fromQuery;
-
-  if (typeof window.EVENTS_API_URL === "string" && window.EVENTS_API_URL.trim()) {
-    return window.EVENTS_API_URL.trim();
-  }
-
-  const inferred = inferEventsApiUrlFromHost();
-  if (inferred) return inferred;
-
-  return "/events";
-}
-
-function normalizeApiEvents(payload) {
-  const rawItems = Array.isArray(payload)
-    ? payload
-    : (Array.isArray(payload?.events) ? payload.events : []);
-
-  return rawItems
-    .map(item => {
-      const base = item && typeof item === "object" ? item : {};
-      const nested = base.event && typeof base.event === "object" ? base.event : {};
-      const merged = { ...base, ...nested };
-      delete merged.event;
-      return merged;
-    })
-    .filter(item => item && typeof item === "object");
-}
-
-async function loadInitialDataFromApi() {
-  const apiUrl = resolveEventsApiUrl();
-  showMapStatus("Loading events from API...");
-
-  try {
-    const res = await fetch(apiUrl, { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error(`API request failed (${res.status})`);
-    }
-
-    const payload = await res.json();
-    const normalized = normalizeApiEvents(payload);
-    await loadData(normalized, { replace: true, suppressEmptyAlert: true });
-  } catch (err) {
-    console.warn("Failed to load events from API:", err);
-    applyFilters();
-  } finally {
-    hideMapStatus();
-  }
 }
 
 function rebuildLocationDropdown() {
@@ -1401,6 +1342,7 @@ function handleFileUpload(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
   e.target.value = "";
+  let pending = files.length;
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = async ev => {
@@ -1409,6 +1351,7 @@ function handleFileUpload(e) {
       } catch {
         alert(`Could not parse ${file.name}. Make sure it is a valid JSON array.`);
       }
+      pending--;
     };
     reader.readAsText(file);
   });
@@ -1443,8 +1386,6 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     handleDroppedFiles(e.dataTransfer.files);
   });
-
-  loadInitialDataFromApi();
 });
 </script>
 </body>
